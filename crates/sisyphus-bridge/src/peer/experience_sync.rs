@@ -214,6 +214,7 @@ impl ExperienceSyncHandler {
                 }
                                             Self::handle_remote_sync(
                                                 &experience_bank,
+                                                Some(_keep_manager_alive.as_ref()),
                                                 &exp_key,
                                                 version,
                                                 &vector_clock_json,
@@ -270,8 +271,11 @@ impl ExperienceSyncHandler {
     }
 
     /// 处理单个远程 ExperienceSync 事件
+    ///
+    /// `peer_manager` 仅用于 Phase 6.2b 可观测计数（applied/rejected），不影响合并语义。
     async fn handle_remote_sync(
         experience_bank: &Arc<VectorExperienceBank>,
+        peer_manager: Option<&crate::peer::PeerManager>,
         exp_key: &str,
         remote_version: u64,
         vector_clock_json: &str,
@@ -283,6 +287,9 @@ impl ExperienceSyncHandler {
             Ok(exp) => exp,
             Err(e) => {
                 tracing::warn!(error = %e, exp_key = %exp_key, "failed to deserialize remote experience");
+                if let Some(pm) = peer_manager {
+                    pm.record_experience_sync_rejected();
+                }
                 return;
             },
         };
@@ -320,6 +327,9 @@ impl ExperienceSyncHandler {
                     deviation_score = remote_exp.deviation_score,
                     "federated aggregation rejected low-quality remote experience",
                 );
+                if let Some(pm) = peer_manager {
+                    pm.record_experience_sync_rejected();
+                }
                 return;
             }
             tracing::debug!(
@@ -343,6 +353,9 @@ impl ExperienceSyncHandler {
                     version = remote_exp.version,
                     "applied remote experience to local store",
                 );
+                if let Some(pm) = peer_manager {
+                    pm.record_experience_sync_applied();
+                }
             },
             Ok(ApplyResult::Kept) => {
                 tracing::debug!(
@@ -356,6 +369,9 @@ impl ExperienceSyncHandler {
             },
             Err(e) => {
                 tracing::error!(error = %e, exp_key = %exp_key, "failed to apply remote experience");
+                if let Some(pm) = peer_manager {
+                    pm.record_experience_sync_rejected();
+                }
             },
         }
     }
@@ -502,6 +518,7 @@ mod tests {
 
         ExperienceSyncHandler::handle_remote_sync(
             &bank,
+            None,
             &key,
             1,
             "{}",
@@ -525,6 +542,7 @@ mod tests {
 
         ExperienceSyncHandler::handle_remote_sync(
             &bank,
+            None,
             &key,
             2,
             "{}",
@@ -546,7 +564,7 @@ mod tests {
         let bank = make_bank("node-a").await;
         let (key, payload) = remote_payload(3, false, 0.9);
 
-        ExperienceSyncHandler::handle_remote_sync(&bank, &key, 3, "{}", payload, None).await;
+        ExperienceSyncHandler::handle_remote_sync(&bank, None, &key, 3, "{}", payload, None).await;
 
         let keys = bank.keys().await.expect("keys");
         assert_eq!(keys, vec![key], "未开启聚合时不应过滤任何经验（默认关闭）");

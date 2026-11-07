@@ -239,7 +239,7 @@ OpenAPI 规范位于 [`/openapi.json`](/openapi.json)，也可通过 Swagger UI 
 
 响应包含：
 - `enabled` / `cluster_name` / `config`（节点标识、TTL/超时、`strategy_sync_interval_secs`、静态 peers）
-- `peer_manager`（`self_node_id` / `leader_id` / `is_leader` / `cluster_size` / `state_proposal_broadcasts`）
+- `peer_manager`（`self_node_id` / `leader_id` / `is_leader` / `cluster_size` / `state_proposal_broadcasts` / `experience_sync{broadcasts,inbound_delivered,inbound_applied,inbound_rejected}`）
 - `consensus`（trait 视图：`leader_id` / `is_leader`）
 - `peers[]`（`node_id` / `grpc_addr` / `joined_at` / `last_seen_secs_ago`）
 

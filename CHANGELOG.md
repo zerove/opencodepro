@@ -52,9 +52,16 @@
 
 - **集群协调状态端点**（Phase 6.1，只读）：`GET /api/cluster/status`（`operationId: getClusterStatus`）
   返回集群配置快照、peer manager 视图（self/leader/cluster_size/peers/last_seen_secs_ago、
-  `state_proposal_broadcasts`）与 consensus trait 视图（leader/is_leader）。不改变传播、合并或
-  决策路径；为「多实例协调与共识」后续工作提供可观测基础。已接入 OpenAPI，集成测试
-  `cluster_status_rest_test` 覆盖单节点快照契约。
+  `state_proposal_broadcasts`、`experience_sync{broadcasts,inbound_delivered,inbound_applied,inbound_rejected}`）
+  与 consensus trait 视图（leader/is_leader）。不改变传播、合并或决策路径；为「多实例协调与共识」
+  后续工作提供可观测基础。已接入 OpenAPI，集成测试 `cluster_status_rest_test` 覆盖单节点快照契约。
+
+- **经验同步计数可观测**（Phase 6.2b，只读）：`PeerManager` 新增经验同步原子计数（与
+  `state_proposal_broadcasts` 对齐）：`experience_sync_broadcasts`（本地广播）、
+  `experience_sync_inbound_delivered`（入站投递）；`ExperienceSyncHandler` 在不改变合并语义的前提下
+  记录 `experience_sync_inbound_applied`（CRDT Applied）与 `experience_sync_inbound_rejected`
+  （反序列化/联邦质量拒绝/落库错误；Kept/Equal 不计为拒绝）。计数通过 `/api/cluster/status`
+  暴露。
 
 - **联邦来源标注与一致性校验**（ADR-017 Amendment 4，Phase G，v0.4.0 后续）：
   - `ClusterEvent::StateProposal` / proto `StateProposal.source_node_id`（field 4）

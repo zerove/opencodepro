@@ -755,6 +755,12 @@ pub(super) async fn cluster_status_handler(State(state): State<RestApiState>) ->
                 "is_leader": pm.is_leader(),
                 "cluster_size": pm.cluster_size(),
                 "state_proposal_broadcasts": pm.state_proposal_broadcasts(),
+                "experience_sync": {
+                    "broadcasts": pm.experience_sync_broadcasts(),
+                    "inbound_delivered": pm.experience_sync_inbound_delivered(),
+                    "inbound_applied": pm.experience_sync_inbound_applied(),
+                    "inbound_rejected": pm.experience_sync_inbound_rejected(),
+                },
             });
             (serde_json::Value::Array(peers), view)
         },
@@ -766,6 +772,12 @@ pub(super) async fn cluster_status_handler(State(state): State<RestApiState>) ->
                 "is_leader": false,
                 "cluster_size": 1,
                 "state_proposal_broadcasts": 0,
+                "experience_sync": {
+                    "broadcasts": 0,
+                    "inbound_delivered": 0,
+                    "inbound_applied": 0,
+                    "inbound_rejected": 0,
+                },
             }),
         ),
     };

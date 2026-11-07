@@ -131,6 +131,15 @@ pub struct PeerManager {
     /// 这里按「事件发出」计数，是观察 O(N²) 放大时「发送次数」的入口指标。
     /// 与 [`Self::broadcast_state_proposal`] 同处，天然对齐发送动作。
     state_proposal_broadcasts: std::sync::atomic::AtomicU64,
+    /// Phase 6.2b：本地产生并发往本地广播/对端流的经验同步事件数。
+    experience_sync_broadcasts: std::sync::atomic::AtomicU64,
+    /// Phase 6.2b：从远端投递到入站总线的经验同步事件数（不含本地广播）。
+    experience_sync_inbound_delivered: std::sync::atomic::AtomicU64,
+    /// Phase 6.2b：入站经验被 CRDT 合并实际写入本地（Applied）的次数。
+    experience_sync_inbound_applied: std::sync::atomic::AtomicU64,
+    /// Phase 6.2b：入站经验被拒绝/丢弃的次数（反序列化失败、联邦质量拒绝、落库错误）。
+    /// Kept/Equal（幂等/本地更新）不计入 rejected，以免与“拒绝”语义混淆。
+    experience_sync_inbound_rejected: std::sync::atomic::AtomicU64,
 }
 
 impl PeerManager {
@@ -146,6 +155,10 @@ impl PeerManager {
             peer_ttl,
             last_seen: Arc::new(RwLock::new(BTreeMap::new())),
             state_proposal_broadcasts: std::sync::atomic::AtomicU64::new(0),
+            experience_sync_broadcasts: std::sync::atomic::AtomicU64::new(0),
+            experience_sync_inbound_delivered: std::sync::atomic::AtomicU64::new(0),
+            experience_sync_inbound_applied: std::sync::atomic::AtomicU64::new(0),
+            experience_sync_inbound_rejected: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -301,6 +314,36 @@ impl PeerManager {
         self.state_proposal_broadcasts.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// Phase 6.2b：累计本地产生的经验同步广播数。
+    pub fn experience_sync_broadcasts(&self) -> u64 {
+        self.experience_sync_broadcasts.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Phase 6.2b：累计投递到入站总线的经验同步事件数。
+    pub fn experience_sync_inbound_delivered(&self) -> u64 {
+        self.experience_sync_inbound_delivered.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Phase 6.2b：累计入站经验实际写入次数（CRDT Applied）。
+    pub fn experience_sync_inbound_applied(&self) -> u64 {
+        self.experience_sync_inbound_applied.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Phase 6.2b：累计入站经验拒绝次数（解析/联邦质量/落库错误）。
+    pub fn experience_sync_inbound_rejected(&self) -> u64 {
+        self.experience_sync_inbound_rejected.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Phase 6.2b：记录入站经验应用结果（由 handler 调用，不改变合并语义）。
+    pub(crate) fn record_experience_sync_applied(&self) {
+        self.experience_sync_inbound_applied.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Phase 6.2b：记录入站经验拒绝（由 handler 调用，不改变合并语义）。
+    pub(crate) fn record_experience_sync_rejected(&self) {
+        self.experience_sync_inbound_rejected.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
     /// 广播一个本地产生的 `ExperienceSync` 事件。
     ///
     /// 事件同时进入本地订阅者（`ExperienceSyncHandler`）与已建立的对端流，
@@ -312,6 +355,8 @@ impl PeerManager {
         vector_clock_json: impl Into<String>,
         payload: Vec<u8>,
     ) {
+        self.experience_sync_broadcasts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let _ = self.event_tx.send(ClusterEvent::ExperienceSync {
             exp_key: exp_key.into(),
             version,
@@ -336,6 +381,7 @@ impl PeerManager {
         vector_clock_json: impl Into<String>,
         payload: Vec<u8>,
     ) {
+        self.experience_sync_inbound_delivered.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let _ = self.inbound_tx.send(ClusterEvent::ExperienceSync {
             exp_key: exp_key.into(),
             version,
@@ -628,5 +674,33 @@ mod tests {
         // 即使 TTL 过期也不会再处理这个 node_id
         std::thread::sleep(Duration::from_millis(50));
         assert!(mgr.evict_expired().is_empty());
+    }
+
+    /// Phase 6.2b：经验同步计数对齐 state_proposal_broadcasts；入站投递不计入 broadcast。
+    #[test]
+    fn test_experience_sync_counters_separate_broadcast_and_inbound() {
+        let mgr = PeerManager::new("node-a", Duration::from_secs(30));
+        assert_eq!(mgr.experience_sync_broadcasts(), 0);
+        assert_eq!(mgr.experience_sync_inbound_delivered(), 0);
+        assert_eq!(mgr.experience_sync_inbound_applied(), 0);
+        assert_eq!(mgr.experience_sync_inbound_rejected(), 0);
+
+        mgr.broadcast_experience_sync("exp:1:node-a:0", 1, "{}", vec![1]);
+        mgr.broadcast_experience_sync("exp:1:node-a:1", 2, "{}", vec![2]);
+        assert_eq!(mgr.experience_sync_broadcasts(), 2);
+        assert_eq!(mgr.experience_sync_inbound_delivered(), 0);
+
+        mgr.deliver_inbound_experience_sync("exp:1:node-b:0", 1, "{}", vec![3]);
+        assert_eq!(
+            mgr.experience_sync_broadcasts(),
+            2,
+            "入站投递不应增加 broadcast"
+        );
+        assert_eq!(mgr.experience_sync_inbound_delivered(), 1);
+
+        mgr.record_experience_sync_applied();
+        mgr.record_experience_sync_rejected();
+        assert_eq!(mgr.experience_sync_inbound_applied(), 1);
+        assert_eq!(mgr.experience_sync_inbound_rejected(), 1);
     }
 }
