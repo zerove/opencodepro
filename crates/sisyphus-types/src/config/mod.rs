@@ -364,6 +364,15 @@ impl Config {
         if let Some(v) = env_bool("SISYPHUS_CLUSTER_CONTROL_PLANE_ENABLED") {
             self.cluster.control_plane.enabled = v;
         }
+        if let Some(v) = env_u64("SISYPHUS_CLUSTER_CONTROL_PLANE_PROPOSE_TIMEOUT_MS") {
+            self.cluster.control_plane.propose_timeout_ms = v;
+        }
+        if let Some(v) = env_u64("SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MIN_SECS") {
+            self.cluster.control_plane.lease_ttl_min_secs = v;
+        }
+        if let Some(v) = env_u64("SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MAX_SECS") {
+            self.cluster.control_plane.lease_ttl_max_secs = v;
+        }
         if let Some(v) = env_f64("SISYPHUS_CLUSTER_FEDERATED_MIN_QUALITY_SCORE") {
             self.cluster.federated.min_quality_score = v;
         }

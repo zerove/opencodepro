@@ -489,3 +489,17 @@ registry_url = "https://registry.sisyphus.ai"
 # 环境变量: SISYPHUS_JCODE_SOCKET_PATH
 # 类型: string | 默认: "/tmp/jcode-debug.sock"
 socket_path = "/tmp/jcode-debug.sock"
+
+[cluster.control_plane]
+# 强一致控制面门禁（ADR-019，条件触发；v1 租约）。默认关闭。
+# 环境变量: SISYPHUS_CLUSTER_CONTROL_PLANE_ENABLED
+# 类型: bool | 默认: false
+enabled = false
+# ProposeControl/多数派协调超时（毫秒）。超时视为不确定，不判定成功。
+# 环境变量: SISYPHUS_CLUSTER_CONTROL_PLANE_PROPOSE_TIMEOUT_MS
+# 类型: u64 | 默认: 2000
+propose_timeout_ms = 2000
+# 租约 TTL 下限/上限（秒，v1 bounds）
+# 环境变量: SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MIN_SECS / _MAX_SECS
+lease_ttl_min_secs = 1
+lease_ttl_max_secs = 3600

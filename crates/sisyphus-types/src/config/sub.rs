@@ -625,12 +625,42 @@ impl McpConfig {
 ///
 /// 默认 `enabled = false`：不启用任何强一致控制面提交路径。即使启用，也仅在满足
 /// ADR-019 准入条件（proposer 装配、故障模型、验证矩阵、回滚）后才可产生实际效果；
-/// 当前未实现生产 proposer/RPC，启用不应被解释为“控制面可用”。
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+/// 未满足 ADR-019 准入条件前，启用不应被解释为“控制面可用”。
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ClusterControlPlaneConfig {
     /// 是否启用控制面门禁（默认 false）。
     #[serde(default)]
     pub enabled: bool,
+    /// `ProposeControl`/多数派协调超时（毫秒）。超时视为不确定，**不判定成功**。
+    #[serde(default = "default_control_plane_propose_timeout_ms")]
+    pub propose_timeout_ms: u64,
+    /// 租约 TTL 下限（秒，v1 bounds）。
+    #[serde(default = "default_control_plane_lease_ttl_min_secs")]
+    pub lease_ttl_min_secs: u64,
+    /// 租约 TTL 上限（秒，v1 bounds）。
+    #[serde(default = "default_control_plane_lease_ttl_max_secs")]
+    pub lease_ttl_max_secs: u64,
+}
+
+fn default_control_plane_propose_timeout_ms() -> u64 {
+    2000
+}
+fn default_control_plane_lease_ttl_min_secs() -> u64 {
+    1
+}
+fn default_control_plane_lease_ttl_max_secs() -> u64 {
+    3600
+}
+
+impl Default for ClusterControlPlaneConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            propose_timeout_ms: default_control_plane_propose_timeout_ms(),
+            lease_ttl_min_secs: default_control_plane_lease_ttl_min_secs(),
+            lease_ttl_max_secs: default_control_plane_lease_ttl_max_secs(),
+        }
+    }
 }
 
 /// Cluster peer protocol configuration (ADR-009 § 1).

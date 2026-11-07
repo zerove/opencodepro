@@ -146,7 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let coord = std::sync::Arc::new(ControlPlaneCoordinator::new(
                     manager.clone(),
                     state.clone(),
-                    std::time::Duration::from_secs(2),
+                    std::time::Duration::from_millis(cfg.control_plane.propose_timeout_ms.max(1)),
                 ));
                 (Some(state), Some(coord))
             } else {
@@ -297,12 +297,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             runtime.control_plane_state.clone(),
             runtime.control_plane_coordinator.clone(),
         ) {
-            ClusterServiceImpl::with_control_plane_coordinator(
+            ClusterServiceImpl::with_control_plane_coordinator_and_bounds(
                 runtime.peer_manager.clone(),
                 Some(experience_bank.clone()),
                 cp,
                 coord,
                 cfg.control_plane.enabled,
+                cfg.control_plane.lease_ttl_min_secs,
+                cfg.control_plane.lease_ttl_max_secs,
             )
         } else if let Some(cp) = runtime.control_plane_state.clone() {
             ClusterServiceImpl::with_control_plane(

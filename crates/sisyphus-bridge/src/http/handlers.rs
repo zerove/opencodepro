@@ -802,6 +802,12 @@ pub(super) async fn cluster_status_handler(State(state): State<RestApiState>) ->
             "strategy_sync_interval_secs": cluster_cfg.strategy_sync_interval_secs,
             "static_peers": cluster_cfg.peers,
             "control_plane_enabled": cluster_cfg.control_plane.enabled,
+            "control_plane": {
+                "enabled": cluster_cfg.control_plane.enabled,
+                "propose_timeout_ms": cluster_cfg.control_plane.propose_timeout_ms,
+                "lease_ttl_min_secs": cluster_cfg.control_plane.lease_ttl_min_secs,
+                "lease_ttl_max_secs": cluster_cfg.control_plane.lease_ttl_max_secs,
+            },
         },
         "peer_manager": peer_view,
         "consensus": {

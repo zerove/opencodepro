@@ -93,6 +93,9 @@ pub struct ClusterServiceImpl {
     control_plane_enabled: bool,
     /// ADR-019：租约多数派协调器（用于 `SubmitControlLease`）。
     control_plane_coordinator: Option<Arc<crate::peer::control_plane::ControlPlaneCoordinator>>,
+    /// ADR-019：租约 TTL bounds（v1，来自 `[cluster.control_plane]` 配置）。
+    lease_ttl_min_secs: u64,
+    lease_ttl_max_secs: u64,
 }
 
 impl ClusterServiceImpl {
@@ -139,6 +142,27 @@ impl ClusterServiceImpl {
         control_plane_enabled: bool,
         control_plane_coordinator: Option<Arc<crate::peer::control_plane::ControlPlaneCoordinator>>,
     ) -> Self {
+        Self::with_gate_control_coordinator_and_bounds(
+            manager,
+            experience_bank,
+            control_plane,
+            control_plane_enabled,
+            control_plane_coordinator,
+            1,
+            3600,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn with_gate_control_coordinator_and_bounds(
+        manager: Arc<PeerManager>,
+        experience_bank: Option<Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
+        control_plane: Option<Arc<crate::peer::control_plane::ControlPlaneState>>,
+        control_plane_enabled: bool,
+        control_plane_coordinator: Option<Arc<crate::peer::control_plane::ControlPlaneCoordinator>>,
+        lease_ttl_min_secs: u64,
+        lease_ttl_max_secs: u64,
+    ) -> Self {
         // ADR-013：生产路径闸门恒开，因此 Join 不受任何额外延迟影响。
         Self {
             manager,
@@ -156,6 +180,8 @@ impl ClusterServiceImpl {
             control_plane,
             control_plane_enabled,
             control_plane_coordinator,
+            lease_ttl_min_secs,
+            lease_ttl_max_secs,
         }
     }
 
@@ -183,12 +209,35 @@ impl ClusterServiceImpl {
         coordinator: Arc<crate::peer::control_plane::ControlPlaneCoordinator>,
         control_plane_enabled: bool,
     ) -> Self {
-        Self::with_gate_control_and_coordinator(
+        Self::with_control_plane_coordinator_and_bounds(
+            manager,
+            experience_bank,
+            control_plane,
+            coordinator,
+            control_plane_enabled,
+            1,
+            3600,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_control_plane_coordinator_and_bounds(
+        manager: Arc<PeerManager>,
+        experience_bank: Option<Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
+        control_plane: Arc<crate::peer::control_plane::ControlPlaneState>,
+        coordinator: Arc<crate::peer::control_plane::ControlPlaneCoordinator>,
+        control_plane_enabled: bool,
+        lease_ttl_min_secs: u64,
+        lease_ttl_max_secs: u64,
+    ) -> Self {
+        Self::with_gate_control_coordinator_and_bounds(
             manager,
             experience_bank,
             Some(control_plane),
             control_plane_enabled,
             Some(coordinator),
+            lease_ttl_min_secs,
+            lease_ttl_max_secs,
         )
     }
 
@@ -221,6 +270,8 @@ impl ClusterServiceImpl {
             control_plane: None,
             control_plane_enabled: false,
             control_plane_coordinator: None,
+            lease_ttl_min_secs: 1,
+            lease_ttl_max_secs: 3600,
         };
         let handle = JoinGateHandle {
             gate: Arc::clone(&service.join_admit),
@@ -604,17 +655,14 @@ impl Cluster for ClusterServiceImpl {
                 idempotent_replay: false,
             }));
         };
-        // v1 TTL bounds (ADR-019 默认实施；后续可配置化)
-        const MIN_TTL_SECS: u64 = 1;
-        const MAX_TTL_SECS: u64 = 3600;
         let d = state.apply(
             &req.request_id,
             &req.key,
             &req.operation,
             &req.payload_json,
             req.expected_generation,
-            MIN_TTL_SECS,
-            MAX_TTL_SECS,
+            self.lease_ttl_min_secs,
+            self.lease_ttl_max_secs,
         );
         Ok(Response::new(ControlProposeResponse {
             accepted: d.accepted,
@@ -657,9 +705,6 @@ impl Cluster for ClusterServiceImpl {
                 uncertain: false,
             }));
         };
-        // v1 TTL bounds (ADR-019；后续可配置化)
-        const MIN_TTL_SECS: u64 = 1;
-        const MAX_TTL_SECS: u64 = 3600;
         let out = coord
             .propose_lease(
                 &req.request_id,
@@ -667,8 +712,8 @@ impl Cluster for ClusterServiceImpl {
                 &req.operation,
                 &req.payload_json,
                 req.expected_generation,
-                MIN_TTL_SECS,
-                MAX_TTL_SECS,
+                self.lease_ttl_min_secs,
+                self.lease_ttl_max_secs,
             )
             .await;
         Ok(Response::new(ControlLeaseResponse {

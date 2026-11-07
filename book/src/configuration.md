@@ -328,12 +328,16 @@ quality = clamp(
 ### `[cluster.control_plane]` 字段（ADR-019，条件触发）
 
 强一致控制面门禁。**默认关闭**；未满足 ADR-019 准入条件（语义/分工、proposer 装配、
-故障模型、可观测、验证矩阵、回滚）时不得启用生产提交路径。当前未实现生产
-proposer/RPC，`enabled=true` 不代表控制面可用。
+故障模型、可观测、验证矩阵、回滚、专用运行器证据）时不得启用生产提交路径。
+`enabled=true` 不代表控制面生产可用；v1 语义为多数派 ack + `request_id` 幂等 +
+fencing/TTL，**超时/不确定=错误，不判定成功**（非 Raft 线性一致）。
 
 | 字段 | 环境变量 | 类型 | 默认 |
 |------|----------|------|------|
 | `enabled` | `SISYPHUS_CLUSTER_CONTROL_PLANE_ENABLED` | bool | **false** |
+| `propose_timeout_ms` | `SISYPHUS_CLUSTER_CONTROL_PLANE_PROPOSE_TIMEOUT_MS` | u64（毫秒） | 2000 |
+| `lease_ttl_min_secs` | `SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MIN_SECS` | u64（秒） | 1 |
+| `lease_ttl_max_secs` | `SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MAX_SECS` | u64（秒） | 3600 |
 
 ### `[cluster.strategy_selection]` 字段（v0.4.0 Phase E，ADR-017 Amendment 3）
 
