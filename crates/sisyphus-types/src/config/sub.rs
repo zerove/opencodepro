@@ -621,6 +621,24 @@ impl McpConfig {
 
 // ── ClusterConfig (TODO 8.3.1) ─────────────────────────────────────────────
 
+/// 控制面（强一致操作）门禁配置（ADR-019，条件触发）。
+///
+/// 默认 `enabled = false`：不启用任何强一致控制面提交路径。即使启用，也仅在满足
+/// ADR-019 准入条件（proposer 装配、故障模型、验证矩阵、回滚）后才可产生实际效果；
+/// 当前未实现生产 proposer/RPC，启用不应被解释为“控制面可用”。
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ClusterControlPlaneConfig {
+    /// 是否启用控制面门禁（默认 false）。
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+impl Default for ClusterControlPlaneConfig {
+    fn default() -> Self {
+        Self { enabled: false }
+    }
+}
+
 /// Cluster peer protocol configuration (ADR-009 § 1).
 ///
 /// 默认 `enabled = false` 保持单机行为不变；启用后启动 mDNS discovery +
@@ -676,6 +694,10 @@ pub struct ClusterConfig {
     /// [`crate::strategy_weights::select_strategy`]。
     #[serde(default)]
     pub strategy_selection: crate::strategy_weights::StrategySelectionConfig,
+
+    /// 控制面门禁（ADR-019）。默认关闭；未满足准入条件时不得启用生产提交路径。
+    #[serde(default)]
+    pub control_plane: ClusterControlPlaneConfig,
 }
 
 fn default_cluster_name() -> String {
@@ -711,6 +733,7 @@ impl Default for ClusterConfig {
             strategy_sync_interval_secs: default_strategy_sync_interval_secs(),
             federated: crate::experience::FederatedAggregatorConfig::default(),
             strategy_selection: crate::strategy_weights::StrategySelectionConfig::default(),
+            control_plane: ClusterControlPlaneConfig::default(),
         }
     }
 }

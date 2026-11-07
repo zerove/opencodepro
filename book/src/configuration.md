@@ -325,6 +325,16 @@ quality = clamp(
 被拒绝的经验会记 `warn` 日志并携带 `quality` / `min_quality_score`，不会静默丢弃。
 参数在启动时装配，热重载不改变已启动的同步处理器。
 
+### `[cluster.control_plane]` 字段（ADR-019，条件触发）
+
+强一致控制面门禁。**默认关闭**；未满足 ADR-019 准入条件（语义/分工、proposer 装配、
+故障模型、可观测、验证矩阵、回滚）时不得启用生产提交路径。当前未实现生产
+proposer/RPC，`enabled=true` 不代表控制面可用。
+
+| 字段 | 环境变量 | 类型 | 默认 |
+|------|----------|------|------|
+| `enabled` | `SISYPHUS_CLUSTER_CONTROL_PLANE_ENABLED` | bool | **false** |
+
 ### `[cluster.strategy_selection]` 字段（v0.4.0 Phase E，ADR-017 Amendment 3）
 
 执行路径消费集群策略权重的开关。`enabled = false`（默认）时策略提示只依据本地

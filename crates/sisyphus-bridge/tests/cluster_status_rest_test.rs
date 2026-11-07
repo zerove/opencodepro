@@ -42,6 +42,7 @@ async fn cluster_status_endpoint_reports_single_node_view() {
     let (status, json) = get(&app, "/api/cluster/status").await;
     assert_eq!(status, StatusCode::OK, "{json:?}");
     assert_eq!(json["enabled"], false);
+    assert_eq!(json["config"]["control_plane_enabled"], false);
     assert!(
         json["cluster_name"].is_string(),
         "cluster_name 应为字符串: {json:?}"

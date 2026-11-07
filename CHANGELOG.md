@@ -69,7 +69,10 @@
   `StateProposal`/`ExperienceSync`（ADR-017/018）。`kernel` 的 `save_sop` 已有
   propose 失败回退本地保存路径，行为保持可用但语义更显式。新增/更新
   `consensus::tests::test_propose_rejected_as_leader_without_proposer`；`NoOpConsensus`
-  文档澄清其 `Ok(())` 非控制面提交语义。起草 `docs/adr/019-cluster-consensus-control-plane.md`。
+  文档澄清其 `Ok(())` 非控制面提交语义。起草 `docs/adr/019-cluster-consensus-control-plane.md`。新增 `[cluster.control_plane]`
+门禁配置（默认 `enabled=false`，env `SISYPHUS_CLUSTER_CONTROL_PLANE_ENABLED`），并在
+`/api/cluster/status` 的 `config.control_plane_enabled` 暴露；同步 `config.example.toml`、
+`book/src/configuration.md`。门禁不代表控制面可用（ADR-019 准入条件未满足）。
 - **6.4 量化基线（无推测性优化）**：记录 `bench_consensus_5_nodes` 快照（mock 5 节点，
   1000 ops / 4.63s，216 ops/s；`--lib bench_consensus_5_nodes --nocapture`）于
   `docs/benchmarks/consensus-control-plane-baseline-2026-11-08.md`；未发现需代码优化的
