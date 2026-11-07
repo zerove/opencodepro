@@ -85,6 +85,10 @@ pub struct MySisyphusBridge {
     /// 挂载在桥接上而非 `RestApiState`，避免改 `RestApiState` 的 3 处构造点。
     pub(crate) strategy_weights:
         Arc<parking_lot::RwLock<sisyphus_types::strategy_weights::FederatedStrategyWeights>>,
+    /// 集群 peer 管理器（`None` = 单节点/集群未启用时未创建运行时）。
+    pub(crate) peer_manager: Option<Arc<crate::peer::PeerManager>>,
+    /// 集群配置快照（只读，用于状态端点）。
+    pub(crate) cluster_config: sisyphus_types::ClusterConfig,
 }
 
 impl Clone for MySisyphusBridge {
@@ -117,6 +121,8 @@ impl Clone for MySisyphusBridge {
             chaos_fault_type_counters: self.chaos_fault_type_counters.clone(),
             chaos_auto_fix_triggered: self.chaos_auto_fix_triggered.clone(),
             strategy_weights: self.strategy_weights.clone(),
+            peer_manager: self.peer_manager.clone(),
+            cluster_config: self.cluster_config.clone(),
         }
     }
 }
@@ -127,6 +133,8 @@ impl Clone for MySisyphusBridge {
 pub struct ClusterRuntime {
     pub peer_manager: Arc<crate::peer::PeerManager>,
     pub node_id: String,
+    /// 集群配置快照（用于 `/api/cluster/status` 可观测，不改变行为）。
+    pub cluster_config: sisyphus_types::ClusterConfig,
 }
 
 impl MySisyphusBridge {
@@ -723,6 +731,11 @@ impl MySisyphusBridge {
             (config.chaos.enabled, config.chaos.default_fault_probability)
         };
 
+        let (peer_manager, cluster_config) = match cluster.as_ref() {
+            Some(rt) => (Some(rt.peer_manager.clone()), rt.cluster_config.clone()),
+            None => (None, config_snapshot.cluster.clone()),
+        };
+
         let bridge = MySisyphusBridge {
             kernel,
             state_store,
@@ -761,6 +774,8 @@ impl MySisyphusBridge {
             chaos_fault_type_counters: Arc::new(parking_lot::Mutex::new(HashMap::new())),
             chaos_auto_fix_triggered: Arc::new(AtomicBool::new(false)),
             strategy_weights,
+            peer_manager,
+            cluster_config,
         };
 
         let bridge_arc = Arc::new(bridge);
@@ -878,6 +893,16 @@ impl MySisyphusBridge {
         &self,
     ) -> &Arc<parking_lot::RwLock<sisyphus_types::strategy_weights::FederatedStrategyWeights>> {
         &self.strategy_weights
+    }
+
+    /// 集群 peer 管理器（Phase 6.1 只读状态端点用；`None` = 单节点）。
+    pub fn peer_manager(&self) -> Option<&Arc<crate::peer::PeerManager>> {
+        self.peer_manager.as_ref()
+    }
+
+    /// 集群配置快照（只读）。
+    pub fn cluster_config(&self) -> &sisyphus_types::ClusterConfig {
+        &self.cluster_config
     }
 
     /// If chaos is enabled, randomly inject a delay or error with the

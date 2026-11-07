@@ -778,6 +778,18 @@ fn build_document() -> Result<serde_json::Value, String> {
                     }
                 }
             },
+            "/api/cluster/status": {
+                "get": {
+                    "summary": "Get cluster coordination status",
+                    "description": "Read-only snapshot of cluster coordination state: config (enabled/name/peer TTL/strategy sync interval), peer manager view (self/leader/size/broadcast counters), consensus trait view (leader/is_leader), and peer list with last_seen age. Does not change propagation, merge, or decision paths.",
+                    "operationId": "getClusterStatus",
+                    "responses": {
+                        "200": {"description": "Cluster coordination status", "content": {"application/json": {"schema": {"type": "object", "description": "enabled, cluster_name, config, peer_manager, consensus, peers"}}}},
+                        "401": {"$ref": "#/components/responses/Unauthorized"}
+                    },
+                    "security": [{"bearerAuth": []}]
+                }
+            },
 
             // ── Roadmap ──────────────────────────────────────────────────
         }

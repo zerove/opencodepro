@@ -729,6 +729,71 @@ pub(super) async fn strategy_weights_handler(
     (StatusCode::OK, Json(body)).into_response()
 }
 
+pub(super) async fn cluster_status_handler(State(state): State<RestApiState>) -> impl IntoResponse {
+    // Phase 6.1：只读协调状态快照，不改变传播/合并/决策路径。
+    let cluster_cfg = state.bridge.cluster_config();
+    let (peers_json, peer_view) = match state.bridge.peer_manager() {
+        Some(pm) => {
+            let now = std::time::Instant::now();
+            let peers: Vec<serde_json::Value> = pm
+                .list_peers()
+                .into_iter()
+                .map(|p| {
+                    let last_seen_secs_ago =
+                        pm.last_seen(&p.node_id).map(|t| now.duration_since(t).as_secs());
+                    serde_json::json!({
+                        "node_id": p.node_id,
+                        "grpc_addr": p.grpc_addr,
+                        "joined_at": p.joined_at,
+                        "last_seen_secs_ago": last_seen_secs_ago,
+                    })
+                })
+                .collect();
+            let view = serde_json::json!({
+                "self_node_id": pm.self_node_id(),
+                "leader_id": pm.leader_id(),
+                "is_leader": pm.is_leader(),
+                "cluster_size": pm.cluster_size(),
+                "state_proposal_broadcasts": pm.state_proposal_broadcasts(),
+            });
+            (serde_json::Value::Array(peers), view)
+        },
+        None => (
+            serde_json::Value::Array(Vec::new()),
+            serde_json::json!({
+                "self_node_id": null,
+                "leader_id": null,
+                "is_leader": false,
+                "cluster_size": 1,
+                "state_proposal_broadcasts": 0,
+            }),
+        ),
+    };
+
+    // Consensus trait view（async）；生产装配为字典序 leader / proposer 可能为 None。
+    let consensus_leader = state.bridge.consensus.get_leader().await;
+    let consensus_is_leader = state.bridge.consensus.is_leader().await;
+
+    let body = serde_json::json!({
+        "enabled": cluster_cfg.enabled,
+        "cluster_name": cluster_cfg.cluster_name,
+        "config": {
+            "node_id": cluster_cfg.node_id,
+            "peer_ttl_secs": cluster_cfg.peer_ttl_secs,
+            "join_timeout_secs": cluster_cfg.join_timeout_secs,
+            "strategy_sync_interval_secs": cluster_cfg.strategy_sync_interval_secs,
+            "static_peers": cluster_cfg.peers,
+        },
+        "peer_manager": peer_view,
+        "consensus": {
+            "leader_id": consensus_leader,
+            "is_leader": consensus_is_leader,
+        },
+        "peers": peers_json,
+    });
+    (StatusCode::OK, Json(body)).into_response()
+}
+
 pub(super) async fn roadmap_project_handler(
     State(state): State<RestApiState>,
     method: axum::http::Method,

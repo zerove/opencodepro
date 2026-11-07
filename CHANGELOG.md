@@ -50,6 +50,12 @@
 
 ### Added
 
+- **集群协调状态端点**（Phase 6.1，只读）：`GET /api/cluster/status`（`operationId: getClusterStatus`）
+  返回集群配置快照、peer manager 视图（self/leader/cluster_size/peers/last_seen_secs_ago、
+  `state_proposal_broadcasts`）与 consensus trait 视图（leader/is_leader）。不改变传播、合并或
+  决策路径；为「多实例协调与共识」后续工作提供可观测基础。已接入 OpenAPI，集成测试
+  `cluster_status_rest_test` 覆盖单节点快照契约。
+
 - **联邦来源标注与一致性校验**（ADR-017 Amendment 4，Phase G，v0.4.0 后续）：
   - `ClusterEvent::StateProposal` / proto `StateProposal.source_node_id`（field 4）
     在全链路透传（manager → outbound → inbound → handler）。

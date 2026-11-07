@@ -145,6 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(sisyphus_bridge::bridge_service::ClusterRuntime {
                 peer_manager: manager,
                 node_id: self_node_id,
+                cluster_config: cfg,
             })
         }
     };

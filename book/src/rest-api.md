@@ -232,6 +232,18 @@ OpenAPI 规范位于 [`/openapi.json`](/openapi.json)，也可通过 Swagger UI 
 - 节点重启后槽位从初始 `generation` 重新开始，不会因为历史 `generation`
   更大而永久被拒。
 
+
+### `GET /api/cluster/status`
+
+返回集群协调的**只读**快照（Phase 6.1），用于排障与可观测；不改变传播、合并或决策路径。
+
+响应包含：
+- `enabled` / `cluster_name` / `config`（节点标识、TTL/超时、`strategy_sync_interval_secs`、静态 peers）
+- `peer_manager`（`self_node_id` / `leader_id` / `is_leader` / `cluster_size` / `state_proposal_broadcasts`）
+- `consensus`（trait 视图：`leader_id` / `is_leader`）
+- `peers[]`（`node_id` / `grpc_addr` / `joined_at` / `last_seen_secs_ago`）
+
+集群未启用或单节点运行时返回 200，`enabled=false`，`peers` 为空，`cluster_size=1`。
 ## 路线图
 
 ### `GET /api/roadmap/project/{id}`

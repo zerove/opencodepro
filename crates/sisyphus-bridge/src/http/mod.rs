@@ -190,6 +190,7 @@ pub fn build_router(state: RestApiState) -> Router {
         )
         .route("/api/experience/similar", post(experience_similar_handler))
         .route("/api/strategy/weights", get(strategy_weights_handler))
+        .route("/api/cluster/status", get(cluster_status_handler))
         .route("/api/execute/goal", post(execute_goal_handler))
         .route(
             "/api/execute/goal/:goal_id/status",
