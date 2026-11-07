@@ -636,6 +636,9 @@ impl Cluster for ClusterServiceImpl {
     ) -> Result<Response<ControlProposeResponse>, Status> {
         let req = request.into_inner();
         if !self.control_plane_enabled {
+            if let Some(s) = &self.control_plane {
+                s.record_disabled();
+            }
             return Ok(Response::new(ControlProposeResponse {
                 accepted: false,
                 applied_generation: 0,
@@ -680,6 +683,9 @@ impl Cluster for ClusterServiceImpl {
     ) -> Result<Response<ControlLeaseResponse>, Status> {
         let req = request.into_inner();
         if !self.control_plane_enabled {
+            if let Some(s) = &self.control_plane {
+                s.record_disabled();
+            }
             return Ok(Response::new(ControlLeaseResponse {
                 accepted: false,
                 applied_generation: 0,
@@ -693,6 +699,9 @@ impl Cluster for ClusterServiceImpl {
             }));
         }
         let Some(coord) = &self.control_plane_coordinator else {
+            if let Some(s) = &self.control_plane {
+                s.record_unavailable();
+            }
             return Ok(Response::new(ControlLeaseResponse {
                 accepted: false,
                 applied_generation: 0,

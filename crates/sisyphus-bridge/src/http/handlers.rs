@@ -809,6 +809,18 @@ pub(super) async fn cluster_status_handler(State(state): State<RestApiState>) ->
                 "lease_ttl_max_secs": cluster_cfg.control_plane.lease_ttl_max_secs,
             },
         },
+        "control_plane": match state.bridge.control_plane_state() {
+            Some(s) => serde_json::json!({
+                "configured": true,
+                "coordinator_configured": state.bridge.control_plane_coordinator().is_some(),
+                "stats": s.stats_snapshot(),
+            }),
+            None => serde_json::json!({
+                "configured": false,
+                "coordinator_configured": false,
+                "stats": null,
+            }),
+        },
         "peer_manager": peer_view,
         "consensus": {
             "leader_id": consensus_leader,

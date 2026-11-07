@@ -31,6 +31,22 @@ env -u RUSTUP_TOOLCHAIN cargo test -p sisyphus-bridge --no-default-features --li
 | 回滚演练 | `control_plane.rs::quorum_tests::rollback_gate_off_rejects_control_plane_writes` | gate off => `SubmitControlLease`/写路径 `DISABLED`，无状态写入；只读/状态路径行为按 ADR | `#[ignore]`，待专用 runner 执行记录 |
 | 少数派不可提交 | `control_plane.rs::quorum_tests::n3_minority_cannot_commit_when_quorum_unreachable` | 多数派不可达时 `accepted=false` 且 `uncertain` 或多数派不足；无假成功 | `#[ignore]`，待专用 runner 执行记录 |
 
+
+
+## 证据采集 harness（gRPC client，专用 runner）
+
+```bash
+# 查询
+cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -- \
+  --addr http://127.0.0.1:50051 --get lease:demo
+
+# 提交（同一 request_id 可重试；uncertain 时不得判定成功，需 GetControlLease 核对）
+cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -- \
+  --addr http://127.0.0.1:50051 --key lease:demo --owner worker-1 --request-id r-001 --operation lease.acquire --ttl-secs 30
+```
+
+输出 JSON（`kind=submit_control_lease|get_control_lease`），含 `accepted/uncertain/error_code/guidance` 或 `found/status_code`。网络分区/混沌/重启由专用运行环境注入；harness 仅标准化提交与状态核对证据。
+
 ## 仍需补充的专用 runner/生产证据（ADR-019 准入）
 
 - **真实 N=3 进程/网络**：分区、少数派不可提交、leader 变更（字典序/成员变更）后安全性、分区愈合收敛/拒绝符合定义。

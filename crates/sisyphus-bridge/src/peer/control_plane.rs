@@ -10,6 +10,7 @@
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -73,9 +74,44 @@ struct LeaseEntry {
     responses: HashMap<String, (u64, bool, String, String)>,
 }
 
+/// ADR-019 控制面只读观测计数（原子，不影响决策路径）。
+#[derive(Debug, Default)]
+pub struct ControlPlaneStats {
+    pub submit_total: AtomicU64,
+    pub submit_accepted: AtomicU64,
+    pub submit_rejected: AtomicU64,
+    pub submit_uncertain: AtomicU64,
+    pub submit_disabled: AtomicU64,
+    pub submit_unavailable: AtomicU64,
+}
+
+impl ControlPlaneStats {
+    pub fn snapshot(&self) -> ControlPlaneStatsSnapshot {
+        ControlPlaneStatsSnapshot {
+            submit_total: self.submit_total.load(Ordering::Relaxed),
+            submit_accepted: self.submit_accepted.load(Ordering::Relaxed),
+            submit_rejected: self.submit_rejected.load(Ordering::Relaxed),
+            submit_uncertain: self.submit_uncertain.load(Ordering::Relaxed),
+            submit_disabled: self.submit_disabled.load(Ordering::Relaxed),
+            submit_unavailable: self.submit_unavailable.load(Ordering::Relaxed),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ControlPlaneStatsSnapshot {
+    pub submit_total: u64,
+    pub submit_accepted: u64,
+    pub submit_rejected: u64,
+    pub submit_uncertain: u64,
+    pub submit_disabled: u64,
+    pub submit_unavailable: u64,
+}
+
 pub struct ControlPlaneState {
     leases: RwLock<HashMap<String, LeaseEntry>>,
     now_unix_ms: Box<dyn Fn() -> u64 + Send + Sync>,
+    stats: ControlPlaneStats,
 }
 
 impl Default for ControlPlaneState {
@@ -94,6 +130,7 @@ impl ControlPlaneState {
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or(0)
             }),
+            stats: ControlPlaneStats::default(),
         }
     }
 
@@ -102,6 +139,28 @@ impl ControlPlaneState {
         Self {
             leases: RwLock::new(HashMap::new()),
             now_unix_ms: Box::new(move || now_ms),
+            stats: ControlPlaneStats::default(),
+        }
+    }
+
+    pub fn stats_snapshot(&self) -> ControlPlaneStatsSnapshot {
+        self.stats.snapshot()
+    }
+
+    pub fn record_disabled(&self) {
+        self.stats.submit_disabled.fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn record_unavailable(&self) {
+        self.stats.submit_unavailable.fetch_add(1, Ordering::Relaxed);
+    }
+    pub fn record_submit_outcome(&self, out: &LeaseQuorumOutcome) {
+        self.stats.submit_total.fetch_add(1, Ordering::Relaxed);
+        if out.uncertain {
+            self.stats.submit_uncertain.fetch_add(1, Ordering::Relaxed);
+        } else if out.decision.accepted {
+            self.stats.submit_accepted.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.stats.submit_rejected.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -489,10 +548,12 @@ impl ControlPlaneCoordinator {
         if let Some(cached) = self.cached_decision(key, request_id) {
             let mut d = cached.decision;
             d.idempotent_replay = true;
-            return LeaseQuorumOutcome {
+            let out = LeaseQuorumOutcome {
                 decision: d,
                 ..cached
             };
+            self.state.record_submit_outcome(&out);
+            return out;
         }
         let cluster_size = self.peer_manager.cluster_size().max(1);
         let majority = cluster_size / 2 + 1;
@@ -611,6 +672,7 @@ impl ControlPlaneCoordinator {
         if !out.uncertain {
             self.cache_decision(key, request_id, &out);
         }
+        self.state.record_submit_outcome(&out);
         out
     }
 }

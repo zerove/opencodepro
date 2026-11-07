@@ -78,7 +78,7 @@
   `docs/benchmarks/consensus-control-plane-baseline-2026-11-08.md`；未发现需代码优化的
   触发证据，符合 ADR-018 6.4。
 - **6.5 默认实施（租约控制面，门禁关闭；A=gRPC/内部+只读状态，B=不接入调度器）**：
-  （更新）`[cluster.control_plane]` 配置化 `propose_timeout_ms`/`lease_ttl_min_secs`/`lease_ttl_max_secs`（env/example/book 同步）；`/api/cluster/status.config.control_plane` 只读暴露配置摘要；`PeerManager::on_peer_joined` 对已存在 peer 更新 `PeerInfo`/地址并刷新 `last_seen`（支持分区愈合，返回值兼容）；`make test-control-plane-dedicated` + 专用 runner 证据清单/执行记录（`docs/benchmarks/control-plane-dedicated-runner-evidence-2026-11-08.md`）；本地 in-process 执行 3/3 ignored 矩阵通过（仍非真实跨进程网络分区/混沌/重启/TLS 证据）。
+  只读观测：`/api/cluster/status.control_plane`（configured/coordinator_configured/stats：submit_total/accepted/rejected/uncertain/disabled/unavailable）；专用 runner 证据采集 `cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness`（JSON 输出 `SubmitControlLease`/`GetControlLease` + guidance）。
   `cluster.proto` 新增 `ProposeControl`（peer 本地 apply）/`SubmitControlLease`（协调节点多数派提交，`ControlLeaseResponse` 含 `accepts/cluster_size/uncertain`）/`GetControlLease`（只读查询，`OK/NOT_FOUND/DISABLED/UNAVAILABLE`）unary RPC；
   `peer::control_plane::{ControlPlaneState,ControlPlaneCoordinator,LeaseQuorumOutcome}`
   提供租约状态机与多数派协调（`lease.acquire/renew/release`，`request_id` 幂等、TTL、
