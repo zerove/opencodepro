@@ -38,11 +38,11 @@ env -u RUSTUP_TOOLCHAIN cargo test -p sisyphus-bridge --no-default-features --li
 ```bash
 # 查询
 cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -- \
-  --addr http://127.0.0.1:50051 --get lease:demo
+  --addr http://127.0.0.1:50051 --get lease:demo --output /tmp/lease-get.json
 
 # 提交（同一 request_id 可重试；uncertain 时不得判定成功，需 GetControlLease 核对）
 cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -- \
-  --addr http://127.0.0.1:50051 --key lease:demo --owner worker-1 --request-id r-001 --operation lease.acquire --ttl-secs 30
+  --addr http://127.0.0.1:50051 --key lease:demo --owner worker-1 --request-id r-001 --operation lease.acquire --ttl-secs 30 --output /tmp/lease-submit.json
 ```
 
 输出 JSON（`kind=submit_control_lease|get_control_lease`），含 `accepted/uncertain/error_code/guidance` 或 `found/status_code`。网络分区/混沌/重启由专用运行环境注入；harness 仅标准化提交与状态核对证据。

@@ -28,6 +28,7 @@ struct Args {
     operation: String,
     ttl_secs: u64,
     expected_generation: u64,
+    output: Option<String>,
 }
 
 fn parse_args() -> Args {
@@ -40,6 +41,7 @@ fn parse_args() -> Args {
         operation: "lease.acquire".into(),
         ttl_secs: 30,
         expected_generation: 0,
+        output: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(k) = it.next() {
@@ -75,21 +77,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .get_control_lease(GetControlLeaseRequest { key: key.clone() })
             .await?
             .into_inner();
-        println!(
-            "{}",
-            json!({
-                "kind": "get_control_lease",
-                "addr": a.addr,
-                "key": key,
-                "found": resp.found,
-                "owner": resp.owner,
-                "generation": resp.generation,
-                "expires_at_unix_ms": resp.expires_at_unix_ms,
-                "last_request_id": resp.last_request_id,
-                "status_code": resp.status_code,
-                "status_message": resp.status_message,
-            })
-        );
+        let out = json!({
+            "kind": "get_control_lease",
+            "addr": a.addr,
+            "key": key,
+            "found": resp.found,
+            "owner": resp.owner,
+            "generation": resp.generation,
+            "expires_at_unix_ms": resp.expires_at_unix_ms,
+            "last_request_id": resp.last_request_id,
+            "status_code": resp.status_code,
+            "status_message": resp.status_message,
+        });
+        println!("{}", out);
+        if let Some(p) = &a.output {
+            std::fs::write(p, serde_json::to_vec_pretty(&out)?)?;
+        }
         return Ok(());
     }
     let payload = serde_json::to_vec(&json!({"owner": a.owner, "ttl_secs": a.ttl_secs}))?;
@@ -104,31 +107,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await?
         .into_inner();
-    println!(
-        "{}",
-        json!({
-            "kind": "submit_control_lease",
-            "addr": a.addr,
-            "request_id": a.request_id,
-            "key": a.key,
-            "operation": a.operation,
-            "accepted": resp.accepted,
-            "applied_generation": resp.applied_generation,
-            "current_generation": resp.current_generation,
-            "error_code": resp.error_code,
-            "error_message": resp.error_message,
-            "idempotent_replay": resp.idempotent_replay,
-            "accepts": resp.accepts,
-            "cluster_size": resp.cluster_size,
-            "uncertain": resp.uncertain,
-            "guidance": if resp.uncertain || (!resp.accepted && resp.error_code.is_empty()) {
-                "uncertain/timeout: do NOT assume success; retry with same request_id and verify via GetControlLease"
-            } else if resp.accepted {
-                "committed by quorum (v1 majority ack, not Raft linearizable); verify if needed via GetControlLease"
-            } else {
-                "rejected; check error_code/error_message"
-            }
-        })
-    );
+    let out = json!({
+        "kind": "submit_control_lease",
+        "addr": a.addr,
+        "request_id": a.request_id,
+        "key": a.key,
+        "operation": a.operation,
+        "accepted": resp.accepted,
+        "applied_generation": resp.applied_generation,
+        "current_generation": resp.current_generation,
+        "error_code": resp.error_code,
+        "error_message": resp.error_message,
+        "idempotent_replay": resp.idempotent_replay,
+        "accepts": resp.accepts,
+        "cluster_size": resp.cluster_size,
+        "uncertain": resp.uncertain,
+        "guidance": if resp.uncertain || (!resp.accepted && resp.error_code.is_empty()) {
+            "uncertain/timeout: do NOT assume success; retry with same request_id and verify via GetControlLease"
+        } else if resp.accepted {
+            "committed by quorum (v1 majority ack, not Raft linearizable); verify if needed via GetControlLease"
+        } else {
+            "rejected; check error_code/error_message"
+        }
+    });
+    println!("{}", out);
+    if let Some(p) = &a.output {
+        std::fs::write(p, serde_json::to_vec_pretty(&out)?)?;
+    }
     Ok(())
 }
