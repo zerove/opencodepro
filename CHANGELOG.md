@@ -85,7 +85,7 @@
   `ClusterServiceImpl::propose_control`（DISABLED/UNAVAILABLE 门禁，无假成功）+
   `with_control_plane`；`consensus::{GrpcPeerProposer,control_proposal_from_value}`；
   `ClusterRuntime`/`main.rs`/`MySisyphusBridge` 门禁装配 state+coordinator；`PeerManager`
-  地址解析（补 `http://`，排除 self）。快 CI：`control_plane` 9 / `consensus` 12 / `peer::` 74
+  地址解析（补 `http://`，排除 self）。快 CI：`control_plane` 11 / `consensus` 12；专用 runner 证据清单 `docs/benchmarks/control-plane-dedicated-runner-evidence-2026-11-08.md`
   passed（含 N=3 in-process quorum/renew-release-fencing/禁用门禁/Mock）；专用运行器矩阵
   `#[ignore = "requires dedicated runner"]`：`n3_partition_heal_rejoin_address_update`、
   `rollback_gate_off_rejects_control_plane_writes`、`n3_minority_cannot_commit_when_quorum_unreachable`。

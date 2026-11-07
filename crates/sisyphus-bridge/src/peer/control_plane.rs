@@ -988,4 +988,114 @@ mod quorum_tests {
         assert_eq!(got.owner, "n1");
         assert!(got.generation >= 1);
     }
+
+    /// ADR-019：成员变化/leader 字典序变化模拟下，协调仍按当前成员视图与多数派/不确定=错误判定。
+    #[tokio::test]
+    async fn coordinator_follows_membership_changes_fail_closed() {
+        let (m1, s1, _a1, _h1) = serve_node("n1", true).await;
+        // single node cluster (leader is n1) can commit locally
+        let coord = ControlPlaneCoordinator::new(m1.clone(), s1, Duration::from_millis(200));
+        let ok = coord
+            .propose_lease(
+                "r1",
+                "lease:solo",
+                "lease.acquire",
+                &lease_payload("n1", 30),
+                0,
+                1,
+                3600,
+            )
+            .await;
+        assert!(ok.decision.accepted, "{ok:?}");
+
+        // add two unreachable peers => majority uncertain/fail-closed, no false success
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new(
+            "n0",
+            "http://127.0.0.1:1",
+        )); // n0 would become leader by lexicographic order
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new(
+            "n2",
+            "http://127.0.0.1:1",
+        ));
+        let out = coord
+            .propose_lease(
+                "r2",
+                "lease:churn",
+                "lease.acquire",
+                &lease_payload("n1", 30),
+                0,
+                1,
+                3600,
+            )
+            .await;
+        assert!(!out.decision.accepted, "{out:?}");
+        assert!(
+            out.uncertain
+                || out.decision.error_code == "QUORUM_NOT_REACHED"
+                || out.decision.error_code == "CONTROL_PLANE_UNCERTAIN",
+            "{out:?}"
+        );
+
+        // peer leaves => membership view changes; still fail-closed while peers unreachable
+        let _ = m1.on_peer_left("n2", "test");
+        let out2 = coord
+            .propose_lease(
+                "r3",
+                "lease:churn2",
+                "lease.acquire",
+                &lease_payload("n1", 30),
+                0,
+                1,
+                3600,
+            )
+            .await;
+        assert!(!out2.decision.accepted, "{out2:?}");
+    }
+
+    /// ADR-019：不确定提交指引流程（同 request_id 重试 + GetControlLease 核对）。
+    #[tokio::test]
+    async fn uncertain_submission_guidance_retry_and_get() {
+        let (m1, s1, _a1, _h1) = serve_node("n1", true).await;
+        // local-only cluster for deterministic query; simulate "client retries with same request_id"
+        let coord = Arc::new(ControlPlaneCoordinator::new(
+            m1.clone(),
+            s1.clone(),
+            Duration::from_secs(2),
+        ));
+        let svc = ClusterServiceImpl::with_control_plane_coordinator(m1, None, s1, coord, true);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = format!("http://{}", listener.local_addr().unwrap());
+        let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
+        tokio::spawn(async move {
+            let _ = Server::builder()
+                .add_service(ClusterServer::new(svc))
+                .serve_with_incoming(incoming)
+                .await;
+        });
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        let mut c = ClusterClient::connect(addr).await.unwrap();
+        let req = ControlProposeRequest {
+            request_id: "same-u".into(),
+            key: "lease:u".into(),
+            operation: "lease.acquire".into(),
+            payload_json: lease_payload("n1", 30),
+            source_node_id: "client".into(),
+            expected_generation: 0,
+        };
+        let a = c.submit_control_lease(req.clone()).await.unwrap().into_inner();
+        assert!(a.accepted, "{a:?}");
+        let got = c
+            .get_control_lease(sisyphus_bridge_api::cluster_proto::GetControlLeaseRequest {
+                key: "lease:u".into(),
+            })
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(got.status_code, "OK");
+        assert_eq!(got.last_request_id, "same-u");
+        // retry with same request_id (idempotent)
+        let b = c.submit_control_lease(req).await.unwrap().into_inner();
+        assert!(b.accepted, "{b:?}");
+        assert_eq!(b.applied_generation, a.applied_generation);
+    }
 }
