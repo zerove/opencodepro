@@ -63,6 +63,18 @@
   （`inbound_rejected_deserialize`/`quality`/`apply`；Kept/Equal 不计为拒绝）。计数通过
   `/api/cluster/status` 暴露；新增 `book/src/cluster-troubleshooting.md` 排障 runbook。
 
+- **ADR-019 控制面安全门禁（Phase 6.5 准备，条件触发）**：`ClusterConsensus::propose` 在
+  leader 且**未配置 proposer** 时不再仅日志后返回 `Ok(())`，改为返回明确
+  `ConsensusError`（引用 ADR-019），防止强一致控制面“虚假提交成功”。数据面继续使用
+  `StateProposal`/`ExperienceSync`（ADR-017/018）。`kernel` 的 `save_sop` 已有
+  propose 失败回退本地保存路径，行为保持可用但语义更显式。新增/更新
+  `consensus::tests::test_propose_rejected_as_leader_without_proposer`；`NoOpConsensus`
+  文档澄清其 `Ok(())` 非控制面提交语义。起草 `docs/adr/019-cluster-consensus-control-plane.md`。
+- **6.4 量化基线（无推测性优化）**：记录 `bench_consensus_5_nodes` 快照（mock 5 节点，
+  1000 ops / 4.63s，216 ops/s；`--lib bench_consensus_5_nodes --nocapture`）于
+  `docs/benchmarks/consensus-control-plane-baseline-2026-11-08.md`；未发现需代码优化的
+  触发证据，符合 ADR-018 6.4。
+
 - **联邦来源标注与一致性校验**（ADR-017 Amendment 4，Phase G，v0.4.0 后续）：
   - `ClusterEvent::StateProposal` / proto `StateProposal.source_node_id`（field 4）
     在全链路透传（manager → outbound → inbound → handler）。

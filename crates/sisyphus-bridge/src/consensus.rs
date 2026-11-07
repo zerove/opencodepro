@@ -150,13 +150,25 @@ impl Consensus for ClusterConsensus {
             return Ok(());
         }
 
-        // 默认 no-op 行为：只 log，不真发 RPC
-        tracing::debug!(key = %key, "No proposer injected; logging only");
-        Ok(())
+        // ADR-019：无 proposer 时禁止虚假提交成功。控制面 propose 必须由显式注入的
+        // proposer + 明确的 quorum/故障语义承载；当前生产装配（ClusterConsensus::new）
+        // 不满足准入条件，返回明确错误而非仅日志后 Ok(())。
+        // 数据面同步应走 StateProposal/ExperienceSync（ADR-017/018），不要调用此路径。
+        tracing::warn!(
+            key = %key,
+            peer_count = peer_count,
+            "ClusterConsensus::propose rejected: control plane proposer not configured (ADR-019)"
+        );
+        Err(TypesError::ConsensusError(
+            "control plane proposer not configured; strong-consistency propose is disabled until ADR-019 admission criteria are satisfied (use StateProposal/ExperienceSync data plane)".into(),
+        ))
     }
 }
 
 /// No-op consensus implementation: always assumes this node is the leader.
+///
+/// 注意：`propose` 返回 `Ok(())` 仅表示“无共识层”。它**不是** ADR-019 控制面提交成功
+/// 语义；控制面强一致操作必须使用满足 ADR-019 准入条件的 `ClusterConsensus` + proposer。
 #[expect(dead_code)]
 pub(crate) struct NoOpConsensus;
 
@@ -220,11 +232,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_propose_succeeds_as_leader_without_proposer() {
-        // No proposer: defaults to no-op success (logging only)
+    async fn test_propose_rejected_as_leader_without_proposer() {
+        // ADR-019：无 proposer 不得虚假提交成功；返回明确错误（控制面未启用）。
         let consensus = ClusterConsensus::new("node-a".into(), vec!["node-b".into()]);
         assert!(consensus.is_leader().await);
-        consensus.propose("k", json!("v")).await.expect("leader propose");
+        let err = consensus.propose("k", json!("v")).await.unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("proposer not configured") || msg.contains("ADR-019"),
+            "unexpected error: {msg}"
+        );
     }
 
     #[tokio::test]
