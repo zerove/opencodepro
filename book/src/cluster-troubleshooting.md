@@ -52,8 +52,11 @@ GET /api/cluster/status
 - 非目标（当前不做）：跨节点策略协商、定向转发（除非满足触发条件）、独立经验聚合进程。
 
 
-## 5. 控制面（ADR-019，门禁关闭）
+## 5. 控制面（ADR-019，门禁关闭；A=gRPC/内部+只读）
 
 - `cluster.control_plane.enabled` / `SISYPHUS_CLUSTER_CONTROL_PLANE_ENABLED` 默认 `false`；`GET /api/cluster/status` 的 `config.control_plane_enabled` 反映门禁状态。
-- gRPC `Cluster.ProposeControl`：门禁关闭或状态未装配时返回 `accepted=false` + `DISABLED`/`UNAVAILABLE`，**不是**提交成功。
-- v1 租约操作（`lease.acquire/renew/release`）具备 `request_id` 幂等、TTL、fencing generation；生产多节点 quorum/分区/混沌验证与 REST 写入面尚未完成前不得生产启用。
+- gRPC：
+  - `Cluster.ProposeControl`：peer 本地 apply（proposer 调用）。门禁关闭/未装配返回 `accepted=false` + `DISABLED`/`UNAVAILABLE`，**不是**提交成功。
+  - `Cluster.SubmitControlLease`：协调节点多数派提交；`ControlLeaseResponse.uncertain=true` 或超时/连接失败导致的不确定结果 **必须视为失败/未知，不得判定成功**。可用同一 `request_id` 重试（幂等），并用 `Cluster.GetControlLease` 查询当前租约状态；协调节点不缓存 `uncertain` 结果，跨节点幂等由各节点租约状态保障。
+  - `Cluster.GetControlLease`：只读查询（`OK`/`NOT_FOUND`/`DISABLED`/`UNAVAILABLE`），用于不确定提交后的状态核对。
+- v1 租约（`lease.acquire/renew/release`）：`request_id` 幂等、TTL、fencing generation；语义为**多数派 ack + 不确定=错误**（非 Raft 线性一致）。生产多节点 quorum/分区/混沌/连接池-TLS/成员变更集成与专用运行器证据未完成前不得生产启用。

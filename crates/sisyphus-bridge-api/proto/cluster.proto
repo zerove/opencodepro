@@ -25,6 +25,9 @@ service Cluster {
   // ADR-019 租约协调提交（unary，客户端→协调节点）。执行多数派 quorum；超时/不确定=错误。
   // v1 由任意启用控制面的节点尝试协调（无强 leader 路由）；生产准入见 ADR-019。
   rpc SubmitControlLease (ControlProposeRequest) returns (ControlLeaseResponse);
+
+  // ADR-019 租约状态查询（只读，不改变状态）。用于不确定提交后的同 request_id/状态核对。
+  rpc GetControlLease (GetControlLeaseRequest) returns (GetControlLeaseResponse);
 }
 
 // Join 请求
@@ -232,3 +235,21 @@ message ControlLeaseResponse {
   bool uncertain = 9;
 }
 
+
+// ADR-019 租约只读查询请求。
+message GetControlLeaseRequest {
+  string key = 1;
+}
+
+// ADR-019 租约只读查询响应。
+message GetControlLeaseResponse {
+  bool found = 1;
+  string key = 2;
+  string owner = 3;
+  uint64 generation = 4;
+  uint64 expires_at_unix_ms = 5;
+  string last_request_id = 6;
+  // 机器可读状态码：`OK`/`NOT_FOUND`/`DISABLED`/`UNAVAILABLE`。
+  string status_code = 7;
+  string status_message = 8;
+}

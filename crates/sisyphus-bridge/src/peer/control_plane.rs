@@ -919,4 +919,73 @@ mod quorum_tests {
         assert!(!r4.accepted);
         assert_eq!(r4.error_code, "DISABLED");
     }
+
+    /// ADR-019：`GetControlLease` 只读查询（门禁/提交后状态/不确定提交指引配套）。
+    #[tokio::test]
+    async fn get_control_lease_read_only_and_gate() {
+        // gate off
+        let (_m, _s, addr, _h) = serve_node("n1", false).await;
+        let mut c = ClusterClient::connect(addr).await.unwrap();
+        let r = c
+            .get_control_lease(sisyphus_bridge_api::cluster_proto::GetControlLeaseRequest {
+                key: "lease:x".into(),
+            })
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(!r.found);
+        assert_eq!(r.status_code, "DISABLED");
+
+        // gate on, submit then get
+        let (m1, s1, _a1, _h1) = serve_node("n1", true).await;
+        let coord = std::sync::Arc::new(ControlPlaneCoordinator::new(
+            m1.clone(),
+            s1.clone(),
+            Duration::from_secs(2),
+        ));
+        let svc = ClusterServiceImpl::with_control_plane_coordinator(m1, None, s1, coord, true);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = format!("http://{}", listener.local_addr().unwrap());
+        let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
+        tokio::spawn(async move {
+            let _ = Server::builder()
+                .add_service(ClusterServer::new(svc))
+                .serve_with_incoming(incoming)
+                .await;
+        });
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        let mut c = ClusterClient::connect(addr).await.unwrap();
+        let nf = c
+            .get_control_lease(sisyphus_bridge_api::cluster_proto::GetControlLeaseRequest {
+                key: "lease:nope".into(),
+            })
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(nf.status_code, "NOT_FOUND");
+        let sub = c
+            .submit_control_lease(ControlProposeRequest {
+                request_id: "g1".into(),
+                key: "lease:get".into(),
+                operation: "lease.acquire".into(),
+                payload_json: lease_payload("n1", 30),
+                source_node_id: "c".into(),
+                expected_generation: 0,
+            })
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(sub.accepted, "{sub:?}");
+        let got = c
+            .get_control_lease(sisyphus_bridge_api::cluster_proto::GetControlLeaseRequest {
+                key: "lease:get".into(),
+            })
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(got.found);
+        assert_eq!(got.status_code, "OK");
+        assert_eq!(got.owner, "n1");
+        assert!(got.generation >= 1);
+    }
 }

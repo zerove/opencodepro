@@ -12,8 +12,9 @@ use crate::peer::anti_entropy;
 use crate::peer::manager::{ClusterEvent as MgrEvent, PeerInfo, PeerManager};
 use sisyphus_bridge_api::cluster_proto::{
     cluster_server::Cluster, ClusterEvent as ProtoEvent, ControlLeaseResponse,
-    ControlProposeRequest, ControlProposeResponse, ExperienceSync, JoinRequest, JoinResponse,
-    PeerInfo as ProtoPeerInfo, PeerJoined, PeerLeft, StateProposal,
+    ControlProposeRequest, ControlProposeResponse, ExperienceSync, GetControlLeaseRequest,
+    GetControlLeaseResponse, JoinRequest, JoinResponse, PeerInfo as ProtoPeerInfo, PeerJoined,
+    PeerLeft, StateProposal,
 };
 use std::pin::Pin;
 use std::sync::Arc;
@@ -681,6 +682,59 @@ impl Cluster for ClusterServiceImpl {
             cluster_size: out.cluster_size as u32,
             uncertain: out.uncertain,
         }))
+    }
+
+    async fn get_control_lease(
+        &self,
+        request: Request<GetControlLeaseRequest>,
+    ) -> Result<Response<GetControlLeaseResponse>, Status> {
+        let req = request.into_inner();
+        if !self.control_plane_enabled {
+            return Ok(Response::new(GetControlLeaseResponse {
+                found: false,
+                key: req.key,
+                owner: String::new(),
+                generation: 0,
+                expires_at_unix_ms: 0,
+                last_request_id: String::new(),
+                status_code: "DISABLED".to_string(),
+                status_message: "cluster.control_plane.enabled is false (ADR-019 gate)".to_string(),
+            }));
+        }
+        let Some(state) = &self.control_plane else {
+            return Ok(Response::new(GetControlLeaseResponse {
+                found: false,
+                key: req.key,
+                owner: String::new(),
+                generation: 0,
+                expires_at_unix_ms: 0,
+                last_request_id: String::new(),
+                status_code: "UNAVAILABLE".to_string(),
+                status_message: "control plane state not configured".to_string(),
+            }));
+        };
+        match state.get(&req.key) {
+            Some(lease) => Ok(Response::new(GetControlLeaseResponse {
+                found: true,
+                key: lease.key,
+                owner: lease.owner,
+                generation: lease.generation,
+                expires_at_unix_ms: lease.expires_at_unix_ms,
+                last_request_id: lease.last_request_id,
+                status_code: "OK".to_string(),
+                status_message: String::new(),
+            })),
+            None => Ok(Response::new(GetControlLeaseResponse {
+                found: false,
+                key: req.key,
+                owner: String::new(),
+                generation: 0,
+                expires_at_unix_ms: 0,
+                last_request_id: String::new(),
+                status_code: "NOT_FOUND".to_string(),
+                status_message: "lease not found or expired".to_string(),
+            })),
+        }
     }
 }
 
