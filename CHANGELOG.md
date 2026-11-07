@@ -78,14 +78,14 @@
   `docs/benchmarks/consensus-control-plane-baseline-2026-11-08.md`；未发现需代码优化的
   触发证据，符合 ADR-018 6.4。
 - **6.5 默认实施（租约控制面，门禁关闭；A=gRPC/内部+只读状态，B=不接入调度器）**：
-  `cluster.proto` 新增 `ProposeControl` unary RPC（`ControlProposeRequest/Response`）；
+  `cluster.proto` 新增 `ProposeControl`（peer 本地 apply）/`SubmitControlLease`（协调节点多数派提交，`ControlLeaseResponse` 含 `accepts/cluster_size/uncertain`）unary RPC；
   `peer::control_plane::{ControlPlaneState,ControlPlaneCoordinator,LeaseQuorumOutcome}`
   提供租约状态机与多数派协调（`lease.acquire/renew/release`，`request_id` 幂等、TTL、
   fencing `generation`；**多数派 ack + 超时/不确定=错误，不判定成功**；非 Raft 线性一致）；
   `ClusterServiceImpl::propose_control`（DISABLED/UNAVAILABLE 门禁，无假成功）+
   `with_control_plane`；`consensus::{GrpcPeerProposer,control_proposal_from_value}`；
   `ClusterRuntime`/`main.rs`/`MySisyphusBridge` 门禁装配 state+coordinator；`PeerManager`
-  地址解析（补 `http://`，排除 self）。快 CI：`control_plane` 6 / `consensus` 12 / `peer::` 74
+  地址解析（补 `http://`，排除 self）。快 CI：`control_plane` 8 / `consensus` 12 / `peer::` 74
   passed（含 N=3 in-process quorum/renew-release-fencing/禁用门禁/Mock）；专用运行器矩阵
   `#[ignore = "requires dedicated runner"]`：`n3_partition_heal_rejoin_address_update`、
   `rollback_gate_off_rejects_control_plane_writes`、`n3_minority_cannot_commit_when_quorum_unreachable`。

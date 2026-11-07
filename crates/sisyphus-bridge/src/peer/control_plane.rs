@@ -433,9 +433,14 @@ pub struct ControlPlaneCoordinator {
     peer_manager: Arc<PeerManager>,
     state: Arc<ControlPlaneState>,
     propose_timeout: Duration,
+    /// ADR-019：协调节点本地 `(key, request_id)` 幂等/重试缓存（有界，缓解不确定提交重试风暴）。
+    /// 跨节点幂等仍依赖各节点 `ControlPlaneState`；此缓存仅用于同一协调入口的快速重放。
+    decision_cache: RwLock<std::collections::VecDeque<((String, String), LeaseQuorumOutcome)>>,
 }
 
 impl ControlPlaneCoordinator {
+    const DECISION_CACHE_CAP: usize = 1024;
+
     pub fn new(
         peer_manager: Arc<PeerManager>,
         state: Arc<ControlPlaneState>,
@@ -445,6 +450,7 @@ impl ControlPlaneCoordinator {
             peer_manager,
             state,
             propose_timeout,
+            decision_cache: RwLock::new(std::collections::VecDeque::new()),
         }
     }
 
@@ -454,6 +460,22 @@ impl ControlPlaneCoordinator {
 
     /// 通过多数派提交租约操作。`self` 先本地 apply（计入票数），再并发请求其他 peers。
     /// 任一导致多数派不确定的超时/错误 => `uncertain=true` 且不返回成功。
+    fn cached_decision(&self, key: &str, request_id: &str) -> Option<LeaseQuorumOutcome> {
+        let g = self.decision_cache.read();
+        g.iter().find(|((k, r), _)| k == key && r == request_id).map(|(_, v)| v.clone())
+    }
+
+    fn cache_decision(&self, key: &str, request_id: &str, out: &LeaseQuorumOutcome) {
+        let mut g = self.decision_cache.write();
+        if g.iter().any(|((k, r), _)| k == key && r == request_id) {
+            return;
+        }
+        if g.len() >= Self::DECISION_CACHE_CAP {
+            g.pop_front();
+        }
+        g.push_back(((key.to_string(), request_id.to_string()), out.clone()));
+    }
+
     pub async fn propose_lease(
         &self,
         request_id: &str,
@@ -464,6 +486,14 @@ impl ControlPlaneCoordinator {
         min_ttl_secs: u64,
         max_ttl_secs: u64,
     ) -> LeaseQuorumOutcome {
+        if let Some(cached) = self.cached_decision(key, request_id) {
+            let mut d = cached.decision;
+            d.idempotent_replay = true;
+            return LeaseQuorumOutcome {
+                decision: d,
+                ..cached
+            };
+        }
         let cluster_size = self.peer_manager.cluster_size().max(1);
         let majority = cluster_size / 2 + 1;
         let local = self.state.apply(
@@ -532,27 +562,33 @@ impl ControlPlaneCoordinator {
 
         // If local rejected, don't report success; but peers may have accepted (we already sent) -
         // v1: coordinator returns local decision context; uncertainty dominates.
-        if uncertain {
+        let out = if uncertain {
             // Can we still prove majority? only if accepts already >= majority despite uncertainty -
             // but uncertainty means some peers' state unknown; safer to report uncertain.
-            return LeaseQuorumOutcome {
+            LeaseQuorumOutcome {
                 decision: if local_decision.accepted && accepts >= majority {
                     // majority known accepted, but had uncertainties; still conservative on "uncertain"
                     let mut d = local_decision;
                     d.accepted = false;
                     d.error_code = "CONTROL_PLANE_UNCERTAIN".to_string();
-                    d.error_message = format!("uncertain peer responses; accepts={accepts} majority={majority} cluster_size={cluster_size}");
+                    d.error_message = format!(
+                        "uncertain peer responses; accepts={accepts} majority={majority} cluster_size={cluster_size}"
+                    );
                     d
                 } else {
-                    ControlDecision::err("CONTROL_PLANE_UNCERTAIN", format!("uncertain peer responses; accepts={accepts} majority={majority} cluster_size={cluster_size}"), local_decision.current_generation)
+                    ControlDecision::err(
+                        "CONTROL_PLANE_UNCERTAIN",
+                        format!(
+                            "uncertain peer responses; accepts={accepts} majority={majority} cluster_size={cluster_size}"
+                        ),
+                        local_decision.current_generation,
+                    )
                 },
                 accepts,
                 cluster_size,
                 uncertain: true,
-            };
-        }
-
-        if (local_decision.accepted && accepts >= majority) || !local_decision.accepted {
+            }
+        } else if (local_decision.accepted && accepts >= majority) || !local_decision.accepted {
             LeaseQuorumOutcome {
                 decision: local_decision,
                 accepts,
@@ -570,7 +606,12 @@ impl ControlPlaneCoordinator {
                 cluster_size,
                 uncertain: false,
             }
+        };
+        // ADR-019：不缓存不确定结果（可能已部分提交；客户端应以同 request_id 重试并结合状态查询）。
+        if !out.uncertain {
+            self.cache_decision(key, request_id, &out);
         }
+        out
     }
 }
 
@@ -808,5 +849,74 @@ mod quorum_tests {
         assert!(!out.decision.accepted);
         // local apply may have happened; but outcome is uncertain/failure (no quorum proof) - v1 conservative
         assert!(out.uncertain || out.accepts < out.cluster_size / 2 + 1);
+    }
+
+    /// ADR-019：通过 gRPC `SubmitControlLease`（协调提交）在 N=3 集群完成多数派租约。
+    #[tokio::test]
+    async fn n3_submit_control_lease_via_grpc_quorum() {
+        let (m1, s1, _a1, _h1) = serve_node("n1", true).await;
+        let (_m2, _s2, a2, _h2) = serve_node("n2", true).await;
+        let (_m3, _s3, a3, _h3) = serve_node("n3", true).await;
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new("n2", a2));
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new("n3", a3));
+        let coord = std::sync::Arc::new(ControlPlaneCoordinator::new(
+            m1.clone(),
+            s1.clone(),
+            Duration::from_secs(2),
+        ));
+        // Start a coordinator-serving node (n1 already has basic service; build one with coordinator)
+        let svc = ClusterServiceImpl::with_control_plane_coordinator(
+            m1.clone(),
+            None,
+            s1.clone(),
+            coord,
+            true,
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = format!("http://{}", listener.local_addr().unwrap());
+        let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
+        tokio::spawn(async move {
+            let _ = Server::builder()
+                .add_service(ClusterServer::new(svc))
+                .serve_with_incoming(incoming)
+                .await;
+        });
+        tokio::time::sleep(Duration::from_millis(30)).await;
+
+        let mut client = ClusterClient::connect(addr).await.unwrap();
+        let resp = client
+            .submit_control_lease(ControlProposeRequest {
+                request_id: "gr1".into(),
+                key: "lease:grpc".into(),
+                operation: "lease.acquire".into(),
+                payload_json: lease_payload("n1", 30),
+                source_node_id: "client".into(),
+                expected_generation: 0,
+            })
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(resp.accepted, "{resp:?}");
+        assert!(!resp.uncertain, "{resp:?}");
+        assert!(resp.accepts >= 2, "{resp:?}");
+        assert!(s1.get("lease:grpc").is_some());
+
+        // rollback/gate-off via dedicated service
+        let (_m4, _s4, addr4, _h4) = serve_node("n4", false).await;
+        let mut c4 = ClusterClient::connect(addr4).await.unwrap();
+        let r4 = c4
+            .submit_control_lease(ControlProposeRequest {
+                request_id: "gr2".into(),
+                key: "lease:off".into(),
+                operation: "lease.acquire".into(),
+                payload_json: lease_payload("n1", 30),
+                source_node_id: "client".into(),
+                expected_generation: 0,
+            })
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(!r4.accepted);
+        assert_eq!(r4.error_code, "DISABLED");
     }
 }

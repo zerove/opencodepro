@@ -21,6 +21,10 @@ service Cluster {
   // ADR-019 控制面提案（unary，peer-to-peer）。受 `[cluster.control_plane].enabled` 门禁；
   // 未启用/不满足准入条件时返回拒绝，不得虚假成功。
   rpc ProposeControl (ControlProposeRequest) returns (ControlProposeResponse);
+
+  // ADR-019 租约协调提交（unary，客户端→协调节点）。执行多数派 quorum；超时/不确定=错误。
+  // v1 由任意启用控制面的节点尝试协调（无强 leader 路由）；生产准入见 ADR-019。
+  rpc SubmitControlLease (ControlProposeRequest) returns (ControlLeaseResponse);
 }
 
 // Join 请求
@@ -213,5 +217,18 @@ message ControlProposeResponse {
   string error_message = 5;
   // 是否为 `request_id` 幂等重放。
   bool idempotent_replay = 6;
+}
+
+// ADR-019 租约协调提交响应（quorum 结果）。超时/不确定 => accepted=false 且 uncertain=true。
+message ControlLeaseResponse {
+  bool accepted = 1;
+  uint64 applied_generation = 2;
+  uint64 current_generation = 3;
+  string error_code = 4;
+  string error_message = 5;
+  bool idempotent_replay = 6;
+  uint32 accepts = 7;
+  uint32 cluster_size = 8;
+  bool uncertain = 9;
 }
 

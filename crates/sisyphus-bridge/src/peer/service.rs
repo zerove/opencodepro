@@ -11,9 +11,9 @@
 use crate::peer::anti_entropy;
 use crate::peer::manager::{ClusterEvent as MgrEvent, PeerInfo, PeerManager};
 use sisyphus_bridge_api::cluster_proto::{
-    cluster_server::Cluster, ClusterEvent as ProtoEvent, ControlProposeRequest,
-    ControlProposeResponse, ExperienceSync, JoinRequest, JoinResponse, PeerInfo as ProtoPeerInfo,
-    PeerJoined, PeerLeft, StateProposal,
+    cluster_server::Cluster, ClusterEvent as ProtoEvent, ControlLeaseResponse,
+    ControlProposeRequest, ControlProposeResponse, ExperienceSync, JoinRequest, JoinResponse,
+    PeerInfo as ProtoPeerInfo, PeerJoined, PeerLeft, StateProposal,
 };
 use std::pin::Pin;
 use std::sync::Arc;
@@ -90,6 +90,8 @@ pub struct ClusterServiceImpl {
     control_plane: Option<Arc<crate::peer::control_plane::ControlPlaneState>>,
     /// ADR-019：控制面门禁（默认 false）。与 `ClusterConfig.control_plane.enabled` 对齐。
     control_plane_enabled: bool,
+    /// ADR-019：租约多数派协调器（用于 `SubmitControlLease`）。
+    control_plane_coordinator: Option<Arc<crate::peer::control_plane::ControlPlaneCoordinator>>,
 }
 
 impl ClusterServiceImpl {
@@ -120,6 +122,22 @@ impl ClusterServiceImpl {
         control_plane: Option<Arc<crate::peer::control_plane::ControlPlaneState>>,
         control_plane_enabled: bool,
     ) -> Self {
+        Self::with_gate_control_and_coordinator(
+            manager,
+            experience_bank,
+            control_plane,
+            control_plane_enabled,
+            None,
+        )
+    }
+
+    fn with_gate_control_and_coordinator(
+        manager: Arc<PeerManager>,
+        experience_bank: Option<Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
+        control_plane: Option<Arc<crate::peer::control_plane::ControlPlaneState>>,
+        control_plane_enabled: bool,
+        control_plane_coordinator: Option<Arc<crate::peer::control_plane::ControlPlaneCoordinator>>,
+    ) -> Self {
         // ADR-013：生产路径闸门恒开，因此 Join 不受任何额外延迟影响。
         Self {
             manager,
@@ -136,6 +154,7 @@ impl ClusterServiceImpl {
             outbound_sync_requests: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             control_plane,
             control_plane_enabled,
+            control_plane_coordinator,
         }
     }
 
@@ -146,11 +165,29 @@ impl ClusterServiceImpl {
         control_plane: Arc<crate::peer::control_plane::ControlPlaneState>,
         control_plane_enabled: bool,
     ) -> Self {
-        Self::with_gate_and_control(
+        Self::with_gate_control_and_coordinator(
             manager,
             experience_bank,
             Some(control_plane),
             control_plane_enabled,
+            None,
+        )
+    }
+
+    /// ADR-019：装配控制面 + 租约协调器（`SubmitControlLease` 多数派提交入口）。
+    pub fn with_control_plane_coordinator(
+        manager: Arc<PeerManager>,
+        experience_bank: Option<Arc<sisyphus_mem::experience_bank::VectorExperienceBank>>,
+        control_plane: Arc<crate::peer::control_plane::ControlPlaneState>,
+        coordinator: Arc<crate::peer::control_plane::ControlPlaneCoordinator>,
+        control_plane_enabled: bool,
+    ) -> Self {
+        Self::with_gate_control_and_coordinator(
+            manager,
+            experience_bank,
+            Some(control_plane),
+            control_plane_enabled,
+            Some(coordinator),
         )
     }
 
@@ -182,6 +219,7 @@ impl ClusterServiceImpl {
             outbound_sync_requests: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             control_plane: None,
             control_plane_enabled: false,
+            control_plane_coordinator: None,
         };
         let handle = JoinGateHandle {
             gate: Arc::clone(&service.join_admit),
@@ -584,6 +622,64 @@ impl Cluster for ClusterServiceImpl {
             error_code: d.error_code,
             error_message: d.error_message,
             idempotent_replay: d.idempotent_replay,
+        }))
+    }
+
+    async fn submit_control_lease(
+        &self,
+        request: Request<ControlProposeRequest>,
+    ) -> Result<Response<ControlLeaseResponse>, Status> {
+        let req = request.into_inner();
+        if !self.control_plane_enabled {
+            return Ok(Response::new(ControlLeaseResponse {
+                accepted: false,
+                applied_generation: 0,
+                current_generation: 0,
+                error_code: "DISABLED".to_string(),
+                error_message: "cluster.control_plane.enabled is false (ADR-019 gate)".to_string(),
+                idempotent_replay: false,
+                accepts: 0,
+                cluster_size: 0,
+                uncertain: false,
+            }));
+        }
+        let Some(coord) = &self.control_plane_coordinator else {
+            return Ok(Response::new(ControlLeaseResponse {
+                accepted: false,
+                applied_generation: 0,
+                current_generation: 0,
+                error_code: "UNAVAILABLE".to_string(),
+                error_message: "control plane coordinator not configured".to_string(),
+                idempotent_replay: false,
+                accepts: 0,
+                cluster_size: 0,
+                uncertain: false,
+            }));
+        };
+        // v1 TTL bounds (ADR-019；后续可配置化)
+        const MIN_TTL_SECS: u64 = 1;
+        const MAX_TTL_SECS: u64 = 3600;
+        let out = coord
+            .propose_lease(
+                &req.request_id,
+                &req.key,
+                &req.operation,
+                &req.payload_json,
+                req.expected_generation,
+                MIN_TTL_SECS,
+                MAX_TTL_SECS,
+            )
+            .await;
+        Ok(Response::new(ControlLeaseResponse {
+            accepted: out.decision.accepted,
+            applied_generation: out.decision.applied_generation,
+            current_generation: out.decision.current_generation,
+            error_code: out.decision.error_code,
+            error_message: out.decision.error_message,
+            idempotent_replay: out.decision.idempotent_replay,
+            accepts: out.accepts as u32,
+            cluster_size: out.cluster_size as u32,
+            uncertain: out.uncertain,
         }))
     }
 }
