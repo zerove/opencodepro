@@ -189,7 +189,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if cfg.control_plane.tls_enabled && tls_material.wired {
                         tracing::warn!(
                             note = %tls_material.note,
-                            "cluster.control_plane mTLS wired (transport). submit_auth_mode=none: no app-layer SubmitControlLease subject allowlist enforcement; controlled environments only, requires ADR-019 dedicated-runner evidence."
+                            submit_auth_mode = %cfg.control_plane.submit_auth_mode,
+                            "cluster.control_plane mTLS wired (transport); submit_auth_mode={} (controlled environments only, requires ADR-019 dedicated-runner evidence).",
+                            cfg.control_plane.submit_auth_mode
                         );
                     } else {
                         tracing::warn!(

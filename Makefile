@@ -443,6 +443,11 @@ test-control-plane-dedicated:
 gen-control-plane-test-certs:
 	cargo run -p sisyphus-bridge --no-default-features --example gen_control_plane_test_certs -- $(ARGS)
 
+# ADR-019：控制面 mTLS 证据采集流水线（loopback；需本机 bridge 运行，不替代专用 runner 真实网络证据）
+.PHONY: evidence-control-plane-tls
+evidence-control-plane-tls:
+	scripts/run-control-plane-tls-evidence.sh --out ./control-plane-certs --node node-1 --node node-2 --node node-3
+
 test-cli-handlers:
 	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-cli --lib
 

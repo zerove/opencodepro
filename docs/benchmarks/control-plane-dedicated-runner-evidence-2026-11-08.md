@@ -73,6 +73,23 @@ cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -
 
 本地 in-process 证据（**非**专用 runner 真实跨进程证据）：`cargo test -p sisyphus-bridge --no-default-features --test control_plane_mtls_test`（4 passed：DNS allowlist/非 allowlist/无证书/`CN:`/未知模式 fail-closed）。
 
+### mTLS 证据采集流水线（已实现；2026-11-08 本地执行）
+
+`scripts/run-control-plane-tls-evidence.sh`（Makefile：`make evidence-control-plane-tls`）自动执行：
+
+1. 生成测试 PKI（`scripts/gen-control-plane-test-certs.sh`，见 `make gen-control-plane-test-certs ARGS="--out DIR --node N ..."`）；
+2. 生成临时 bridge 配置（`[cluster.control_plane]`：`enabled=true` / `tls_enabled=true` / `submit_auth_mode="mtls_subject_allowlist"` / `allowed_submit_subjects`）；
+3. 启动 bridge（TLS 应用于共享 gRPC 端口；启动须 `SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY=true` 绕过本地 dummy embedding）；
+4. mTLS harness submit/get（`--ca-cert/--client-cert/--client-key/--domain`，`addr` 可用 `http://` 自动归一化为 `https://`）→ JSON 证据。
+
+**2026-11-08 本地执行结果（loopback + 跨进程 TLS，单节点 `cluster_size=1`）**：
+
+- bridge warn：`cluster.control_plane mTLS wired (transport); submit_auth_mode=mtls_subject_allowlist (controlled environments only, requires ADR-019 dedicated-runner evidence).`
+- submit 证据（`harness-submit-*.json`）：`{"accepted":true,"accepts":1,"cluster_size":1,"applied_generation":1,"current_generation":1,"error_code":"","error_message":"","uncertain":false,...,"guidance":"committed by quorum (v1 majority ack, not Raft linearizable); verify if needed via GetControlLease"}`
+- get 证据（`harness-get-*.json`）：`{"found":true,"generation":1,"status_code":"OK",...}`
+
+**边界**：本次为 loopback + 单进程/跨进程 TLS 证据，单节点 quorum（majority=1）；不构成专用 runner 的真实 N=3 网络分区/混沌/TLS 长稳证据。REST 写入/调度器接入仍为否。
+
 ## 仍需补充的专用 runner/生产证据（ADR-019 准入）
 
 - **真实 N=3 进程/网络**：分区、少数派不可提交、leader 变更（字典序/成员变更）后安全性、分区愈合收敛/拒绝符合定义。
