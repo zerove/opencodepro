@@ -119,6 +119,17 @@
   `reconcile_offline_nodes_drops_orphaned_known_slots`；**变异验证 1 处**（条件取反）稳定失败
   并还原。
 
+- **ADR-019 TLS/mTLS 证据链路补全**（阶段 6.5 收尾，2026-11-08）：
+  - 新增 `scripts/run-control-plane-tls-evidence.sh` + `make evidence-control-plane-tls`：
+    PKI 生成 -> 临时 bridge 配置（TLS/`mtls_subject_allowlist`）-> bridge 启动 -> mTLS
+    harness submit/get -> JSON 证据；已真实执行（loopback + 跨进程 TLS）。
+  - `crates/sisyphus-bridge/src/main.rs` mTLS wired 告警真实化 `submit_auth_mode`（此前硬编码
+    `none`）。
+  - OpenAPI 修复：`components/responses/Unauthorized` 悬空 `$ref` + `security: bearerAuth`
+    缺失（`every_schema_ref_resolves`/`security_requirements_reference_defined_schemes`）。
+  - 证据：`make evidence-control-plane-tls` submit `accepted=true/uncertain=false` + get
+    `OK`；`tests/control_plane_mtls_test` 4 项；`peer::tls` 4 项 fail-closed。
+
 ## [v0.4.0] - 2026-11-06
 
 ### Added
