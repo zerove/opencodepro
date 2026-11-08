@@ -503,3 +503,15 @@ propose_timeout_ms = 2000
 # 环境变量: SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MIN_SECS / _MAX_SECS
 lease_ttl_min_secs = 1
 lease_ttl_max_secs = 3600
+# 连接超时（毫秒）
+# 环境变量: SISYPHUS_CLUSTER_CONTROL_PLANE_CONNECT_TIMEOUT_MS
+connect_timeout_ms = 1000
+# TLS/mTLS 占位（默认关闭；tls_enabled=true 在当前构建不会自动接线 TLS，需 feature+证书+准入证据）
+tls_enabled = false
+tls_ca_cert_path = ""
+tls_client_cert_path = ""
+tls_client_key_path = ""
+tls_domain_name = ""
+# SubmitControlLease 鉴权策略占位（none/mtls_subject_allowlist；非 none 在当前构建不会强制执行）
+submit_auth_mode = "none"
+# allowed_submit_subjects = []

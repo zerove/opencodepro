@@ -493,6 +493,7 @@ pub struct ControlPlaneCoordinator {
     peer_manager: Arc<PeerManager>,
     state: Arc<ControlPlaneState>,
     propose_timeout: Duration,
+    connect_timeout: Duration,
     /// ADR-019：协调节点本地 `(key, request_id)` 幂等/重试缓存（有界，缓解不确定提交重试风暴）。
     /// 跨节点幂等仍依赖各节点 `ControlPlaneState`；此缓存仅用于同一协调入口的快速重放。
     decision_cache: RwLock<std::collections::VecDeque<((String, String), LeaseQuorumOutcome)>>,
@@ -508,10 +509,25 @@ impl ControlPlaneCoordinator {
         state: Arc<ControlPlaneState>,
         propose_timeout: Duration,
     ) -> Self {
+        Self::with_timeouts(
+            peer_manager,
+            state,
+            propose_timeout,
+            propose_timeout.min(Duration::from_millis(1000)),
+        )
+    }
+
+    pub fn with_timeouts(
+        peer_manager: Arc<PeerManager>,
+        state: Arc<ControlPlaneState>,
+        propose_timeout: Duration,
+        connect_timeout: Duration,
+    ) -> Self {
         Self {
             peer_manager,
             state,
             propose_timeout,
+            connect_timeout,
             decision_cache: RwLock::new(std::collections::VecDeque::new()),
             channels: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -602,7 +618,8 @@ impl ControlPlaneCoordinator {
                 endpoint = format!("http://{endpoint}");
             }
             let req = req.clone();
-            let timeout = self.propose_timeout;
+            let propose_timeout = self.propose_timeout;
+            let connect_timeout = self.connect_timeout;
             let channels = channels.clone();
             let ep = endpoint.clone();
             tasks.push(tokio::spawn(async move {
@@ -614,7 +631,7 @@ impl ControlPlaneCoordinator {
                         Ok(e) => e,
                         Err(_) => return Err(()),
                     };
-                    match tokio::time::timeout(timeout, ep_parsed.connect()).await {
+                    match tokio::time::timeout(connect_timeout, ep_parsed.connect()).await {
                         Ok(Ok(ch)) => {
                             channels.write().insert(ep.clone(), ch.clone());
                             ch
@@ -623,7 +640,7 @@ impl ControlPlaneCoordinator {
                     }
                 };
                 let mut client = ClusterClient::new(channel);
-                match tokio::time::timeout(timeout, client.propose_control(req)).await {
+                match tokio::time::timeout(propose_timeout, client.propose_control(req)).await {
                     Ok(Ok(resp)) => Ok(resp.into_inner().accepted),
                     _ => {
                         channels.write().remove(&ep);

@@ -875,6 +875,7 @@ pub(super) async fn cluster_status_handler(State(state): State<RestApiState>) ->
             "control_plane": {
                 "enabled": cluster_cfg.control_plane.enabled,
                 "propose_timeout_ms": cluster_cfg.control_plane.propose_timeout_ms,
+                "connect_timeout_ms": cluster_cfg.control_plane.connect_timeout_ms,
                 "lease_ttl_min_secs": cluster_cfg.control_plane.lease_ttl_min_secs,
                 "lease_ttl_max_secs": cluster_cfg.control_plane.lease_ttl_max_secs,
             },
@@ -883,11 +884,25 @@ pub(super) async fn cluster_status_handler(State(state): State<RestApiState>) ->
             Some(s) => serde_json::json!({
                 "configured": true,
                 "coordinator_configured": state.bridge.control_plane_coordinator().is_some(),
+                "security": {
+                    "tls_enabled_config": cluster_cfg.control_plane.tls_enabled,
+                    "tls_wired": false,
+                    "submit_auth_mode_config": cluster_cfg.control_plane.submit_auth_mode,
+                    "submit_auth_enforced": cluster_cfg.control_plane.submit_auth_mode == "none",
+                    "note": "ADR-019: TLS/auth config placeholders; enforcement/wiring requires explicit implementation + dedicated-runner evidence before production exposure",
+                },
                 "stats": s.stats_snapshot(),
             }),
             None => serde_json::json!({
                 "configured": false,
                 "coordinator_configured": false,
+                "security": {
+                    "tls_enabled_config": cluster_cfg.control_plane.tls_enabled,
+                    "tls_wired": false,
+                    "submit_auth_mode_config": cluster_cfg.control_plane.submit_auth_mode,
+                    "submit_auth_enforced": cluster_cfg.control_plane.submit_auth_mode == "none",
+                    "note": "ADR-019: TLS/auth config placeholders; enforcement/wiring requires explicit implementation + dedicated-runner evidence before production exposure",
+                },
                 "stats": null,
             }),
         },

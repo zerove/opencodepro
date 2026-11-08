@@ -143,10 +143,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "cluster.control_plane.enabled=true: ADR-019 gate on; production multi-node quorum requires full admission criteria (resolver/member-change/chaos/rollback)."
                 );
                 let state = std::sync::Arc::new(ControlPlaneState::new());
-                let coord = std::sync::Arc::new(ControlPlaneCoordinator::new(
+                if cfg.control_plane.tls_enabled {
+                    tracing::warn!(
+                        "cluster.control_plane.tls_enabled=true but TLS wiring is not implemented in this build; \
+                         do not enable control plane in untrusted networks without TLS/mTLS + ADR-019 evidence"
+                    );
+                }
+                if cfg.control_plane.submit_auth_mode != "none" {
+                    tracing::warn!(
+                        mode = %cfg.control_plane.submit_auth_mode,
+                        "cluster.control_plane.submit_auth_mode is configured but not enforced in this build; \
+                         SubmitControlLease requires explicit auth boundary before production exposure"
+                    );
+                }
+                let coord = std::sync::Arc::new(ControlPlaneCoordinator::with_timeouts(
                     manager.clone(),
                     state.clone(),
                     std::time::Duration::from_millis(cfg.control_plane.propose_timeout_ms.max(1)),
+                    std::time::Duration::from_millis(cfg.control_plane.connect_timeout_ms.max(1)),
                 ));
                 (Some(state), Some(coord))
             } else {

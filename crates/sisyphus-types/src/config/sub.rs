@@ -631,19 +631,44 @@ pub struct ClusterControlPlaneConfig {
     /// 是否启用控制面门禁（默认 false）。
     #[serde(default)]
     pub enabled: bool,
-    /// `ProposeControl`/多数派协调超时（毫秒）。超时视为不确定，**不判定成功**。
+    /// 多数派协调总超时（毫秒）。超时视为不确定，**不判定成功**。
     #[serde(default = "default_control_plane_propose_timeout_ms")]
     pub propose_timeout_ms: u64,
+    /// 单次对端连接超时（毫秒）。默认跟随 `propose_timeout_ms` 的安全下限。
+    #[serde(default = "default_control_plane_connect_timeout_ms")]
+    pub connect_timeout_ms: u64,
     /// 租约 TTL 下限（秒，v1 bounds）。
     #[serde(default = "default_control_plane_lease_ttl_min_secs")]
     pub lease_ttl_min_secs: u64,
     /// 租约 TTL 上限（秒，v1 bounds）。
     #[serde(default = "default_control_plane_lease_ttl_max_secs")]
     pub lease_ttl_max_secs: u64,
+    /// TLS/mTLS 配置占位（ADR-019）。`tls_enabled=true` 时当前构建**不会**自动接线 TLS；
+    /// 生产启用前须完成 tonic TLS feature + 证书加载 + 专用 runner 证据。证书字段仅声明意图。
+    #[serde(default)]
+    pub tls_enabled: bool,
+    #[serde(default)]
+    pub tls_ca_cert_path: String,
+    #[serde(default)]
+    pub tls_client_cert_path: String,
+    #[serde(default)]
+    pub tls_client_key_path: String,
+    #[serde(default)]
+    pub tls_domain_name: String,
+    /// `SubmitControlLease` 鉴权策略占位：`none`/`mtls_subject_allowlist`（默认 `none`）。
+    /// `none` 以外的值在当前构建**不会**强制执行；生产暴露前须实现并验证鉴权边界。
+    #[serde(default = "default_control_plane_submit_auth_mode")]
+    pub submit_auth_mode: String,
+    /// 允许提交控制面写入的主体列表（策略占位；语义由 `submit_auth_mode` 实现决定）。
+    #[serde(default)]
+    pub allowed_submit_subjects: Vec<String>,
 }
 
 fn default_control_plane_propose_timeout_ms() -> u64 {
     2000
+}
+fn default_control_plane_connect_timeout_ms() -> u64 {
+    1000
 }
 fn default_control_plane_lease_ttl_min_secs() -> u64 {
     1
@@ -651,14 +676,25 @@ fn default_control_plane_lease_ttl_min_secs() -> u64 {
 fn default_control_plane_lease_ttl_max_secs() -> u64 {
     3600
 }
+fn default_control_plane_submit_auth_mode() -> String {
+    "none".to_string()
+}
 
 impl Default for ClusterControlPlaneConfig {
     fn default() -> Self {
         Self {
             enabled: false,
             propose_timeout_ms: default_control_plane_propose_timeout_ms(),
+            connect_timeout_ms: default_control_plane_connect_timeout_ms(),
             lease_ttl_min_secs: default_control_plane_lease_ttl_min_secs(),
             lease_ttl_max_secs: default_control_plane_lease_ttl_max_secs(),
+            tls_enabled: false,
+            tls_ca_cert_path: String::new(),
+            tls_client_cert_path: String::new(),
+            tls_client_key_path: String::new(),
+            tls_domain_name: String::new(),
+            submit_auth_mode: default_control_plane_submit_auth_mode(),
+            allowed_submit_subjects: Vec::new(),
         }
     }
 }

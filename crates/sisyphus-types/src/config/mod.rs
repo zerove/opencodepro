@@ -367,11 +367,32 @@ impl Config {
         if let Some(v) = env_u64("SISYPHUS_CLUSTER_CONTROL_PLANE_PROPOSE_TIMEOUT_MS") {
             self.cluster.control_plane.propose_timeout_ms = v;
         }
+        if let Some(v) = env_u64("SISYPHUS_CLUSTER_CONTROL_PLANE_CONNECT_TIMEOUT_MS") {
+            self.cluster.control_plane.connect_timeout_ms = v;
+        }
         if let Some(v) = env_u64("SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MIN_SECS") {
             self.cluster.control_plane.lease_ttl_min_secs = v;
         }
         if let Some(v) = env_u64("SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MAX_SECS") {
             self.cluster.control_plane.lease_ttl_max_secs = v;
+        }
+        if let Some(v) = env_bool("SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_ENABLED") {
+            self.cluster.control_plane.tls_enabled = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_CA_CERT_PATH") {
+            self.cluster.control_plane.tls_ca_cert_path = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_CLIENT_CERT_PATH") {
+            self.cluster.control_plane.tls_client_cert_path = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_CLIENT_KEY_PATH") {
+            self.cluster.control_plane.tls_client_key_path = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_DOMAIN_NAME") {
+            self.cluster.control_plane.tls_domain_name = v;
+        }
+        if let Some(v) = env_string("SISYPHUS_CLUSTER_CONTROL_PLANE_SUBMIT_AUTH_MODE") {
+            self.cluster.control_plane.submit_auth_mode = v;
         }
         if let Some(v) = env_f64("SISYPHUS_CLUSTER_FEDERATED_MIN_QUALITY_SCORE") {
             self.cluster.federated.min_quality_score = v;

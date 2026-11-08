@@ -336,8 +336,13 @@ fencing/TTL，**超时/不确定=错误，不判定成功**（非 Raft 线性一
 |------|----------|------|------|
 | `enabled` | `SISYPHUS_CLUSTER_CONTROL_PLANE_ENABLED` | bool | **false** |
 | `propose_timeout_ms` | `SISYPHUS_CLUSTER_CONTROL_PLANE_PROPOSE_TIMEOUT_MS` | u64（毫秒） | 2000 |
+| `connect_timeout_ms` | `SISYPHUS_CLUSTER_CONTROL_PLANE_CONNECT_TIMEOUT_MS` | u64（毫秒） | 1000 |
 | `lease_ttl_min_secs` | `SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MIN_SECS` | u64（秒） | 1 |
 | `lease_ttl_max_secs` | `SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MAX_SECS` | u64（秒） | 3600 |
+| `tls_enabled` | `SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_ENABLED` | bool | **false**（占位；当前构建不自动接线 TLS） |
+| `tls_ca_cert_path` / `tls_client_cert_path` / `tls_client_key_path` / `tls_domain_name` | 对应 `SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_*` | string | 空（证书/域名占位） |
+| `submit_auth_mode` | `SISYPHUS_CLUSTER_CONTROL_PLANE_SUBMIT_AUTH_MODE` | string（`none`/`mtls_subject_allowlist`） | `none`（非 `none` 在当前构建不强制执行） |
+| `allowed_submit_subjects` | — | string[] | `[]`（策略占位） |
 
 ### `[cluster.strategy_selection]` 字段（v0.4.0 Phase E，ADR-017 Amendment 3）
 
