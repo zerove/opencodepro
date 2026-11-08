@@ -8,6 +8,7 @@
 use sisyphus_types::ClusterControlPlaneConfig;
 use std::path::Path;
 use tonic::transport::{Certificate, ClientTlsConfig, Identity, ServerTlsConfig};
+use x509_parser::prelude::*;
 
 #[derive(Clone, Debug, Default)]
 pub struct ControlPlaneTlsMaterial {
@@ -90,6 +91,70 @@ pub fn load_control_plane_tls(cfg: &ClusterControlPlaneConfig) -> ControlPlaneTl
     }
 }
 
+/// Verify peer certificate subjects against `allowed_submit_subjects` (ADR-019).
+///
+/// Format per entry: `DNS:<name>`, `URI:<uri>`, `CN:<value>`, or bare value (matches
+/// Subject CN, SAN DNS, or SAN URI). Matching is case-sensitive exact match on the extracted
+/// value. **Fail-closed**: returns `false` if `allowed` is empty, `peer_certs_der` is empty,
+/// no cert parses, or no allowed subject matches.
+pub fn verify_peer_subject_allowlist(peer_certs_der: &[Vec<u8>], allowed: &[String]) -> bool {
+    if allowed.is_empty() || peer_certs_der.is_empty() {
+        return false;
+    }
+    for der in peer_certs_der {
+        let Ok((_, cert)) = X509Certificate::from_der(der) else {
+            continue;
+        };
+        // Subject CN(s)
+        let mut subjects: Vec<(String, String)> = Vec::new();
+        for rdn in cert.subject().iter() {
+            for attr in rdn.iter() {
+                if attr.attr_type() == &oid_registry::OID_X509_COMMON_NAME {
+                    if let Ok(s) = attr.as_str() {
+                        subjects.push(("CN".to_string(), s.to_string()));
+                        subjects.push(("ANY".to_string(), s.to_string()));
+                    }
+                }
+            }
+        }
+        // SANs
+        if let Ok(Some(san)) = cert.subject_alternative_name() {
+            for name in &san.value.general_names {
+                match name {
+                    GeneralName::DNSName(d) => {
+                        subjects.push(("DNS".to_string(), (*d).to_string()));
+                        subjects.push(("ANY".to_string(), (*d).to_string()));
+                    },
+                    GeneralName::URI(u) => {
+                        subjects.push(("URI".to_string(), (*u).to_string()));
+                        subjects.push(("ANY".to_string(), (*u).to_string()));
+                    },
+                    _ => {},
+                }
+            }
+        }
+        for allow in allowed {
+            let allow = allow.trim();
+            if allow.is_empty() {
+                continue;
+            }
+            let (kind, val) = if let Some(v) = allow.strip_prefix("DNS:") {
+                ("DNS", v)
+            } else if let Some(v) = allow.strip_prefix("URI:") {
+                ("URI", v)
+            } else if let Some(v) = allow.strip_prefix("CN:") {
+                ("CN", v)
+            } else {
+                ("ANY", allow)
+            };
+            if subjects.iter().any(|(k, s)| k == kind && s == val) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,5 +192,15 @@ mod tests {
         let m = load_control_plane_tls(&cfg);
         assert!(!m.wired);
         assert!(m.note.contains("fail-closed"));
+    }
+
+    #[test]
+    fn subject_allowlist_empty_or_missing_fail_closed() {
+        assert!(!verify_peer_subject_allowlist(&[], &["DNS:x".into()]));
+        assert!(!verify_peer_subject_allowlist(&[vec![1, 2, 3]], &[]));
+        assert!(!verify_peer_subject_allowlist(
+            &[vec![0u8; 8]],
+            &["DNS:x".into()]
+        ));
     }
 }

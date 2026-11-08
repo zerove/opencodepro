@@ -881,20 +881,26 @@ pub(super) async fn cluster_status_handler(State(state): State<RestApiState>) ->
             },
         },
         "control_plane": match state.bridge.control_plane_state() {
-            Some(s) => serde_json::json!({
-                "configured": true,
-                "coordinator_configured": state.bridge.control_plane_coordinator().is_some(),
-                "security": {
-                    "tls_enabled_config": cluster_cfg.control_plane.tls_enabled,
-                    "tls_wired": state.bridge.control_plane_tls_wired(),
-                    "submit_auth_mode_config": cluster_cfg.control_plane.submit_auth_mode,
-                    "submit_auth_enforced": false,
-                    "app_layer_submit_auth_enforced": false,
-                    "effective_armed": true,
-                    "note": "ADR-019: tls_wired reflects loaded transport mTLS material when armed with tls_enabled; mtls_subject_allowlist app-layer enforcement is not implemented (fail-closed at arm). Production requires dedicated-runner network/TLS evidence.",
-                },
-                "stats": s.stats_snapshot(),
-            }),
+            Some(s) => {
+                let mode = &cluster_cfg.control_plane.submit_auth_mode;
+                let tls_wired = state.bridge.control_plane_tls_wired();
+                let app_enforced = mode == "mtls_subject_allowlist" && tls_wired;
+                serde_json::json!({
+                    "configured": true,
+                    "coordinator_configured": state.bridge.control_plane_coordinator().is_some(),
+                    "security": {
+                        "tls_enabled_config": cluster_cfg.control_plane.tls_enabled,
+                        "tls_wired": tls_wired,
+                        "submit_auth_mode_config": mode,
+                        "submit_auth_enforced": app_enforced,
+                        "app_layer_submit_auth_enforced": app_enforced,
+                        "effective_armed": true,
+                        "allowed_submit_subjects_count": cluster_cfg.control_plane.allowed_submit_subjects.len(),
+                        "note": "ADR-019: tls_wired/effective_armed reflect runtime. mtls_subject_allowlist enforces peer cert subject (DNS/URI/CN, fail-closed) when armed+wired; requires correct allowlist+real certs+dedicated-runner evidence. REST 写入/调度器未接入.",
+                    },
+                    "stats": s.stats_snapshot(),
+                })
+            }
             None => serde_json::json!({
                 "configured": false,
                 "coordinator_configured": false,
@@ -905,7 +911,8 @@ pub(super) async fn cluster_status_handler(State(state): State<RestApiState>) ->
                     "submit_auth_enforced": false,
                     "app_layer_submit_auth_enforced": false,
                     "effective_armed": false,
-                    "note": "ADR-019: control plane not armed (disabled or fail-closed: TLS load failure / unsupported-unimplemented auth mode). Production requires implementation + dedicated-runner evidence.",
+                    "allowed_submit_subjects_count": cluster_cfg.control_plane.allowed_submit_subjects.len(),
+                    "note": "ADR-019: control plane not armed (disabled or fail-closed). mtls_subject_allowlist requires wired mTLS + non-empty allowed_submit_subjects; unknown modes refuse. Production requires evidence.",
                 },
                 "stats": null,
             }),

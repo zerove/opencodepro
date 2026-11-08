@@ -20,6 +20,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::UnboundedReceiverStream, Stream, StreamExt};
+use tonic::transport::server::{TcpConnectInfo, TlsConnectInfo};
 use tonic::{Request, Response, Status};
 
 /// 类型别名：用于测试时的请求流构造
@@ -96,6 +97,10 @@ pub struct ClusterServiceImpl {
     /// ADR-019：租约 TTL bounds（v1，来自 `[cluster.control_plane]` 配置）。
     lease_ttl_min_secs: u64,
     lease_ttl_max_secs: u64,
+    /// ADR-019：控制面鉴权模式（`none`/`mtls_subject_allowlist`）。
+    control_plane_auth_mode: String,
+    /// ADR-019：`mtls_subject_allowlist` 允许主体。
+    control_plane_allowed_subjects: Vec<String>,
 }
 
 impl ClusterServiceImpl {
@@ -182,6 +187,8 @@ impl ClusterServiceImpl {
             control_plane_coordinator,
             lease_ttl_min_secs,
             lease_ttl_max_secs,
+            control_plane_auth_mode: "none".to_string(),
+            control_plane_allowed_subjects: Vec::new(),
         }
     }
 
@@ -272,6 +279,8 @@ impl ClusterServiceImpl {
             control_plane_coordinator: None,
             lease_ttl_min_secs: 1,
             lease_ttl_max_secs: 3600,
+            control_plane_auth_mode: "none".to_string(),
+            control_plane_allowed_subjects: Vec::new(),
         };
         let handle = JoinGateHandle {
             gate: Arc::clone(&service.join_admit),
@@ -303,6 +312,62 @@ impl ClusterServiceImpl {
     /// 悄悄回退了——而功能测试不会发现，因为断流能力本来就是测试在用。
     pub fn break_hook_enabled(&self) -> bool {
         self.break_hook_enabled
+    }
+    /// ADR-019：配置控制面鉴权（builder；保持构造签名兼容）。
+    pub fn with_control_plane_auth(
+        mut self,
+        mode: impl Into<String>,
+        allowed_subjects: Vec<String>,
+    ) -> Self {
+        self.control_plane_auth_mode = mode.into();
+        self.control_plane_allowed_subjects = allowed_subjects;
+        self
+    }
+
+    /// ADR-019：mTLS peer subject allowlist（fail-closed）。
+    fn enforce_control_plane_auth<T>(&self, request: &Request<T>) -> Result<(), Status> {
+        match self.control_plane_auth_mode.as_str() {
+            "none" => Ok(()),
+            "mtls_subject_allowlist" => {
+                let tls = request.extensions().get::<TlsConnectInfo<TcpConnectInfo>>();
+                let Some(tls) = tls else {
+                    tracing::warn!(
+                        "control plane auth: mtls_subject_allowlist but no TLS peer info (fail-closed)"
+                    );
+                    return Err(Status::permission_denied(
+                        "mtls_subject_allowlist: missing TLS peer info (ADR-019 fail-closed)",
+                    ));
+                };
+                let Some(certs) = tls.peer_certs() else {
+                    tracing::warn!(
+                        "control plane auth: mtls_subject_allowlist but no peer certs (fail-closed)"
+                    );
+                    return Err(Status::permission_denied(
+                        "mtls_subject_allowlist: missing peer certificate (ADR-019 fail-closed)",
+                    ));
+                };
+                let ders: Vec<Vec<u8>> = certs.iter().map(|c| c.as_ref().to_vec()).collect();
+                if crate::peer::tls::verify_peer_subject_allowlist(
+                    &ders,
+                    &self.control_plane_allowed_subjects,
+                ) {
+                    Ok(())
+                } else {
+                    tracing::warn!(
+                        "control plane auth: peer subject not in allowed_submit_subjects (fail-closed)"
+                    );
+                    Err(Status::permission_denied(
+                        "mtls_subject_allowlist: peer subject not allowed (ADR-019 fail-closed)",
+                    ))
+                }
+            },
+            other => {
+                tracing::error!(mode = %other, "control plane auth: unknown mode (fail-closed)");
+                Err(Status::permission_denied(
+                    "control plane auth: unknown mode (fail-closed)",
+                ))
+            },
+        }
     }
 }
 
@@ -634,6 +699,9 @@ impl Cluster for ClusterServiceImpl {
         &self,
         request: Request<ControlProposeRequest>,
     ) -> Result<Response<ControlProposeResponse>, Status> {
+        if self.control_plane_auth_mode == "mtls_subject_allowlist" {
+            self.enforce_control_plane_auth(&request)?;
+        }
         let req = request.into_inner();
         if !self.control_plane_enabled {
             if let Some(s) = &self.control_plane {
@@ -681,6 +749,9 @@ impl Cluster for ClusterServiceImpl {
         &self,
         request: Request<ControlProposeRequest>,
     ) -> Result<Response<ControlLeaseResponse>, Status> {
+        if self.control_plane_auth_mode == "mtls_subject_allowlist" {
+            self.enforce_control_plane_auth(&request)?;
+        }
         let req = request.into_inner();
         if !self.control_plane_enabled {
             if let Some(s) = &self.control_plane {

@@ -341,8 +341,8 @@ fencing/TTL，**超时/不确定=错误，不判定成功**（非 Raft 线性一
 | `lease_ttl_max_secs` | `SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MAX_SECS` | u64（秒） | 3600 |
 | `tls_enabled` | `SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_ENABLED` | bool | **false**（tonic TLS 已接线；启用时加载 PEM，失败/不完整 **fail-closed 拒绝装配**；wired 时影响共享 gRPC 端口） |
 | `tls_ca_cert_path` / `tls_client_cert_path` / `tls_client_key_path` / `tls_domain_name` | 对应 `SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_*` | string | 空（PEM 路径/域名；节点身份用于 server+client mTLS） |
-| `submit_auth_mode` | `SISYPHUS_CLUSTER_CONTROL_PLANE_SUBMIT_AUTH_MODE` | string（`none`/`mtls_subject_allowlist`） | `none`；`mtls_subject_allowlist` 在当前构建 **fail-closed 拒绝装配**（X509 subject 提取/匹配未实现） |
-| `allowed_submit_subjects` | — | string[] | `[]`（`mtls_subject_allowlist` 实现后使用） |
+| `submit_auth_mode` | `SISYPHUS_CLUSTER_CONTROL_PLANE_SUBMIT_AUTH_MODE` | string（`none`/`mtls_subject_allowlist`） | `none`；`mtls_subject_allowlist` 基于 peer 证书 subject（`DNS:`/`URI:`/`CN:`/裸值）**fail-closed** 校验，装配要求 wired mTLS + 非空 allowlist |
+| `allowed_submit_subjects` | — | string[] | `[]`（allowlist 模式必填；空则拒绝装配/拒绝请求） |
 
 ### `[cluster.strategy_selection]` 字段（v0.4.0 Phase E，ADR-017 Amendment 3）
 

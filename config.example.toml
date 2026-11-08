@@ -514,8 +514,8 @@ tls_ca_cert_path = ""
 tls_client_cert_path = ""
 tls_client_key_path = ""
 tls_domain_name = ""
-# SubmitControlLease 鉴权策略：`none`（无应用层 allowlist；tls+wired 时仅传输 mTLS，需受控环境）；
-# `mtls_subject_allowlist` 当前构建 **fail-closed 拒绝装配**（X509 subject 提取/匹配未实现，需决策+实现+证据）。
+# SubmitControlLease/ProposeControl 鉴权策略：`none`（无应用层 allowlist；tls+wired 时仅传输 mTLS，需受控环境）；
+# `mtls_subject_allowlist`：基于 peer 证书 subject（`DNS:`/`URI:`/`CN:`/裸值）校验，**fail-closed**（缺 TLS/证书/不匹配/allowlist 为空=>拒绝）；装配要求 wired mTLS + 非空 `allowed_submit_subjects`。生产需真实证书+ADR-019 证据。
 # 环境变量: SISYPHUS_CLUSTER_CONTROL_PLANE_SUBMIT_AUTH_MODE
 submit_auth_mode = "none"
-# allowed_submit_subjects = []
+# allowed_submit_subjects = ["DNS:node1.internal", "URI:spiffe://sisyphus/node1"]

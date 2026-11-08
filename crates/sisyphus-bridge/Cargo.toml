@@ -54,6 +54,7 @@ chrono = { workspace = true }
 thiserror = { workspace = true }
 async-stream = "0.3"
 mdns-sd = "0.21.1"
+x509-parser = "0.16"
 
 [features]
 default = ["sandbox"]

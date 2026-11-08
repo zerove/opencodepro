@@ -146,17 +146,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "cluster.control_plane.tls_enabled=true but TLS material not wired; refusing to arm control plane (fail-closed)"
                 );
             }
-            // ADR-019 安全默认：mtls_subject_allowlist 的主体提取/匹配尚未实现，fail-closed 拒绝装配（不伪造鉴权）。
+            // ADR-019：SubmitControlLease/ProposeControl 鉴权策略（fail-closed）。
             let auth_mode_ok = match cfg.control_plane.submit_auth_mode.as_str() {
                 "none" => true,
                 "mtls_subject_allowlist" => {
-                    if cfg.control_plane.enabled {
-                        tracing::error!(
-                            mode = %cfg.control_plane.submit_auth_mode,
-                            "SubmitControlLease subject allowlist enforcement not implemented (X509 subject extraction/match requires decision+implementation+evidence); refusing to arm control plane (fail-closed)"
-                        );
+                    if !cfg.control_plane.tls_enabled || !tls_material.wired {
+                        if cfg.control_plane.enabled {
+                            tracing::error!(
+                                "mtls_subject_allowlist requires wired mTLS; refusing to arm control plane (fail-closed)"
+                            );
+                        }
+                        false
+                    } else if cfg.control_plane.allowed_submit_subjects.is_empty() {
+                        if cfg.control_plane.enabled {
+                            tracing::error!(
+                                "mtls_subject_allowlist requires non-empty allowed_submit_subjects; refusing to arm control plane (fail-closed)"
+                            );
+                        }
+                        false
+                    } else {
+                        true
                     }
-                    false
                 },
                 other => {
                     if cfg.control_plane.enabled {
@@ -361,7 +371,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let control_plane_service_enabled = cfg.control_plane.enabled
             && runtime.control_plane_state.is_some()
             && runtime.control_plane_coordinator.is_some();
-        let service = if let (Some(cp), Some(coord)) = (
+        let service = (if let (Some(cp), Some(coord)) = (
             runtime.control_plane_state.clone(),
             runtime.control_plane_coordinator.clone(),
         ) {
@@ -386,7 +396,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 runtime.peer_manager.clone(),
                 experience_bank.clone(),
             )
-        };
+        })
+        .with_control_plane_auth(
+            cfg.control_plane.submit_auth_mode.clone(),
+            cfg.control_plane.allowed_submit_subjects.clone(),
+        );
         grpc_server = grpc_server.add_service(
             sisyphus_bridge_api::cluster_proto::cluster_server::ClusterServer::new(service),
         );
