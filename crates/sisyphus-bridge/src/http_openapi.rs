@@ -785,7 +785,7 @@ fn build_document() -> Result<serde_json::Value, String> {
                     "operationId": "getClusterStatus",
                     "responses": {
                         "200": {"description": "Cluster coordination status", "content": {"application/json": {"schema": {"type": "object", "description": "enabled, cluster_name, config, control_plane, peer_manager (incl. experience_sync), consensus, peers"}}}},
-                        "401": {"$ref": "#/components/responses/Unauthorized"}
+                        "401": {"description": "Unauthorized (only when REST auth is enabled: bearer token or JWT)"}
                     },
                     "security": [{"bearerAuth": []}]
                 }
@@ -798,7 +798,7 @@ fn build_document() -> Result<serde_json::Value, String> {
                     "parameters": [{"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}],
                     "responses": {
                         "200": {"description": "Lease query result", "content": {"application/json": {"schema": {"type": "object", "description": "found, key, owner, generation, expires_at_unix_ms, last_request_id, status_code, status_message"}}}},
-                        "401": {"$ref": "#/components/responses/Unauthorized"}
+                        "401": {"description": "Unauthorized (only when REST auth is enabled: bearer token or JWT)"}
                     },
                     "security": [{"bearerAuth": []}]
                 }
@@ -2029,7 +2029,17 @@ fn build_document() -> Result<serde_json::Value, String> {
         },
         "servers": [{"url": "http://localhost:8080", "description": "Local dev"}],
         "paths": serde_json::Value::Object(all_paths),
-        "components": {"schemas": serde_json::Value::Object(all_schemas)}
+        "components": {
+            "schemas": serde_json::Value::Object(all_schemas),
+            // 与 `http/mod.rs` 的 bearer/JWT 中间件对应；`security` 引用必须可解析。
+            "securitySchemes": {
+                "bearerAuth": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "bearerFormat": "JWT or static token"
+                }
+            }
+        }
     }))
 }
 
@@ -2116,6 +2126,44 @@ mod tests {
         assert!(
             dangling.is_empty(),
             "以下 $ref 指向不存在的 schema（Swagger UI 会渲染失败）: {dangling:?}"
+        );
+    }
+
+    /// 每个 `security` 引用都必须指向已定义的 security scheme。
+    ///
+    /// 未定义的 scheme 不会让 `/openapi.json` 报错，但 Swagger UI 无法正确渲染
+    /// 鉴权入口，且文档与 `http/mod.rs` 的鉴权中间件容易脱节。
+    #[tokio::test]
+    async fn security_requirements_reference_defined_schemes() {
+        let doc = doc().await;
+        let schemes = doc
+            .pointer("/components/securitySchemes")
+            .and_then(Value::as_object)
+            .expect("必须存在 components.securitySchemes");
+        let paths = doc.pointer("/paths").and_then(Value::as_object).expect("paths");
+
+        let mut missing = Vec::new();
+        for item in paths.values() {
+            let Some(ops) = item.as_object() else {
+                continue;
+            };
+            for op in ops.values() {
+                let Some(reqs) = op.get("security").and_then(Value::as_array) else {
+                    continue;
+                };
+                for req in reqs {
+                    let Some(req) = req.as_object() else { continue };
+                    for name in req.keys() {
+                        if !schemes.contains_key(name) {
+                            missing.push(name.clone());
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "以下 security scheme 未在 components.securitySchemes 中定义: {missing:?}"
         );
     }
 
