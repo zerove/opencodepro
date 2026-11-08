@@ -135,37 +135,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             let peer_ttl = std::time::Duration::from_secs(cfg.peer_ttl_secs);
             let manager = std::sync::Arc::new(PeerManager::new(self_node_id.clone(), peer_ttl));
-            let (control_plane_state, control_plane_coordinator) = if cfg.control_plane.enabled {
-                use sisyphus_bridge::peer::control_plane::{
-                    ControlPlaneCoordinator, ControlPlaneState,
-                };
-                tracing::warn!(
-                    "cluster.control_plane.enabled=true: ADR-019 gate on; production multi-node quorum requires full admission criteria (resolver/member-change/chaos/rollback)."
+            let control_plane_effectively_armed = cfg.control_plane.enabled
+                && !cfg.control_plane.tls_enabled
+                && cfg.control_plane.submit_auth_mode == "none";
+            let (control_plane_state, control_plane_coordinator) =
+                if control_plane_effectively_armed {
+                    use sisyphus_bridge::peer::control_plane::{
+                        ControlPlaneCoordinator, ControlPlaneState,
+                    };
+                    tracing::warn!(
+                    "cluster.control_plane.enabled=true (tls/auth placeholders not requested): ADR-019 gate on; \
+                     production multi-node quorum requires full admission criteria (resolver/member-change/chaos/TLS/auth/rollback evidence)."
                 );
-                let state = std::sync::Arc::new(ControlPlaneState::new());
-                if cfg.control_plane.tls_enabled {
-                    tracing::warn!(
-                        "cluster.control_plane.tls_enabled=true but TLS wiring is not implemented in this build; \
-                         do not enable control plane in untrusted networks without TLS/mTLS + ADR-019 evidence"
+                    let state = std::sync::Arc::new(ControlPlaneState::new());
+                    let coord = std::sync::Arc::new(ControlPlaneCoordinator::with_timeouts(
+                        manager.clone(),
+                        state.clone(),
+                        std::time::Duration::from_millis(
+                            cfg.control_plane.propose_timeout_ms.max(1),
+                        ),
+                        std::time::Duration::from_millis(
+                            cfg.control_plane.connect_timeout_ms.max(1),
+                        ),
+                    ));
+                    (Some(state), Some(coord))
+                } else if cfg.control_plane.enabled {
+                    if cfg.control_plane.tls_enabled {
+                        tracing::error!(
+                        "cluster.control_plane.enabled=true with tls_enabled=true, but TLS wiring is not implemented in this build; \
+                         refusing to arm control plane (fail-closed, no false success). Set tls_enabled=false or complete TLS wiring + ADR-019 evidence."
                     );
-                }
-                if cfg.control_plane.submit_auth_mode != "none" {
-                    tracing::warn!(
-                        mode = %cfg.control_plane.submit_auth_mode,
-                        "cluster.control_plane.submit_auth_mode is configured but not enforced in this build; \
-                         SubmitControlLease requires explicit auth boundary before production exposure"
-                    );
-                }
-                let coord = std::sync::Arc::new(ControlPlaneCoordinator::with_timeouts(
-                    manager.clone(),
-                    state.clone(),
-                    std::time::Duration::from_millis(cfg.control_plane.propose_timeout_ms.max(1)),
-                    std::time::Duration::from_millis(cfg.control_plane.connect_timeout_ms.max(1)),
-                ));
-                (Some(state), Some(coord))
-            } else {
-                (None, None)
-            };
+                    }
+                    if cfg.control_plane.submit_auth_mode != "none" {
+                        tracing::error!(
+                            mode = %cfg.control_plane.submit_auth_mode,
+                            "cluster.control_plane.submit_auth_mode requires enforcement not implemented in this build; \
+                             refusing to arm control plane (fail-closed). Use submit_auth_mode=none only in controlled environments with ADR-019 evidence."
+                        );
+                    }
+                    (None, None)
+                } else {
+                    (None, None)
+                };
             info!(
                 node_id = %self_node_id,
                 cluster = %cfg.cluster_name,
@@ -307,6 +318,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         // ADR-010：service 挂上经验库；ADR-019：复用 runtime 装配的控制面 state/coordinator（避免双份状态）。
         let experience_bank = bridge.experience_bank().clone();
+        let control_plane_service_enabled = cfg.control_plane.enabled
+            && runtime.control_plane_state.is_some()
+            && runtime.control_plane_coordinator.is_some();
         let service = if let (Some(cp), Some(coord)) = (
             runtime.control_plane_state.clone(),
             runtime.control_plane_coordinator.clone(),
@@ -316,7 +330,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Some(experience_bank.clone()),
                 cp,
                 coord,
-                cfg.control_plane.enabled,
+                control_plane_service_enabled,
                 cfg.control_plane.lease_ttl_min_secs,
                 cfg.control_plane.lease_ttl_max_secs,
             )
@@ -325,7 +339,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 runtime.peer_manager.clone(),
                 Some(experience_bank.clone()),
                 cp,
-                cfg.control_plane.enabled,
+                control_plane_service_enabled,
             )
         } else {
             ClusterServiceImpl::with_experience_bank(

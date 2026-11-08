@@ -78,7 +78,8 @@
   `docs/benchmarks/consensus-control-plane-baseline-2026-11-08.md`；未发现需代码优化的
   触发证据，符合 ADR-018 6.4。
 - **6.5 默认实施（租约控制面，门禁关闭；A=gRPC/内部+只读状态，B=不接入调度器）**：
-  只读观测：`/api/cluster/status.control_plane`（configured/coordinator_configured/stats：submit_total/accepted/rejected/uncertain/disabled/unavailable）；专用 runner 证据采集 `cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness`（JSON 输出 `SubmitControlLease`/`GetControlLease` + guidance）。
+  只读观测：`/api/cluster/status.control_plane`（configured/coordinator_configured/security/stats：submit_total/accepted/rejected/uncertain/disabled/unavailable）；专用 runner 证据采集 `cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness`（JSON 输出 `SubmitControlLease`/`GetControlLease` + guidance）。
+  安全默认（不伪造实施）：`tls_enabled`/`submit_auth_mode` 为配置占位（未接线/未强制执行）；当 `control_plane.enabled=true` 且配置了未实施的 TLS/auth 策略时，main **fail-closed 拒绝装配**控制面（无假成功），`/api/cluster/status.control_plane.security.effective_armed=false`。真实 TLS/mTLS、鉴权 enforcement、REST 写入、调度器接入需决策+实现+专用 runner 证据。
   `cluster.proto` 新增 `ProposeControl`（peer 本地 apply）/`SubmitControlLease`（协调节点多数派提交，`ControlLeaseResponse` 含 `accepts/cluster_size/uncertain`）/`GetControlLease`（只读查询，`OK/NOT_FOUND/DISABLED/UNAVAILABLE`）unary RPC；
   `peer::control_plane::{ControlPlaneState,ControlPlaneCoordinator,LeaseQuorumOutcome}`
   提供租约状态机与多数派协调（`lease.acquire/renew/release`，`request_id` 幂等、TTL、
