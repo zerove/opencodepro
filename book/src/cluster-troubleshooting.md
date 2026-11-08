@@ -69,4 +69,4 @@ GET /api/cluster/status
     - `permission_denied: peer subject not allowed`：证书主体不在 allowlist；核对 SAN/CN 与条目前缀（大小写敏感、精确匹配）。
     - TLS 握手失败/证书错误：检查 CA 信任链、SAN 与 `tls_domain_name`、证书有效期；错误证书必须 fail-closed，不得放宽校验。
     - 进程启动即失败且日志提示 `mtls_subject_allowlist requires ...`：wired/allowlist 前置条件不满足，按 fail-closed 拒绝装配（不会降级为明文）。
-  - 测试/专用 runner 工具：`make gen-control-plane-test-certs ARGS="--out DIR --node node-1 ..."`（仅测试用途）；`control_plane_harness --ca-cert/--client-cert/--client-key/--domain`。本地 loopback 证据见 `crates/sisyphus-bridge/tests/control_plane_mtls_test.rs`，**不替代**真实跨进程 TLS 长稳/轮换证据。
+  - 测试/专用 runner 工具：`make gen-control-plane-test-certs ARGS="--out DIR --node node-1 ..."`（仅测试用途）；`control_plane_harness --ca-cert/--client-cert/--client-key/--domain`；证据采集流水线 `make evidence-control-plane-tls`（bridge + mTLS harness → JSON）。本地 loopback 证据见 `crates/sisyphus-bridge/tests/control_plane_mtls_test.rs`，**不替代**真实跨进程 TLS 长稳/轮换证据。
