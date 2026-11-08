@@ -729,6 +729,76 @@ pub(super) async fn strategy_weights_handler(
     (StatusCode::OK, Json(body)).into_response()
 }
 
+/// ADR-019 只读：查询控制面租约（不改变状态）。与 gRPC `GetControlLease` 语义对齐。
+pub(super) async fn cluster_control_lease_get_handler(
+    State(state): State<RestApiState>,
+    Path(key): Path<String>,
+) -> impl IntoResponse {
+    let enabled = state.bridge.cluster_config().control_plane.enabled;
+    if !enabled {
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "found": false,
+                "key": key,
+                "owner": "",
+                "generation": 0,
+                "expires_at_unix_ms": 0,
+                "last_request_id": "",
+                "status_code": "DISABLED",
+                "status_message": "cluster.control_plane.enabled is false (ADR-019 gate)",
+            })),
+        )
+            .into_response();
+    }
+    match state.bridge.control_plane_state() {
+        Some(cp) => match cp.get(&key) {
+            Some(lease) => (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "found": true,
+                    "key": lease.key,
+                    "owner": lease.owner,
+                    "generation": lease.generation,
+                    "expires_at_unix_ms": lease.expires_at_unix_ms,
+                    "last_request_id": lease.last_request_id,
+                    "status_code": "OK",
+                    "status_message": "",
+                })),
+            )
+                .into_response(),
+            None => (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "found": false,
+                    "key": key,
+                    "owner": "",
+                    "generation": 0,
+                    "expires_at_unix_ms": 0,
+                    "last_request_id": "",
+                    "status_code": "NOT_FOUND",
+                    "status_message": "lease not found or expired",
+                })),
+            )
+                .into_response(),
+        },
+        None => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "found": false,
+                "key": key,
+                "owner": "",
+                "generation": 0,
+                "expires_at_unix_ms": 0,
+                "last_request_id": "",
+                "status_code": "UNAVAILABLE",
+                "status_message": "control plane state not configured",
+            })),
+        )
+            .into_response(),
+    }
+}
+
 pub(super) async fn cluster_status_handler(State(state): State<RestApiState>) -> impl IntoResponse {
     // Phase 6.1：只读协调状态快照，不改变传播/合并/决策路径。
     let cluster_cfg = state.bridge.cluster_config();

@@ -64,3 +64,13 @@ async fn cluster_status_endpoint_reports_single_node_view() {
     // consensus trait view 始终存在（桥接持有 Arc<dyn Consensus>）
     assert!(json["consensus"]["leader_id"].is_string() || json["consensus"]["leader_id"].is_null());
 }
+
+/// ADR-019 只读 REST：门禁默认关闭时返回 DISABLED，不改变状态。
+#[tokio::test]
+async fn cluster_control_lease_get_read_only_gate_default() {
+    let (app, _bridge) = setup().await;
+    let (status, json) = get(&app, "/api/cluster/control/leases/lease%3Atest").await;
+    assert_eq!(status, StatusCode::OK, "body: {json}");
+    assert_eq!(json["found"], false);
+    assert_eq!(json["status_code"], "DISABLED");
+}

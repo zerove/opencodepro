@@ -781,10 +781,23 @@ fn build_document() -> Result<serde_json::Value, String> {
             "/api/cluster/status": {
                 "get": {
                     "summary": "Get cluster coordination status",
-                    "description": "Read-only snapshot of cluster coordination state: config (enabled/name/peer TTL/strategy sync interval), peer manager view (self/leader/size, state_proposal_broadcasts, experience_sync counters incl. reject breakdown), consensus trait view (leader/is_leader), and peer list with last_seen age. Does not change propagation, merge, or decision paths.",
+                    "description": "Read-only snapshot of cluster coordination state: config (enabled/name/peer TTL/strategy sync interval, control plane config), peer manager view (self/leader/size, state_proposal_broadcasts, experience_sync counters incl. reject breakdown), control_plane runtime stats, consensus trait view (leader/is_leader), and peer list with last_seen age. Does not change propagation, merge, or decision paths.",
                     "operationId": "getClusterStatus",
                     "responses": {
-                        "200": {"description": "Cluster coordination status", "content": {"application/json": {"schema": {"type": "object", "description": "enabled, cluster_name, config, peer_manager (incl. experience_sync), consensus, peers"}}}},
+                        "200": {"description": "Cluster coordination status", "content": {"application/json": {"schema": {"type": "object", "description": "enabled, cluster_name, config, control_plane, peer_manager (incl. experience_sync), consensus, peers"}}}},
+                        "401": {"$ref": "#/components/responses/Unauthorized"}
+                    },
+                    "security": [{"bearerAuth": []}]
+                }
+            },
+            "/api/cluster/control/leases/{key}": {
+                "get": {
+                    "summary": "Get control-plane lease (ADR-019, read-only)",
+                    "description": "Read-only lease query aligned with gRPC GetControlLease. Does not change state. Returns status_code OK/NOT_FOUND/DISABLED/UNAVAILABLE; DISABLED when cluster.control_plane.enabled=false. Used for uncertain submission verification (retry with same request_id, then query).",
+                    "operationId": "getControlLease",
+                    "parameters": [{"name": "key", "in": "path", "required": true, "schema": {"type": "string"}}],
+                    "responses": {
+                        "200": {"description": "Lease query result", "content": {"application/json": {"schema": {"type": "object", "description": "found, key, owner, generation, expires_at_unix_ms, last_request_id, status_code, status_message"}}}},
                         "401": {"$ref": "#/components/responses/Unauthorized"}
                     },
                     "security": [{"bearerAuth": []}]

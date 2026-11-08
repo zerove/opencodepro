@@ -475,6 +475,7 @@ mod tests {
 use crate::peer::manager::PeerManager;
 use sisyphus_bridge_api::cluster_proto::{cluster_client::ClusterClient, ControlProposeRequest};
 use std::sync::Arc;
+use tonic::transport::Channel;
 
 /// 6.5 租约多数派协调结果（v1：多数派 ack；超时/不确定=错误，不判定成功）。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -495,6 +496,8 @@ pub struct ControlPlaneCoordinator {
     /// ADR-019：协调节点本地 `(key, request_id)` 幂等/重试缓存（有界，缓解不确定提交重试风暴）。
     /// 跨节点幂等仍依赖各节点 `ControlPlaneState`；此缓存仅用于同一协调入口的快速重放。
     decision_cache: RwLock<std::collections::VecDeque<((String, String), LeaseQuorumOutcome)>>,
+    /// gRPC channel 复用（按 endpoint）。失败时 best-effort 驱逐。
+    channels: Arc<RwLock<HashMap<String, Channel>>>,
 }
 
 impl ControlPlaneCoordinator {
@@ -510,6 +513,7 @@ impl ControlPlaneCoordinator {
             state,
             propose_timeout,
             decision_cache: RwLock::new(std::collections::VecDeque::new()),
+            channels: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -590,6 +594,7 @@ impl ControlPlaneCoordinator {
             expected_generation,
         };
 
+        let channels = self.channels.clone();
         let mut tasks = Vec::new();
         for p in peers {
             let mut endpoint = p.grpc_addr.clone();
@@ -598,15 +603,32 @@ impl ControlPlaneCoordinator {
             }
             let req = req.clone();
             let timeout = self.propose_timeout;
+            let channels = channels.clone();
+            let ep = endpoint.clone();
             tasks.push(tokio::spawn(async move {
-                let connect = tokio::time::timeout(timeout, ClusterClient::connect(endpoint)).await;
-                let mut client = match connect {
-                    Ok(Ok(c)) => c,
-                    _ => return Err(()),
+                let cached = { channels.read().get(&ep).cloned() };
+                let channel = if let Some(ch) = cached {
+                    ch
+                } else {
+                    let ep_parsed = match Channel::from_shared(ep.clone()) {
+                        Ok(e) => e,
+                        Err(_) => return Err(()),
+                    };
+                    match tokio::time::timeout(timeout, ep_parsed.connect()).await {
+                        Ok(Ok(ch)) => {
+                            channels.write().insert(ep.clone(), ch.clone());
+                            ch
+                        },
+                        _ => return Err(()),
+                    }
                 };
+                let mut client = ClusterClient::new(channel);
                 match tokio::time::timeout(timeout, client.propose_control(req)).await {
                     Ok(Ok(resp)) => Ok(resp.into_inner().accepted),
-                    _ => Err(()),
+                    _ => {
+                        channels.write().remove(&ep);
+                        Err(())
+                    },
                 }
             }));
         }
