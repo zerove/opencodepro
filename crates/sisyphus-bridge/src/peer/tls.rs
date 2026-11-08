@@ -26,9 +26,20 @@ fn read_pem(path: &str, label: &str) -> Result<Vec<u8>, String> {
     std::fs::read(Path::new(path)).map_err(|e| format!("read {label} {path}: {e}"))
 }
 
+/// 确保进程级 rustls `CryptoProvider` 已安装（ADR-019）。
+///
+/// 依赖图可能同时启用 `ring` 与 `aws-lc-rs`（例如测试/dev 依赖统一了 features）。
+/// 此时 rustls 无法自动判定 provider，**TLS 握手会 panic**。这里显式安装 `ring`
+/// provider（幂等，可重复调用）。必须在构造/使用任何 TLS 配置前调用：
+/// bridge `main`、`control_plane_harness` 与 `load_control_plane_tls` 都会调用。
+pub fn ensure_rustls_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 /// Load TLS material when `tls_enabled=true`. Returns `wired=false` with an error note
 /// if required material cannot be loaded (caller must fail-closed / refuse arming).
 pub fn load_control_plane_tls(cfg: &ClusterControlPlaneConfig) -> ControlPlaneTlsMaterial {
+    ensure_rustls_crypto_provider();
     if !cfg.tls_enabled {
         return ControlPlaneTlsMaterial {
             wired: false,

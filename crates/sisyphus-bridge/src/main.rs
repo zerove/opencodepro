@@ -22,6 +22,9 @@ use sisyphus_bridge::{auth, bridge_service::MySisyphusBridge, http};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // ADR-019：依赖图可能同时启用 ring/aws-lc-rs；显式安装 rustls provider，
+    // 否则启用 TLS 时握手会 panic（fail-closed 的前提下也不允许运行期崩溃）。
+    sisyphus_bridge::peer::tls::ensure_rustls_crypto_provider();
     let config_path =
         std::env::var("SISYPHUS_CONFIG").unwrap_or_else(|_| "config.toml".to_string());
 

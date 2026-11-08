@@ -55,6 +55,9 @@ thiserror = { workspace = true }
 async-stream = "0.3"
 mdns-sd = "0.21.1"
 x509-parser = "0.16"
+# ADR-019：显式选择 rustls CryptoProvider（依赖图可能同时启用 ring/aws-lc-rs，
+# 不显式安装时 rustls 会在握手期 panic）；仅需 ring provider。
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 [features]
 default = ["sandbox"]
@@ -65,3 +68,5 @@ tower = { version = "0.4", features = ["util"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 # cluster_integration.rs 的双节点经验同步用例需要为每个节点建内存库
 sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio-rustls"] }
+rcgen = "0.13"
+tempfile = "3"

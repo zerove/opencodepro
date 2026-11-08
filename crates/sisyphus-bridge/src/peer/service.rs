@@ -699,9 +699,9 @@ impl Cluster for ClusterServiceImpl {
         &self,
         request: Request<ControlProposeRequest>,
     ) -> Result<Response<ControlProposeResponse>, Status> {
-        if self.control_plane_auth_mode == "mtls_subject_allowlist" {
-            self.enforce_control_plane_auth(&request)?;
-        }
+        // ADR-019 fail-closed：`none` 放行；`mtls_subject_allowlist` 校验 peer 证书主体；
+        // 其余未知模式一律拒绝（不得因绕过 main.rs 装配检查而静默放行）。
+        self.enforce_control_plane_auth(&request)?;
         let req = request.into_inner();
         if !self.control_plane_enabled {
             if let Some(s) = &self.control_plane {
@@ -749,9 +749,9 @@ impl Cluster for ClusterServiceImpl {
         &self,
         request: Request<ControlProposeRequest>,
     ) -> Result<Response<ControlLeaseResponse>, Status> {
-        if self.control_plane_auth_mode == "mtls_subject_allowlist" {
-            self.enforce_control_plane_auth(&request)?;
-        }
+        // ADR-019 fail-closed：`none` 放行；`mtls_subject_allowlist` 校验 peer 证书主体；
+        // 其余未知模式一律拒绝（不得因绕过 main.rs 装配检查而静默放行）。
+        self.enforce_control_plane_auth(&request)?;
         let req = request.into_inner();
         if !self.control_plane_enabled {
             if let Some(s) = &self.control_plane {

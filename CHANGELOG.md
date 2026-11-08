@@ -92,8 +92,18 @@
   `#[ignore = "requires dedicated runner"]`：`n3_partition_heal_rejoin_address_update`、
   `rollback_gate_off_rejects_control_plane_writes`、`n3_minority_cannot_commit_when_quorum_unreachable`。
   **仍待 ADR-019 准入（阻塞生产启用）**：协调节点 `(key,request_id)`/不确定提交指引、
-  生产连接池/TLS/成员变更深度集成与受门禁调用入口、专用运行器分区/leader 变更/混沌/重启
-  证据与回滚演练；默认 `cluster.control_plane.enabled=false`。
+  生产连接池/成员变更深度集成、真实证书/SAN/secret 与共享端口 TLS 部署语义、受门禁调用入口、
+  专用运行器分区/leader 变更/混沌/重启/TLS 长稳证据与回滚演练；默认 `cluster.control_plane.enabled=false`。
+- **控制面 mTLS/鉴权本地证据与运行期修复**（ADR-019）：新增
+  `crates/sisyphus-bridge/tests/control_plane_mtls_test.rs`（4 项：允许 list 通过/非 allowlist
+  `permission_denied`、无客户端证书握手失败、`CN:` 匹配、未知鉴权模式 fail-closed；loopback
+  单进程证据，不替代专用 runner 真实 TLS 长稳/轮换证据）；修复依赖图同时启用 `ring`/`aws-lc-rs`
+  时 rustls 握手 panic（`peer::tls::ensure_rustls_crypto_provider`，bridge `main`/harness/loader
+  调用）；`control_plane_harness` 新增 `--ca-cert/--client-cert/--client-key/--domain`（缺参/非
+  `https` 拒绝，不静默降级）；新增 `make gen-control-plane-test-certs` /
+  `crates/sisyphus-bridge/examples/gen_control_plane_test_certs.rs`（rcgen 测试 PKI，双用途
+  `serverAuth`+`clientAuth`、SAN `DNS:<node>,DNS:localhost,IP:127.0.0.1`，私钥 0600）；未知
+  `submit_auth_mode` 在 service 层也 fail-closed（不依赖装配检查）。
 
 - **联邦来源标注与一致性校验**（ADR-017 Amendment 4，Phase G，v0.4.0 后续）：
   - `ClusterEvent::StateProposal` / proto `StateProposal.source_node_id`（field 4）

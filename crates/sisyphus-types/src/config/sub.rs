@@ -643,8 +643,10 @@ pub struct ClusterControlPlaneConfig {
     /// 租约 TTL 上限（秒，v1 bounds）。
     #[serde(default = "default_control_plane_lease_ttl_max_secs")]
     pub lease_ttl_max_secs: u64,
-    /// TLS/mTLS 配置占位（ADR-019）。`tls_enabled=true` 时当前构建**不会**自动接线 TLS；
-    /// 生产启用前须完成 tonic TLS feature + 证书加载 + 专用 runner 证据。证书字段仅声明意图。
+    /// TLS/mTLS 接线开关（ADR-019）。`tls_enabled=true` 时 bridge 启动加载 PEM
+    /// （CA + 节点身份 cert/key + `tls_domain_name`），并应用于**共享 gRPC 端口**的
+    /// server TLS 与 coordinator/proposer 的 client mTLS；加载失败/不完整 **fail-closed
+    /// 拒绝装配**。生产启用仍需真实证书与专用 runner 证据。
     #[serde(default)]
     pub tls_enabled: bool,
     #[serde(default)]
@@ -655,11 +657,13 @@ pub struct ClusterControlPlaneConfig {
     pub tls_client_key_path: String,
     #[serde(default)]
     pub tls_domain_name: String,
-    /// `SubmitControlLease` 鉴权策略占位：`none`/`mtls_subject_allowlist`（默认 `none`）。
-    /// `none` 以外的值在当前构建**不会**强制执行；生产暴露前须实现并验证鉴权边界。
+    /// `SubmitControlLease`/`ProposeControl` 鉴权模式：`none`/`mtls_subject_allowlist`（默认 `none`）。
+    /// `mtls_subject_allowlist` 基于 peer 证书 subject（`DNS:`/`URI:`/`CN:`/裸值）**fail-closed**
+    /// 校验；装配要求 wired mTLS + 非空 `allowed_submit_subjects`。未知模式装配时拒绝。
     #[serde(default = "default_control_plane_submit_auth_mode")]
     pub submit_auth_mode: String,
-    /// 允许提交控制面写入的主体列表（策略占位；语义由 `submit_auth_mode` 实现决定）。
+    /// 允许提交控制面写入的主体列表（`mtls_subject_allowlist` 模式必填）。
+    /// 条目格式：`DNS:<name>` / `URI:<uri>` / `CN:<value>` / 裸值（匹配 CN 或 SAN）。
     #[serde(default)]
     pub allowed_submit_subjects: Vec<String>,
 }

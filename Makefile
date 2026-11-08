@@ -437,6 +437,12 @@ test-bridge-dedicated: $(BRIDGE_DEPS)
 test-control-plane-dedicated:
 	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-bridge --no-default-features --lib quorum_tests -- --ignored --test-threads=1 --nocapture $(if $(FILTER),$(FILTER),)
 
+# ADR-019：生成控制面 mTLS 测试 PKI（rcgen；仅测试用途）
+# 例：make gen-control-plane-test-certs ARGS="--out ./control-plane-certs --node node-1 --node node-2"
+.PHONY: gen-control-plane-test-certs
+gen-control-plane-test-certs:
+	cargo run -p sisyphus-bridge --no-default-features --example gen_control_plane_test_certs -- $(ARGS)
+
 test-cli-handlers:
 	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-cli --lib
 

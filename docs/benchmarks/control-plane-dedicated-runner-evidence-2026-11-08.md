@@ -2,7 +2,7 @@
 
 **范围**：A=gRPC/内部+只读状态，B=不接入调度器；`cluster.control_plane.enabled=false` 默认。  
 **语义**：多数派 ack + fencing/`request_id` 幂等 + TTL；**超时/不确定=错误，不判定成功**；非 Raft 线性一致。  
-**状态**：快 CI 已覆盖 in-process/N=3/门禁/只读查询；**真实网络分区/leader 变更/混沌/重启证据待专用运行器执行并落盘**（阻塞生产启用）。
+**状态**：快 CI 已覆盖 in-process/N=3/门禁/只读查询与 loopback mTLS/allowlist 鉴权；**真实网络分区/leader 变更/混沌/重启/TLS 长稳证据待专用运行器执行并落盘**（阻塞生产启用）。
 
 ## 快 CI（已通过）
 
@@ -47,11 +47,37 @@ cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -
 
 输出 JSON（`kind=submit_control_lease|get_control_lease`），含 `accepted/uncertain/error_code/guidance` 或 `found/status_code`。网络分区/混沌/重启由专用运行环境注入；harness 仅标准化提交与状态核对证据。
 
+### mTLS 场景（ADR-019，`tls_enabled=true` + `mtls_subject_allowlist`）
+
+```bash
+# 1) 生成测试 PKI（rcgen；仅测试用途，禁止用于生产信任链）
+make gen-control-plane-test-certs ARGS="--out ./control-plane-certs --node node-1 --node node-2 --node node-3"
+# 等价入口：scripts/gen-control-plane-test-certs.sh --out ./control-plane-certs --node node-1
+
+# 2) 每个节点配置（示例见命令输出）：tls_ca_cert_path/tls_client_cert_path/tls_client_key_path
+#    tls_domain_name 必须匹配“被 dial 节点”证书 SAN（loopback=localhost），
+#    allowed_submit_subjects 必须包含所有允许提交控制面的节点身份（DNS:/CN:/URI:）。
+
+# 3) 通过 mTLS 提交/查询（addr 可用 http://，给出 --ca-cert 后自动归一化为 https://）
+cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -- \
+  --addr http://127.0.0.1:50051 \
+  --ca-cert ./control-plane-certs/ca.pem \
+  --client-cert ./control-plane-certs/node-1.pem \
+  --client-key ./control-plane-certs/node-1.key \
+  --domain localhost \
+  --key lease:demo --owner node-1 --request-id r-tls-001 --operation lease.acquire --ttl-secs 30 \
+  --output /tmp/lease-submit-tls.json
+```
+
+预期证据：allowlist 内节点成功进入业务路径（无 coordinator 时 `UNAVAILABLE` 响应）；非 allowlist 节点 `permission_denied`；无客户端证书握手失败；错误 CA/证书轮换后按预期拒绝（fail-closed）。
+
+本地 in-process 证据（**非**专用 runner 真实跨进程证据）：`cargo test -p sisyphus-bridge --no-default-features --test control_plane_mtls_test`（4 passed：DNS allowlist/非 allowlist/无证书/`CN:`/未知模式 fail-closed）。
+
 ## 仍需补充的专用 runner/生产证据（ADR-019 准入）
 
 - **真实 N=3 进程/网络**：分区、少数派不可提交、leader 变更（字典序/成员变更）后安全性、分区愈合收敛/拒绝符合定义。
 - **混沌/故障注入**：延迟、丢包、进程重启；`uncertain=true`/超时路径验证；以同 `request_id` 重试 + `GetControlLease` 核对。
-- **连接/TLS/成员变更**：生产连接池、TLS/mTLS（如需）、成员离开/加入/地址变更的错误分级。
+- **连接/TLS/成员变更**：生产连接池、TLS/mTLS（真实证书/SAN/secret 挂载、共享 gRPC 端口客户端迁移、TLS 长稳与证书轮换、错误证书/过期证书 fail-closed）、成员离开/加入/地址变更的错误分级。本地 in-process mTLS 测试（`tests/control_plane_mtls_test.rs`）**不构成**此项证据。
 - **回滚演练记录**：`cluster.control_plane.enabled=false` 后写入拒绝、只读观测可用（含 `/api/cluster/status.config.control_plane_enabled`）。
 
 执行后将命令、commit、环境、输出摘要追加到本文档或新增 `control-plane-dedicated-runner-run-<date>.md`。
@@ -69,5 +95,5 @@ env -u RUSTUP_TOOLCHAIN cargo test -p sisyphus-bridge --no-default-features --li
 - `n3_partition_heal_rejoin_address_update` ... ok（配套修复：`PeerManager::on_peer_joined` 已存在 peer 时更新 `PeerInfo`/地址并刷新 `last_seen`，支持分区愈合地址恢复；返回值语义保持 `false`=非新增）
 - `rollback_gate_off_rejects_control_plane_writes` ... ok
 
-**覆盖范围（诚实）**：in-process N=3 gRPC、本地 ephemeral 端口、可控不可达地址/门禁；验证多数派不可达 fail-closed（无假成功）、成员地址恢复后协调可用、门禁关闭写入拒绝+无状态写入。  
-**未覆盖（仍需专用 runner/生产环境证据）**：真实跨进程/跨主机网络分区、丢包/延迟混沌、进程崩溃重启、leader 变更的网络级安全性、TLS/mTLS、连接池耗尽/成员抖动长稳、回滚演练在真实部署配置下的操作证据。ADR-019 生产启用仍阻塞于上述证据与生产网络装配。
+**覆盖范围（诚实）**：in-process N=3 gRPC、本地 ephemeral 端口、可控不可达地址/门禁；验证多数派不可达 fail-closed（无假成功）、成员地址恢复后协调可用、门禁关闭写入拒绝+无状态写入。另附 loopback mTLS 证据（`control_plane_mtls_test`：allowlist/非 allowlist/无证书/`CN:`/未知模式 fail-closed）。  
+**未覆盖（仍需专用 runner/生产环境证据）**：真实跨进程/跨主机网络分区、丢包/延迟混沌、进程崩溃重启、leader 变更的网络级安全性、真实证书与 SAN/secret 挂载、TLS 长稳/证书轮换、连接池耗尽/成员抖动长稳、回滚演练在真实部署配置下的操作证据。ADR-019 生产启用仍阻塞于上述证据与生产网络装配。

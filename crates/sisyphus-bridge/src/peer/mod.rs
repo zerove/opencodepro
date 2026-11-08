@@ -39,4 +39,7 @@ pub use manager::{ClusterEvent as MgrEvent, PeerInfo, PeerManager, PeerStatus};
 pub use service::{ClusterServiceImpl, JoinGateHandle};
 
 pub use control_plane::ControlPlaneState;
-pub use tls::{load_control_plane_tls, verify_peer_subject_allowlist, ControlPlaneTlsMaterial};
+pub use tls::{
+    ensure_rustls_crypto_provider, load_control_plane_tls, verify_peer_subject_allowlist,
+    ControlPlaneTlsMaterial,
+};

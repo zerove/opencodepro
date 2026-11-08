@@ -59,4 +59,14 @@ GET /api/cluster/status
   - `Cluster.ProposeControl`：peer 本地 apply（proposer 调用）。门禁关闭/未装配返回 `accepted=false` + `DISABLED`/`UNAVAILABLE`，**不是**提交成功。
   - `Cluster.SubmitControlLease`：协调节点多数派提交；`ControlLeaseResponse.uncertain=true` 或超时/连接失败导致的不确定结果 **必须视为失败/未知，不得判定成功**。可用同一 `request_id` 重试（幂等），并用 `Cluster.GetControlLease` 查询当前租约状态；协调节点不缓存 `uncertain` 结果，跨节点幂等由各节点租约状态保障。
   - `Cluster.GetControlLease`：只读查询（`OK`/`NOT_FOUND`/`DISABLED`/`UNAVAILABLE`），用于不确定提交后的状态核对。
-- v1 租约（`lease.acquire/renew/release`）：`request_id` 幂等、TTL、fencing generation；语义为**多数派 ack + 不确定=错误**（非 Raft 线性一致）。生产多节点 quorum/分区/混沌/连接池-TLS/成员变更集成与专用运行器证据未完成前不得生产启用。
+- v1 租约（`lease.acquire/renew/release`）：`request_id` 幂等、TTL、fencing generation；语义为**多数派 ack + 不确定=错误**（非 Raft 线性一致）。生产多节点 quorum/分区/混沌/连接池/成员变更集成与专用运行器证据未完成前不得生产启用。
+- TLS/mTLS 与鉴权（ADR-019，代码已接线，生产准入未满足）：
+  - `tls_enabled=true` 时加载 `tls_ca_cert_path`/`tls_client_cert_path`/`tls_client_key_path`/`tls_domain_name`；**路径为空/不可读/PEM 不完整 => 拒绝装配（fail-closed）**，`/api/cluster/status.control_plane.security.tls_wired=false`。
+  - TLS 应用于**共享 gRPC 端口**：主 bridge gRPC 客户端也必须使用 TLS（部署需统一规划）；`tls_domain_name` 必须匹配被 dial 节点证书 SAN。
+  - `submit_auth_mode="mtls_subject_allowlist"`：`ProposeControl`/`SubmitControlLease` 校验 peer 证书 Subject CN / SAN DNS/URI 与 `allowed_submit_subjects`（`DNS:`/`URI:`/`CN:`/裸值）匹配；缺 TLS peer 信息/无证书/不匹配 => `permission_denied`（fail-closed）。装配要求 wired mTLS + 非空 allowlist。
+  - 常见现象：
+    - `permission_denied: missing TLS peer info` / `missing peer certificate`：客户端未走 mTLS（或 server 未启用 TLS）；检查客户端 `--ca-cert/--client-cert/--client-key` 与服务端 `tls_enabled`。
+    - `permission_denied: peer subject not allowed`：证书主体不在 allowlist；核对 SAN/CN 与条目前缀（大小写敏感、精确匹配）。
+    - TLS 握手失败/证书错误：检查 CA 信任链、SAN 与 `tls_domain_name`、证书有效期；错误证书必须 fail-closed，不得放宽校验。
+    - 进程启动即失败且日志提示 `mtls_subject_allowlist requires ...`：wired/allowlist 前置条件不满足，按 fail-closed 拒绝装配（不会降级为明文）。
+  - 测试/专用 runner 工具：`make gen-control-plane-test-certs ARGS="--out DIR --node node-1 ..."`（仅测试用途）；`control_plane_harness --ca-cert/--client-cert/--client-key/--domain`。本地 loopback 证据见 `crates/sisyphus-bridge/tests/control_plane_mtls_test.rs`，**不替代**真实跨进程 TLS 长稳/轮换证据。
