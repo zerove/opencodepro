@@ -11,6 +11,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -474,8 +475,7 @@ mod tests {
 
 use crate::peer::manager::PeerManager;
 use sisyphus_bridge_api::cluster_proto::{cluster_client::ClusterClient, ControlProposeRequest};
-use std::sync::Arc;
-use tonic::transport::Channel;
+use tonic::transport::{Channel, ClientTlsConfig};
 
 /// 6.5 租约多数派协调结果（v1：多数派 ack；超时/不确定=错误，不判定成功）。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -494,6 +494,7 @@ pub struct ControlPlaneCoordinator {
     state: Arc<ControlPlaneState>,
     propose_timeout: Duration,
     connect_timeout: Duration,
+    client_tls: Option<ClientTlsConfig>,
     /// ADR-019：协调节点本地 `(key, request_id)` 幂等/重试缓存（有界，缓解不确定提交重试风暴）。
     /// 跨节点幂等仍依赖各节点 `ControlPlaneState`；此缓存仅用于同一协调入口的快速重放。
     decision_cache: RwLock<std::collections::VecDeque<((String, String), LeaseQuorumOutcome)>>,
@@ -523,11 +524,22 @@ impl ControlPlaneCoordinator {
         propose_timeout: Duration,
         connect_timeout: Duration,
     ) -> Self {
+        Self::with_timeouts_and_tls(peer_manager, state, propose_timeout, connect_timeout, None)
+    }
+
+    pub fn with_timeouts_and_tls(
+        peer_manager: Arc<PeerManager>,
+        state: Arc<ControlPlaneState>,
+        propose_timeout: Duration,
+        connect_timeout: Duration,
+        client_tls: Option<ClientTlsConfig>,
+    ) -> Self {
         Self {
             peer_manager,
             state,
             propose_timeout,
             connect_timeout,
+            client_tls,
             decision_cache: RwLock::new(std::collections::VecDeque::new()),
             channels: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -611,26 +623,40 @@ impl ControlPlaneCoordinator {
         };
 
         let channels = self.channels.clone();
+        let client_tls = self.client_tls.clone();
         let mut tasks = Vec::new();
         for p in peers {
             let mut endpoint = p.grpc_addr.clone();
-            if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+            if client_tls.is_some() {
+                if endpoint.starts_with("http://") {
+                    endpoint = format!("https://{}", &endpoint["http://".len()..]);
+                } else if !endpoint.starts_with("https://") {
+                    endpoint = format!("https://{endpoint}");
+                }
+            } else if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
                 endpoint = format!("http://{endpoint}");
             }
             let req = req.clone();
             let propose_timeout = self.propose_timeout;
             let connect_timeout = self.connect_timeout;
             let channels = channels.clone();
+            let tls = client_tls.clone();
             let ep = endpoint.clone();
             tasks.push(tokio::spawn(async move {
                 let cached = { channels.read().get(&ep).cloned() };
                 let channel = if let Some(ch) = cached {
                     ch
                 } else {
-                    let ep_parsed = match Channel::from_shared(ep.clone()) {
+                    let mut ep_parsed = match Channel::from_shared(ep.clone()) {
                         Ok(e) => e,
                         Err(_) => return Err(()),
                     };
+                    if let Some(tls_cfg) = tls {
+                        ep_parsed = match ep_parsed.tls_config(tls_cfg) {
+                            Ok(e) => e,
+                            Err(_) => return Err(()),
+                        };
+                    }
                     match tokio::time::timeout(connect_timeout, ep_parsed.connect()).await {
                         Ok(Ok(ch)) => {
                             channels.write().insert(ep.clone(), ch.clone());

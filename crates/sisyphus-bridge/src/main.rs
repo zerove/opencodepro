@@ -5,7 +5,7 @@ use sisyphus_types::Config;
 use std::sync::{Arc, RwLock};
 use tokio::signal;
 use tokio_stream::wrappers::TcpListenerStream;
-use tonic::transport::Server;
+
 use tracing::{error, info, warn};
 
 // OpenTelemetry
@@ -110,7 +110,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Cluster peer protocol (TODO 8.3.1 Phase B) ───────────────────────
     // 必须在桥接构造之前完成：内核的经验库要拿到 peer 管理器才能把本地
     // 新增经验广播出去，而内核由 MySisyphusBridge::new 内部构造。
-    let cluster_runtime: Option<sisyphus_bridge::bridge_service::ClusterRuntime> = {
+    let (cluster_runtime, cluster_server_tls): (
+        Option<sisyphus_bridge::bridge_service::ClusterRuntime>,
+        Option<tonic::transport::ServerTlsConfig>,
+    ) = {
         use sisyphus_bridge::peer::PeerManager;
 
         let cfg = match shared_config.read() {
@@ -122,7 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 static_peers = cfg.peers.len(),
                 "Cluster peer protocol disabled (set [cluster].enabled = true to enable)"
             );
-            None
+            (None, None)
         } else {
             let derived = std::env::var("SISYPHUS_CLUSTER_NODE_ID")
                 .ok()
@@ -135,45 +138,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             let peer_ttl = std::time::Duration::from_secs(cfg.peer_ttl_secs);
             let manager = std::sync::Arc::new(PeerManager::new(self_node_id.clone(), peer_ttl));
-            let control_plane_effectively_armed = cfg.control_plane.enabled
-                && !cfg.control_plane.tls_enabled
-                && cfg.control_plane.submit_auth_mode == "none";
+            let tls_material = sisyphus_bridge::peer::load_control_plane_tls(&cfg.control_plane);
+            let control_plane_tls_wired = tls_material.wired;
+            if cfg.control_plane.tls_enabled && !tls_material.wired {
+                tracing::error!(
+                    note = %tls_material.note,
+                    "cluster.control_plane.tls_enabled=true but TLS material not wired; refusing to arm control plane (fail-closed)"
+                );
+            }
+            // ADR-019 安全默认：mtls_subject_allowlist 的主体提取/匹配尚未实现，fail-closed 拒绝装配（不伪造鉴权）。
+            let auth_mode_ok = match cfg.control_plane.submit_auth_mode.as_str() {
+                "none" => true,
+                "mtls_subject_allowlist" => {
+                    if cfg.control_plane.enabled {
+                        tracing::error!(
+                            mode = %cfg.control_plane.submit_auth_mode,
+                            "SubmitControlLease subject allowlist enforcement not implemented (X509 subject extraction/match requires decision+implementation+evidence); refusing to arm control plane (fail-closed)"
+                        );
+                    }
+                    false
+                },
+                other => {
+                    if cfg.control_plane.enabled {
+                        tracing::error!(mode = %other, "unknown cluster.control_plane.submit_auth_mode; refusing to arm control plane (fail-closed)");
+                    }
+                    false
+                },
+            };
+            let tls_ok = !cfg.control_plane.tls_enabled || tls_material.wired;
+            let control_plane_effectively_armed =
+                cfg.control_plane.enabled && tls_ok && auth_mode_ok;
             let (control_plane_state, control_plane_coordinator) =
                 if control_plane_effectively_armed {
                     use sisyphus_bridge::peer::control_plane::{
                         ControlPlaneCoordinator, ControlPlaneState,
                     };
-                    tracing::warn!(
-                    "cluster.control_plane.enabled=true (tls/auth placeholders not requested): ADR-019 gate on; \
-                     production multi-node quorum requires full admission criteria (resolver/member-change/chaos/TLS/auth/rollback evidence)."
-                );
-                    let state = std::sync::Arc::new(ControlPlaneState::new());
-                    let coord = std::sync::Arc::new(ControlPlaneCoordinator::with_timeouts(
-                        manager.clone(),
-                        state.clone(),
-                        std::time::Duration::from_millis(
-                            cfg.control_plane.propose_timeout_ms.max(1),
-                        ),
-                        std::time::Duration::from_millis(
-                            cfg.control_plane.connect_timeout_ms.max(1),
-                        ),
-                    ));
-                    (Some(state), Some(coord))
-                } else if cfg.control_plane.enabled {
-                    if cfg.control_plane.tls_enabled {
-                        tracing::error!(
-                        "cluster.control_plane.enabled=true with tls_enabled=true, but TLS wiring is not implemented in this build; \
-                         refusing to arm control plane (fail-closed, no false success). Set tls_enabled=false or complete TLS wiring + ADR-019 evidence."
+                    if cfg.control_plane.tls_enabled && tls_material.wired {
+                        tracing::warn!(
+                            note = %tls_material.note,
+                            "cluster.control_plane mTLS wired (transport). submit_auth_mode=none: no app-layer SubmitControlLease subject allowlist enforcement; controlled environments only, requires ADR-019 dedicated-runner evidence."
+                        );
+                    } else {
+                        tracing::warn!(
+                        "cluster.control_plane.enabled=true (no TLS/auth enforcement): ADR-019 gate on; production multi-node quorum requires full admission criteria (resolver/member-change/chaos/rollback/TLS/auth evidence)."
                     );
                     }
-                    if cfg.control_plane.submit_auth_mode != "none" {
-                        tracing::error!(
-                            mode = %cfg.control_plane.submit_auth_mode,
-                            "cluster.control_plane.submit_auth_mode requires enforcement not implemented in this build; \
-                             refusing to arm control plane (fail-closed). Use submit_auth_mode=none only in controlled environments with ADR-019 evidence."
-                        );
-                    }
-                    (None, None)
+                    let state = std::sync::Arc::new(ControlPlaneState::new());
+                    let coord =
+                        std::sync::Arc::new(ControlPlaneCoordinator::with_timeouts_and_tls(
+                            manager.clone(),
+                            state.clone(),
+                            std::time::Duration::from_millis(
+                                cfg.control_plane.propose_timeout_ms.max(1),
+                            ),
+                            std::time::Duration::from_millis(
+                                cfg.control_plane.connect_timeout_ms.max(1),
+                            ),
+                            tls_material.client.clone(),
+                        ));
+                    (Some(state), Some(coord))
                 } else {
                     (None, None)
                 };
@@ -183,15 +206,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 peer_ttl_secs = cfg.peer_ttl_secs,
                 static_peers = cfg.peers.len(),
                 control_plane = cfg.control_plane.enabled,
+                control_plane_tls_wired,
+                control_plane_armed = control_plane_state.is_some(),
                 "Cluster peer protocol enabled (peer manager created before kernel)"
             );
-            Some(sisyphus_bridge::bridge_service::ClusterRuntime {
-                peer_manager: manager,
-                node_id: self_node_id,
-                cluster_config: cfg,
-                control_plane_state,
-                control_plane_coordinator,
-            })
+            let server_tls = tls_material.server.clone();
+            (
+                Some(sisyphus_bridge::bridge_service::ClusterRuntime {
+                    peer_manager: manager,
+                    node_id: self_node_id,
+                    cluster_config: cfg,
+                    control_plane_tls_wired,
+                    control_plane_state,
+                    control_plane_coordinator,
+                }),
+                server_tls,
+            )
         }
     };
 
@@ -285,7 +315,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── Start gRPC server ───────────────────────────────────────────────
     let auth_interceptor = auth::AuthInterceptor::new(auth_token);
-    let mut grpc_server = Server::builder().add_service(SisyphusBridgeServer::with_interceptor(
+    let mut server_builder = tonic::transport::Server::builder();
+    if let Some(tls) = cluster_server_tls {
+        server_builder = server_builder.tls_config(tls).map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("cluster control plane TLS server config failed (fail-closed): {e}"),
+            )
+        })?;
+        info!("gRPC server TLS enabled (cluster control plane mTLS material; applies to shared gRPC port)");
+    }
+    let mut grpc_server = server_builder.add_service(SisyphusBridgeServer::with_interceptor(
         (*bridge).clone(),
         auth_interceptor,
     ));

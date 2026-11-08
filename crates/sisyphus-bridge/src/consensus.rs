@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use tonic::transport::{Channel, ClientTlsConfig};
 
 /// 简单的集群共识实现
 pub struct ClusterConsensus {
@@ -196,6 +197,7 @@ where
 {
     resolve: F,
     timeout: Duration,
+    client_tls: Option<ClientTlsConfig>,
 }
 
 impl<F> GrpcPeerProposer<F>
@@ -203,7 +205,19 @@ where
     F: Fn(&str) -> Option<String> + Send + Sync,
 {
     pub fn new(resolve: F, timeout: Duration) -> Self {
-        Self { resolve, timeout }
+        Self {
+            resolve,
+            timeout,
+            client_tls: None,
+        }
+    }
+
+    pub fn with_tls(resolve: F, timeout: Duration, client_tls: Option<ClientTlsConfig>) -> Self {
+        Self {
+            resolve,
+            timeout,
+            client_tls,
+        }
     }
 }
 
@@ -217,25 +231,45 @@ where
             tracing::warn!(peer = %peer, "GrpcPeerProposer: cannot resolve peer endpoint");
             return false;
         };
-        let connect = match tokio::time::timeout(
-            self.timeout,
-            sisyphus_bridge_api::cluster_proto::cluster_client::ClusterClient::connect(
-                endpoint.clone(),
-            ),
-        )
-        .await
-        {
-            Ok(Ok(c)) => c,
-            Ok(Err(e)) => {
-                tracing::warn!(peer = %peer, endpoint = %endpoint, error = %e, "GrpcPeerProposer: connect failed");
-                return false;
-            },
-            Err(_) => {
-                tracing::warn!(peer = %peer, endpoint = %endpoint, "GrpcPeerProposer: connect timeout");
+        let mut endpoint_use = endpoint.clone();
+        if self.client_tls.is_some() {
+            if endpoint_use.starts_with("http://") {
+                endpoint_use = format!("https://{}", &endpoint_use["http://".len()..]);
+            } else if !endpoint_use.starts_with("https://") {
+                endpoint_use = format!("https://{endpoint_use}");
+            }
+        } else if !endpoint_use.starts_with("http://") && !endpoint_use.starts_with("https://") {
+            endpoint_use = format!("http://{endpoint_use}");
+        }
+        let mut ep = match Channel::from_shared(endpoint_use.clone()) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!(peer = %peer, endpoint = %endpoint_use, error = %e, "GrpcPeerProposer: invalid endpoint");
                 return false;
             },
         };
-        let mut client = connect;
+        if let Some(tls) = &self.client_tls {
+            ep = match ep.tls_config(tls.clone()) {
+                Ok(e) => e,
+                Err(e) => {
+                    tracing::warn!(peer = %peer, endpoint = %endpoint_use, error = %e, "GrpcPeerProposer: tls config failed");
+                    return false;
+                },
+            };
+        }
+        let connect = match tokio::time::timeout(self.timeout, ep.connect()).await {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => {
+                tracing::warn!(peer = %peer, endpoint = %endpoint_use, error = %e, "GrpcPeerProposer: connect failed");
+                return false;
+            },
+            Err(_) => {
+                tracing::warn!(peer = %peer, endpoint = %endpoint_use, "GrpcPeerProposer: connect timeout");
+                return false;
+            },
+        };
+        let mut client =
+            sisyphus_bridge_api::cluster_proto::cluster_client::ClusterClient::new(connect);
         let (request_id, operation, payload_json, expected_generation) =
             match control_proposal_from_value(key, value) {
                 Ok(v) => v,

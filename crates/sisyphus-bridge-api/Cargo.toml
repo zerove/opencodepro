@@ -9,7 +9,7 @@ description = "Shared gRPC types, client wrapper, and server trait for the Sisyp
 
 [dependencies]
 metrics = "0.24"
-tonic = { version = "0.12", features = ["transport"] }
+tonic = { version = "0.12", features = ["transport", "tls"] }
 prost = "0.13"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
 anyhow = { workspace = true }

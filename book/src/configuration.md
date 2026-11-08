@@ -339,10 +339,10 @@ fencing/TTL，**超时/不确定=错误，不判定成功**（非 Raft 线性一
 | `connect_timeout_ms` | `SISYPHUS_CLUSTER_CONTROL_PLANE_CONNECT_TIMEOUT_MS` | u64（毫秒） | 1000 |
 | `lease_ttl_min_secs` | `SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MIN_SECS` | u64（秒） | 1 |
 | `lease_ttl_max_secs` | `SISYPHUS_CLUSTER_CONTROL_PLANE_LEASE_TTL_MAX_SECS` | u64（秒） | 3600 |
-| `tls_enabled` | `SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_ENABLED` | bool | **false**（占位；当前构建不自动接线 TLS） |
-| `tls_ca_cert_path` / `tls_client_cert_path` / `tls_client_key_path` / `tls_domain_name` | 对应 `SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_*` | string | 空（证书/域名占位） |
-| `submit_auth_mode` | `SISYPHUS_CLUSTER_CONTROL_PLANE_SUBMIT_AUTH_MODE` | string（`none`/`mtls_subject_allowlist`） | `none`（非 `none` 在当前构建不强制执行） |
-| `allowed_submit_subjects` | — | string[] | `[]`（策略占位） |
+| `tls_enabled` | `SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_ENABLED` | bool | **false**（tonic TLS 已接线；启用时加载 PEM，失败/不完整 **fail-closed 拒绝装配**；wired 时影响共享 gRPC 端口） |
+| `tls_ca_cert_path` / `tls_client_cert_path` / `tls_client_key_path` / `tls_domain_name` | 对应 `SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_*` | string | 空（PEM 路径/域名；节点身份用于 server+client mTLS） |
+| `submit_auth_mode` | `SISYPHUS_CLUSTER_CONTROL_PLANE_SUBMIT_AUTH_MODE` | string（`none`/`mtls_subject_allowlist`） | `none`；`mtls_subject_allowlist` 在当前构建 **fail-closed 拒绝装配**（X509 subject 提取/匹配未实现） |
+| `allowed_submit_subjects` | — | string[] | `[]`（`mtls_subject_allowlist` 实现后使用） |
 
 ### `[cluster.strategy_selection]` 字段（v0.4.0 Phase E，ADR-017 Amendment 3）
 

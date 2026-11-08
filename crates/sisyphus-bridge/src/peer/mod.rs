@@ -19,6 +19,7 @@ pub mod fallback;
 pub mod manager;
 pub mod service;
 pub mod strategy_weights;
+pub mod tls;
 
 pub use experience_sync::{
     broadcast_experience, ExperienceSyncHandler, PeerBroadcastExperienceBank,
@@ -38,3 +39,4 @@ pub use manager::{ClusterEvent as MgrEvent, PeerInfo, PeerManager, PeerStatus};
 pub use service::{ClusterServiceImpl, JoinGateHandle};
 
 pub use control_plane::ControlPlaneState;
+pub use tls::{load_control_plane_tls, ControlPlaneTlsMaterial};

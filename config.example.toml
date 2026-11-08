@@ -506,12 +506,16 @@ lease_ttl_max_secs = 3600
 # 连接超时（毫秒）
 # 环境变量: SISYPHUS_CLUSTER_CONTROL_PLANE_CONNECT_TIMEOUT_MS
 connect_timeout_ms = 1000
-# TLS/mTLS 占位（默认关闭；tls_enabled=true 在当前构建不会自动接线 TLS，需 feature+证书+准入证据）
+# TLS/mTLS（默认关闭；`tonic` tls 已接线，加载 PEM 失败/不完整时 fail-closed 拒绝装配）。
+# 启用后 gRPC server 在共享端口启用 TLS，coordinator/PeerProposer 使用 client mTLS；生产需真实证书+ADR-019 专用 runner 证据。
+# 环境变量: SISYPHUS_CLUSTER_CONTROL_PLANE_TLS_ENABLED / TLS_CA_CERT_PATH / TLS_CLIENT_CERT_PATH / TLS_CLIENT_KEY_PATH / TLS_DOMAIN_NAME
 tls_enabled = false
 tls_ca_cert_path = ""
 tls_client_cert_path = ""
 tls_client_key_path = ""
 tls_domain_name = ""
-# SubmitControlLease 鉴权策略占位（none/mtls_subject_allowlist；非 none 在当前构建不会强制执行）
+# SubmitControlLease 鉴权策略：`none`（无应用层 allowlist；tls+wired 时仅传输 mTLS，需受控环境）；
+# `mtls_subject_allowlist` 当前构建 **fail-closed 拒绝装配**（X509 subject 提取/匹配未实现，需决策+实现+证据）。
+# 环境变量: SISYPHUS_CLUSTER_CONTROL_PLANE_SUBMIT_AUTH_MODE
 submit_auth_mode = "none"
 # allowed_submit_subjects = []

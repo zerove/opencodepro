@@ -93,6 +93,7 @@ pub struct MySisyphusBridge {
     pub(crate) control_plane_coordinator:
         Option<Arc<crate::peer::control_plane::ControlPlaneCoordinator>>,
     pub(crate) control_plane_state: Option<Arc<crate::peer::control_plane::ControlPlaneState>>,
+    pub(crate) control_plane_tls_wired: bool,
 }
 
 impl Clone for MySisyphusBridge {
@@ -129,6 +130,7 @@ impl Clone for MySisyphusBridge {
             cluster_config: self.cluster_config.clone(),
             control_plane_coordinator: self.control_plane_coordinator.clone(),
             control_plane_state: self.control_plane_state.clone(),
+            control_plane_tls_wired: self.control_plane_tls_wired,
         }
     }
 }
@@ -141,6 +143,8 @@ pub struct ClusterRuntime {
     pub node_id: String,
     /// 集群配置快照（用于 `/api/cluster/status` 可观测，不改变行为）。
     pub cluster_config: sisyphus_types::ClusterConfig,
+    /// ADR-019：TLS/mTLS 是否实际装配（`tls_enabled` 且加载/接线成功）。
+    pub control_plane_tls_wired: bool,
     /// ADR-019：控制面租约状态（`cluster.control_plane.enabled` 时装配）。
     pub control_plane_state: Option<Arc<crate::peer::control_plane::ControlPlaneState>>,
     /// ADR-019：多数派租约协调器（门禁/装配就绪时可用）。
@@ -161,6 +165,11 @@ impl MySisyphusBridge {
         &self,
     ) -> Option<&Arc<crate::peer::control_plane::ControlPlaneState>> {
         self.control_plane_state.as_ref()
+    }
+
+    /// ADR-019：控制面 TLS/mTLS 是否实际装配。
+    pub fn control_plane_tls_wired(&self) -> bool {
+        self.control_plane_tls_wired
     }
 
     /// New.
@@ -756,16 +765,22 @@ impl MySisyphusBridge {
             (config.chaos.enabled, config.chaos.default_fault_probability)
         };
 
-        let (peer_manager, cluster_config, control_plane_coordinator, control_plane_state) =
-            match cluster.as_ref() {
-                Some(rt) => (
-                    Some(rt.peer_manager.clone()),
-                    rt.cluster_config.clone(),
-                    rt.control_plane_coordinator.clone(),
-                    rt.control_plane_state.clone(),
-                ),
-                None => (None, config_snapshot.cluster.clone(), None, None),
-            };
+        let (
+            peer_manager,
+            cluster_config,
+            control_plane_coordinator,
+            control_plane_state,
+            control_plane_tls_wired,
+        ) = match cluster.as_ref() {
+            Some(rt) => (
+                Some(rt.peer_manager.clone()),
+                rt.cluster_config.clone(),
+                rt.control_plane_coordinator.clone(),
+                rt.control_plane_state.clone(),
+                rt.control_plane_tls_wired,
+            ),
+            None => (None, config_snapshot.cluster.clone(), None, None, false),
+        };
 
         let bridge = MySisyphusBridge {
             kernel,
@@ -809,6 +824,7 @@ impl MySisyphusBridge {
             cluster_config,
             control_plane_coordinator,
             control_plane_state,
+            control_plane_tls_wired,
         };
 
         let bridge_arc = Arc::new(bridge);
