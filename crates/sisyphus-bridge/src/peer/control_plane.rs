@@ -342,7 +342,36 @@ impl ControlPlaneState {
                         e.record.generation,
                     );
                 }
-                if expected_generation != 0 && expected_generation != e.record.generation {
+                // 续约/释放必须携带持有者身份与精确 fencing token：
+                // - 空 owner 不再表示“跳过校验”（否则任何 allowlist 节点可释放他人租约）；
+                // - expected_generation=0 不再表示“无条件”（否则无 token/旧 token 均可操作）。
+                if payload.owner.trim().is_empty() {
+                    let cur = e.record.generation;
+                    let d = ControlDecision::err(
+                        "INVALID_PAYLOAD",
+                        "owner must not be empty for renew/release",
+                        cur,
+                    );
+                    e.responses.insert(
+                        request_id.to_string(),
+                        CachedResponse::rejected(cur, &d.error_code, &d.error_message),
+                    );
+                    return d;
+                }
+                if expected_generation == 0 {
+                    let cur = e.record.generation;
+                    let d = ControlDecision::err(
+                        "FENCING_REQUIRED",
+                        "expected_generation must be non-zero for renew/release",
+                        cur,
+                    );
+                    e.responses.insert(
+                        request_id.to_string(),
+                        CachedResponse::rejected(cur, &d.error_code, &d.error_message),
+                    );
+                    return d;
+                }
+                if expected_generation != e.record.generation {
                     let cur = e.record.generation;
                     let d = ControlDecision::err(
                         "FENCING_MISMATCH",
@@ -725,6 +754,80 @@ mod tests {
         );
         assert!(!stale.accepted, "{stale:?}");
         assert_eq!(stale.error_code, "FENCING_MISMATCH");
+    }
+
+    /// ADR-019：续约/释放必须携带非空 owner 与精确 fencing generation。
+    ///
+    /// 修复前 `owner` 为空且 `expected_generation=0` 会跳过两项校验，任何 allowlist
+    /// 节点都能释放/续约他人租约；现在两者都必须显式给出。
+    #[test]
+    fn renew_release_require_owner_and_fencing_generation() {
+        let s = ControlPlaneState::with_fixed_now(1_000);
+        assert!(
+            s.apply(
+                "a1",
+                "lease:g",
+                "lease.acquire",
+                &payload("n1", 30),
+                0,
+                1,
+                300
+            )
+            .accepted
+        );
+
+        let no_owner = s.apply("a2", "lease:g", "lease.release", &payload("", 0), 1, 1, 300);
+        assert!(!no_owner.accepted);
+        assert_eq!(no_owner.error_code, "INVALID_PAYLOAD");
+
+        let no_fence_release = s.apply(
+            "a3",
+            "lease:g",
+            "lease.release",
+            &payload("n1", 0),
+            0,
+            1,
+            300,
+        );
+        assert!(!no_fence_release.accepted);
+        assert_eq!(no_fence_release.error_code, "FENCING_REQUIRED");
+
+        let no_fence_renew = s.apply(
+            "a4",
+            "lease:g",
+            "lease.renew",
+            &payload("n1", 30),
+            0,
+            1,
+            300,
+        );
+        assert!(!no_fence_renew.accepted);
+        assert_eq!(no_fence_renew.error_code, "FENCING_REQUIRED");
+
+        let wrong_owner = s.apply(
+            "a5",
+            "lease:g",
+            "lease.release",
+            &payload("n2", 0),
+            1,
+            1,
+            300,
+        );
+        assert!(!wrong_owner.accepted);
+        assert_eq!(wrong_owner.error_code, "OWNER_MISMATCH");
+
+        // 正确 owner + generation 才能释放。
+        let rel = s.apply(
+            "a6",
+            "lease:g",
+            "lease.release",
+            &payload("n1", 0),
+            1,
+            1,
+            300,
+        );
+        assert!(rel.accepted, "{rel:?}");
+        assert!(s.get("lease:g").is_none());
     }
 }
 
