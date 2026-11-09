@@ -1,6 +1,6 @@
 # ADR-020: Cluster control plane — REST 写入 / scheduler lease integration 设计
 
-状态：**Proposed**（阶段 6.5 收尾之后的新决策点，待用户定夺）
+状态：**Accepted**（2026-11-10 定夺：REST 写入保持 **否** / 调度器租约接入保持 **B = 不接入**；设计预留 `SubmitControlLease` 全链路）
 
 日期：2026-11-08
 关联：`docs/adr/019-cluster-consensus-control-plane.md`（控制面门禁与 v1 租约语义）
@@ -26,12 +26,20 @@
    - 当前：B=不接入（`cluster.control_plane.enabled=false`）。
    - 若要接入：需将调度器生命周期与租约 TTL/fencing 对齐；超时/不确定=错误，不判定成功。
 
-## 建议方向（当前建议，待定夺）
+## 建议方向（更新：均已定夺，见「决策」）
 
 - REST 写入：**保持否**（已在阶段 6.5 决策；写端点一旦开放需补齐鉴权/审计/OpenAPI/契约测试，
   属于另一次受门禁影响的变更）。
 - 调度器接入：**保持 B=否** 但在设计上预留 `SubmitControlLease` 全链路（acquire/renew/release）
   能力（已由 `ControlPlaneCoordinator::propose_lease` 提供），供后续阶段启用。
+
+## 决策（2026-11-10，阶段负责人 + 用户定夺）
+
+- **REST 写入**：保持 **否**（阶段 6.5 决策延续；未新增/开放写端点，只读
+  `GET /api/cluster/control/leases/:key` 保留）。
+- **调度器租约接入**：保持 **B = 不接入**（`cluster.control_plane.enabled=false` 默认），
+  但保留 `SubmitControlLease` 全链路（`lease.acquire` / `lease.renew` / `lease.release`，
+  多数派 ack + fencing + `request_id` 幂等）作为后续阶段的预留接口。
 
 ## 未决问题
 
@@ -46,4 +54,10 @@
 
 ## 状态
 
-**Proposed** — 待阶段负责人（Sisyphus）与用户定夺；未进入实现阶段，生产默认仍为关闭。
+**Accepted**（2026-11-10 定夺：REST 写入保持 **否** / 调度器租约接入保持 **B = 不接入**；设计预留 `SubmitControlLease` 全链路）。
+
+- REST 写入：保持 **否**（阶段 6.5 决策延续；未新增/开放写端点，只读 `GET /api/cluster/control/leases/:key` 保留）。
+- 调度器接入：保持 **B = 不接入**（生产默认仍关闭），但保留 `SubmitControlLease` 全链路
+  （`lease.acquire/renew/release`）作为后续阶段预留接口。
+
+未进入实现阶段：该 ADR 只定夺边界，未开放 REST 写端点 / 调度器接入。

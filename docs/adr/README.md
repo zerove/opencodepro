@@ -22,6 +22,7 @@
 | [015](./015-reverse-anti-entropy-pull.md) | 反向反熵拉取（服务端流建立后主动拉 dialer） | Implemented（2026-11-05） | 2026-11-05 |
 | [016](./016-federated-experience-aggregation.md) | 联邦经验聚合（入站经验质量门槛） | Implemented（2026-11-05） | 2026-11-05 |
 | [017](./017-strategy-weights-consensus.md) | 集群策略权重同步（每节点快照 + generation 取新） | Implemented（2026-11-06） | 2026-11-06 |
+| [020](./020-cluster-control-plane-rest-scheduler-integration.md) | Cluster control plane — REST 写入 / scheduler lease integration | Accepted（REST 写入=否 / 调度器 B=不接入） | 2026-11-10 |
 
 ## 编号说明
 

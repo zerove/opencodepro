@@ -147,6 +147,9 @@
   `replay_after_reacquire_keeps_snapshot`、`stale_fencing_generation_rejected_after_reacquire`
   （`--lib control_plane` 18 passed / 3 ignored）。
 
+- **ADR-020 决策定夺**（2026-11-10）：REST 写入保持 **否**；调度器租约接入保持 **B=不接入**
+  （设计预留 `SubmitControlLease` 全链路 acquire/renew/release）。ADR-020 状态更新为 `Accepted`。
+
 ## [v0.4.0] - 2026-11-06
 
 ### Added
