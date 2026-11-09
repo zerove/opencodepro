@@ -143,24 +143,48 @@ for n in "${NODES[@]}"; do
   ts="n3-$(basename "$n")"
   echo "==> mTLS N=3 harness submit (node=$n addr=$addr)"
   if [ "$n" = "$LEADER" ]; then
+    # 先收敛集群视图：轮询直到 leader 感知到 >=2 个 peer（cluster_size >= 2），
+    # 再做正式多数派提交证据（accepted=true / accepts>=2 / cluster_size=3）。
+    converged=""
+    attempt=0
+    while [ "$attempt" -lt 30 ]; do
+      probe_out="$(cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -- \
+        --addr "$addr" \
+        --ca-cert "$OUT_DIR/ca.pem" \
+        --client-cert "$OUT_DIR/$n.pem" \
+        --client-key "$OUT_DIR/$n.key" \
+        --domain "$n" \
+        --key "lease:converge-$k-$attempt" \
+        --owner "$n" \
+        --operation lease.acquire \
+        --ttl-secs 30 \
+        --output "/dev/null")"
+      if printf '%s' "$probe_out" | grep -q '"cluster_size":2'; then
+        converged="$attempt"
+        break
+      fi
+      attempt=$((attempt + 1))
+      sleep 2
+    done
+    echo "==> mTLS N=3 harness submit (leader=$LEADER key=lease:n3-quorum)"
     cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -- \
       --addr "$addr" \
       --ca-cert "$OUT_DIR/ca.pem" \
       --client-cert "$OUT_DIR/$n.pem" \
       --client-key "$OUT_DIR/$n.key" \
       --domain "$n" \
-      --key "lease:$ts" \
+      --key "lease:n3-quorum" \
       --owner "$n" \
       --operation lease.acquire \
       --ttl-secs 30 \
-      --output "$OUT_DIR/harness-n3-submit-$n-$ts.json"
+      --output "$OUT_DIR/harness-n3-quorum-submit-$n-$ts.json"
     cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -- \
       --addr "$addr" \
       --ca-cert "$OUT_DIR/ca.pem" \
       --client-cert "$OUT_DIR/$n.pem" \
       --client-key "$OUT_DIR/$n.key" \
       --domain "$n" \
-      --get "lease:$ts" \
+      --get "lease:n3-quorum" \
       --output "$OUT_DIR/harness-n3-get-$n-$ts.json"
   else
     cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -- \
