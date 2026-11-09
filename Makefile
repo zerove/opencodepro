@@ -448,6 +448,11 @@ gen-control-plane-test-certs:
 evidence-control-plane-tls:
 	scripts/run-control-plane-tls-evidence.sh --out ./control-plane-certs --node node-1 --node node-2 --node node-3
 
+# ADR-019：控制面 mTLS N=3 证据采集流水线（loopback / 多节点）
+.PHONY: evidence-control-plane-tls-n3
+evidence-control-plane-tls-n3:
+	scripts/run-control-plane-tls-evidence-n3.sh --out ./control-plane-certs-n3 --node node-1 --node node-2 --node node-3
+
 test-cli-handlers:
 	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-cli --lib
 

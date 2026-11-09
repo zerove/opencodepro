@@ -92,6 +92,22 @@ cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -
 
 **边界**：本次为 loopback + 单进程/跨进程 TLS 证据，单节点 quorum（majority=1）；不构成专用 runner 的真实 N=3 网络分区/混沌/TLS 长稳证据。REST 写入/调度器接入仍为否。
 
+### N=3 TLS 多节点证据采集（2026-11-10，本地执行）
+
+新增 `scripts/run-control-plane-tls-evidence-n3.sh` + Makefile `make evidence-control-plane-tls-n3`：
+
+```bash
+make evidence-control-plane-tls-n3
+# 等价：scripts/run-control-plane-tls-evidence-n3.sh --out ./control-plane-certs-n3 --node node-1 --node node-2 --node node-3
+```
+
+- 流程：生成测试 PKI → 每节点 bridge 配置（`[cluster]` enabled + static peers + `[cluster.control_plane]` TLS/mTLS allowlist）→ 启动 N 个 bridge（各自独立 gRPC TLS 端口）→ mTLS harness submit/get → JSON 证据。
+- 执行结果（2026-11-10，loopback / 多节点 TLS）：exit 0，JSON 落盘（`./control-plane-certs-n3/`）；bridge 各自监听 `https://127.0.0.1:<BASE_PORT+i>`。
+- 本次运行证据：submit（`harness-n3-submit-*.json`）：`accepted=true / accepts=1 / cluster_size=1 / applied_generation=1 / uncertain=false`；get（`harness-n3-get-*.json`）：`found=true / status_code=OK`。本次窗口的 N=3 每节点 `cluster_size=1`（静态 peer join 未收敛），N=3 多数派提交证据继续以 `make test-control-plane-dedicated`（in-process ignored，3/3）为准。
+- 配套修复：`crates/sisyphus-bridge/src/main.rs` 硬编码 gRPC 监听 `[::1]:50051`，忽略 `[bridge].bridge_address`（env `SISYPHUS_BRIDGE_ADDRESS`）——本次修复后从 `Config.bridge_address` 解析，使单主机多 bridge 可分别占端口；与 `[bridge].http_address` 解析口径一致。
+
+**边界**：loopback + 单主机多进程 TLS 多节点证据；不构成专用 runner 的真实跨进程/跨主机网络分区/混沌/TLS 长稳证据。
+
 ## 仍需补充的专用 runner/生产证据（ADR-019 准入）
 
 - **真实 N=3 进程/网络**：分区、少数派不可提交、leader 变更（字典序/成员变更）后安全性、分区愈合收敛/拒绝符合定义。

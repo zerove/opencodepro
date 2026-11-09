@@ -30,6 +30,12 @@
 ### Added
 - （从 [Unreleased] 段迁移，按主题分组）
 
+- **ADR-019 N=3 TLS 证据采集流水线**：`scripts/run-control-plane-tls-evidence-n3.sh` + `make
+  evidence-control-plane-tls-n3`（bridge PKI → 每节点 bridge 配置（cluster + control_plane + static
+  peers + mTLS allowlist）→ 多 bridge 启动（各自独立 gRPC TLS 端口）→ mTLS harness submit/get → JSON 证据）。
+  已真实执行（loopback / 多节点 TLS，多端口验证）；`control_plane` 单测由 18 passed / 3 ignored 更新。
+- **ADR-019 bridge gRPC 监听地址修复**：`main.rs` 硬编码 `[::1]:50051`，忽略 `[bridge].bridge_address`
+  （env `SISYPHUS_BRIDGE_ADDRESS` / config）——本次修复后从 Config 解析（`http(s)://` 前缀剥离后解析）。
 ### Fixed
 - ...
 

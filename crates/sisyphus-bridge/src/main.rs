@@ -101,7 +101,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.auth_token.clone()
     };
 
-    let grpc_addr: std::net::SocketAddr = "[::1]:50051".parse()?;
+    let grpc_addr: std::net::SocketAddr = {
+        let config = shared_config.read().map_err(|e| {
+            Box::new(std::io::Error::other(format!("Config lock poisoned: {e}")))
+                as Box<dyn std::error::Error>
+        })?;
+        let addr_str = config.bridge_address.trim();
+        let addr_str = addr_str
+            .strip_prefix("http://")
+            .or_else(|| addr_str.strip_prefix("https://"))
+            .unwrap_or(addr_str);
+        addr_str.parse::<std::net::SocketAddr>().map_err(|e| {
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("invalid bridge_address {}: {}", config.bridge_address, e),
+            )) as Box<dyn std::error::Error>
+        })?
+    };
     let http_addr_str = {
         let config = shared_config.read().map_err(|e| {
             Box::new(std::io::Error::other(format!("Config lock poisoned: {e}")))

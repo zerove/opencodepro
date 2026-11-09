@@ -46,6 +46,10 @@ book/src/SUMMARY.md.bak
 mutants.out/
 mutants.out.old/
 
+# ADR-019 控制面 mTLS 证据采集产物（测试 PKI / bridge 配置 / harness JSON；禁止提交）
+control-plane-certs/
+control-plane-certs-n3/
+
 # proptest 自动生成的回归案例目录
 # (运行 cargo test 后会出现在此目录；源码内嵌的 seeds 在 fuzz_tests 模块)
 crates/sisyphus-sandbox/proptest-regressions/
