@@ -136,10 +136,10 @@
   `generation` 作为高水位持续递增——此前释放或 TTL 过期后重新获取会退回 `generation=1`，使旧 fencing
   token 重新有效；`lease.release` 成功后保留 tombstone，同 `request_id` 重试返回同一结果（此前返回
   `LEASE_NOT_FOUND`）；幂等重放返回请求当时的租约快照而非当前租约（此前会把新 owner 冒充成旧请求结果）；
-  同时移除生产路径 `expect("exists")`。新增 5 个单测：`generation_monotonic_across_release`、
+  同时移除生产路径 `expect("exists")`；协调节点本地拒绝的提案不再广播到 peer（被拒请求不得修改 peer 状态，`rejected_local_proposal_is_not_broadcast`）。新增 5 个单测：`generation_monotonic_across_release`、
   `generation_monotonic_across_expiry`、`release_replay_is_idempotent`、
   `replay_after_reacquire_keeps_snapshot`、`stale_fencing_generation_rejected_after_reacquire`
-  （`--lib control_plane` 16 passed / 3 ignored）。
+  （`--lib control_plane` 17 passed / 3 ignored）。
 
 ## [v0.4.0] - 2026-11-06
 

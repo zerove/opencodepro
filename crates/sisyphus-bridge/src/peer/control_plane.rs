@@ -853,6 +853,19 @@ impl ControlPlaneCoordinator {
             min_ttl_secs,
             max_ttl_secs,
         );
+        // 本地拒绝（持有中/无效参数/fencing 不匹配等）不广播：被拒绝的请求绝不能
+        // 修改 peer 状态（v1 无回滚，广播只会制造「协调节点拒绝但 peer 已应用」的分歧）。
+        if !local.accepted {
+            let out = LeaseQuorumOutcome {
+                decision: local,
+                accepts: 0,
+                cluster_size,
+                uncertain: false,
+            };
+            self.cache_decision(key, request_id, &out);
+            self.state.record_submit_outcome(&out);
+            return out;
+        }
         // idempotent replay of accepted local decision is fine to count
         let mut accepts = usize::from(local.accepted);
         let mut uncertain = false;
@@ -1437,6 +1450,47 @@ mod quorum_tests {
             )
             .await;
         assert!(!out2.decision.accepted, "{out2:?}");
+    }
+
+    /// ADR-019：协调节点本地拒绝的请求不得广播到 peer（不得修改 peer 状态）。
+    #[tokio::test]
+    async fn rejected_local_proposal_is_not_broadcast() {
+        let (m1, s1, _a1, _h1) = serve_node("n1", true).await;
+        let (_m2, s2, a2, _h2) = serve_node("n2", true).await;
+        let _ = m1.on_peer_joined(crate::peer::manager::PeerInfo::new("n2", a2.clone()));
+        // n1 本地已持有该租约；来自 n2 的同 key acquire 必须本地拒绝。
+        assert!(
+            s1.apply(
+                "seed",
+                "lease:held",
+                "lease.acquire",
+                &lease_payload("n1", 30),
+                0,
+                1,
+                300,
+            )
+            .accepted
+        );
+        let coord = Arc::new(ControlPlaneCoordinator::new(m1, s1, Duration::from_secs(2)));
+        let out = coord
+            .propose_lease(
+                "r-reject",
+                "lease:held",
+                "lease.acquire",
+                &lease_payload("n2", 30),
+                0,
+                1,
+                300,
+            )
+            .await;
+        assert!(!out.decision.accepted, "{out:?}");
+        assert_eq!(out.decision.error_code, "LEASE_HELD");
+        assert_eq!(out.accepts, 0);
+        assert!(!out.uncertain);
+        assert!(
+            s2.get("lease:held").is_none(),
+            "被拒绝的提案不得修改 peer 状态"
+        );
     }
 
     /// ADR-019：不确定提交指引流程（同 request_id 重试 + GetControlLease 核对）。
