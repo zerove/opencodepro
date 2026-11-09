@@ -73,6 +73,8 @@ cargo run -p sisyphus-bridge --no-default-features --bin control_plane_harness -
 
 本地 in-process 证据（**非**专用 runner 真实跨进程证据）：`cargo test -p sisyphus-bridge --no-default-features --test control_plane_mtls_test`（4 passed：DNS allowlist/非 allowlist/无证书/`CN:`/未知模式 fail-closed）。
 
+租约状态机本地证据（快 CI）：`cargo test -p sisyphus-bridge --no-default-features --lib control_plane`（16 passed / 3 ignored）——含 `generation_monotonic_across_release` / `generation_monotonic_across_expiry`（释放/过期后 fencing generation 继续递增）、`release_replay_is_idempotent` / `replay_after_reacquire_keeps_snapshot`（`request_id` 幂等快照）、`stale_fencing_generation_rejected_after_reacquire`。**仍不构成**跨进程/进程重启后的幂等证据。
+
 ### mTLS 证据采集流水线（已实现；2026-11-08 本地执行）
 
 `scripts/run-control-plane-tls-evidence.sh`（Makefile：`make evidence-control-plane-tls`）自动执行：

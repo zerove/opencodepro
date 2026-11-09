@@ -130,6 +130,17 @@
   - 证据：`make evidence-control-plane-tls` submit `accepted=true/uncertain=false` + get
     `OK`；`tests/control_plane_mtls_test` 4 项；`peer::tls` 4 项 fail-closed。
 
+### Fixed
+
+- **ADR-019 租约 fencing/幂等缺陷**（2026-11-08）：`ControlPlaneState` 在释放/过期后不再删除 key 条目，
+  `generation` 作为高水位持续递增——此前释放或 TTL 过期后重新获取会退回 `generation=1`，使旧 fencing
+  token 重新有效；`lease.release` 成功后保留 tombstone，同 `request_id` 重试返回同一结果（此前返回
+  `LEASE_NOT_FOUND`）；幂等重放返回请求当时的租约快照而非当前租约（此前会把新 owner 冒充成旧请求结果）；
+  同时移除生产路径 `expect("exists")`。新增 5 个单测：`generation_monotonic_across_release`、
+  `generation_monotonic_across_expiry`、`release_replay_is_idempotent`、
+  `replay_after_reacquire_keeps_snapshot`、`stale_fencing_generation_rejected_after_reacquire`
+  （`--lib control_plane` 16 passed / 3 ignored）。
+
 ## [v0.4.0] - 2026-11-06
 
 ### Added

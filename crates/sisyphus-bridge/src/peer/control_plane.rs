@@ -71,8 +71,48 @@ impl ControlDecision {
 struct LeaseEntry {
     record: LeaseRecord,
     expires_at: Instant,
-    /// request_id -> (generation, result snapshot key fields) for idempotent replay
-    responses: HashMap<String, (u64, bool, String, String)>,
+    /// request_id -> 已完成请求的结果快照（幂等重放）。
+    ///
+    /// 条目在释放/过期后**不删除**：`record.generation` 作为该 key 的 fencing 高水位，
+    /// 保证「释放/过期后重新获取」的 generation 单调递增；`responses` 也随之保留，
+    /// 使 `lease.release` 等请求在成功后被重试时仍返回同一结果而非 `LEASE_NOT_FOUND`。
+    responses: HashMap<String, CachedResponse>,
+}
+
+/// 已完成请求的快照（用于 `request_id` 幂等重放）。
+///
+/// 保存 `record` 快照而非读取当前 entry：同一 request_id 的旧 acquire 在新一轮
+/// 获取之后被重放时，必须返回当时的 owner/generation，不能把新租约的信息
+/// 冒充成旧请求的结果。
+#[derive(Clone, Debug)]
+struct CachedResponse {
+    generation: u64,
+    accepted: bool,
+    error_code: String,
+    error_message: String,
+    record: Option<LeaseRecord>,
+}
+
+impl CachedResponse {
+    fn accepted(record: &LeaseRecord) -> Self {
+        Self {
+            generation: record.generation,
+            accepted: true,
+            error_code: String::new(),
+            error_message: String::new(),
+            record: Some(record.clone()),
+        }
+    }
+
+    fn rejected(generation: u64, code: &str, message: &str) -> Self {
+        Self {
+            generation,
+            accepted: false,
+            error_code: code.to_string(),
+            error_message: message.to_string(),
+            record: None,
+        }
+    }
 }
 
 /// ADR-019 控制面只读观测计数（原子，不影响决策路径）。
@@ -175,15 +215,12 @@ impl ControlPlaneState {
 
     pub fn get(&self, key: &str) -> Option<LeaseRecord> {
         let now = Instant::now();
-        let mut g = self.leases.write();
-        if let Some(e) = g.get(key) {
-            if Self::is_expired(e, now) {
-                g.remove(key);
-                return None;
-            }
-            return Some(e.record.clone());
+        let g = self.leases.read();
+        match g.get(key) {
+            // 过期/已释放条目保留为 generation 高水位与幂等快照，对外不可见。
+            Some(e) if !Self::is_expired(e, now) => Some(e.record.clone()),
+            _ => None,
         }
-        None
     }
 
     /// 本地应用控制提案（幂等）。由 `ProposeControl` RPC handler 调用。
@@ -205,27 +242,21 @@ impl ControlPlaneState {
         let now_ms = self.now_ms();
         let mut g = self.leases.write();
 
-        // Expire stale
-        if g.get(key).is_some_and(|e| Self::is_expired(e, now)) {
-            g.remove(key);
-        }
-
-        // Idempotent replay (per key)
+        // 幂等重放（按 key）。已释放/过期的条目保留 generation 高水位与结果快照，
+        // 因此这里不区分 active/expired：重复的 request_id 必须返回同一结果。
         if let Some(e) = g.get(key) {
-            if let Some((gen, accepted, code, msg)) = e.responses.get(request_id).cloned() {
-                let mut d = if accepted {
-                    ControlDecision::ok(gen, e.record.clone(), true)
+            if let Some(c) = e.responses.get(request_id).cloned() {
+                let mut d = if c.accepted {
+                    let rec = c.record.clone().unwrap_or_else(|| e.record.clone());
+                    ControlDecision::ok(c.generation, rec, true)
                 } else {
-                    let mut d = ControlDecision::err(&code, msg, e.record.generation);
+                    let mut d = ControlDecision::err(&c.error_code, c.error_message, c.generation);
                     d.idempotent_replay = true;
                     d
                 };
-                d.idempotent_replay = true;
+                d.current_generation = e.record.generation;
                 return d;
             }
-        } else {
-            // No entry: check a global-ish replay? For v1 keep per-key; acquire on missing key has no prior entry.
-            // We'll store replay only after we have an entry context where relevant.
         }
 
         let payload: LeasePayload = match serde_json::from_slice(payload_json) {
@@ -252,7 +283,8 @@ impl ControlPlaneState {
                         g.get(key).map(|e| e.record.generation).unwrap_or(0),
                     );
                 }
-                if let Some(e) = g.get(key) {
+                // 仅 active 条目构成持有；已释放/过期条目的 generation 作为高水位。
+                if let Some(e) = g.get_mut(key) {
                     if !Self::is_expired(e, now) {
                         let cur = e.record.generation;
                         let d = ControlDecision::err(
@@ -260,11 +292,9 @@ impl ControlPlaneState {
                             format!("lease held by {}", e.record.owner),
                             cur,
                         );
-                        // record replay on existing entry
-                        let e = g.get_mut(key).expect("exists");
                         e.responses.insert(
                             request_id.to_string(),
-                            (cur, false, d.error_code.clone(), d.error_message.clone()),
+                            CachedResponse::rejected(cur, &d.error_code, &d.error_message),
                         );
                         return d;
                     }
@@ -277,19 +307,23 @@ impl ControlPlaneState {
                     expires_at_unix_ms: now_ms.saturating_add(ttl.saturating_mul(1000)),
                     last_request_id: request_id.to_string(),
                 };
-                let mut responses = HashMap::new();
-                responses.insert(
-                    request_id.to_string(),
-                    (generation, true, String::new(), String::new()),
-                );
-                g.insert(
-                    key.to_string(),
-                    LeaseEntry {
-                        record: record.clone(),
-                        expires_at: now + Duration::from_secs(ttl),
-                        responses,
-                    },
-                );
+                if let Some(e) = g.get_mut(key) {
+                    // 复用过期/已释放条目：保留历史 request_id 快照，generation 继续递增。
+                    e.record = record.clone();
+                    e.expires_at = now + Duration::from_secs(ttl);
+                    e.responses.insert(request_id.to_string(), CachedResponse::accepted(&record));
+                } else {
+                    let mut responses = HashMap::new();
+                    responses.insert(request_id.to_string(), CachedResponse::accepted(&record));
+                    g.insert(
+                        key.to_string(),
+                        LeaseEntry {
+                            record: record.clone(),
+                            expires_at: now + Duration::from_secs(ttl),
+                            responses,
+                        },
+                    );
+                }
                 ControlDecision::ok(generation, record, false)
             },
             "lease.renew" | "lease.release" => {
@@ -301,9 +335,12 @@ impl ControlPlaneState {
                     );
                 };
                 if Self::is_expired(e, now) {
-                    let gen = e.record.generation;
-                    g.remove(key);
-                    return ControlDecision::err("LEASE_NOT_FOUND", "lease expired", gen);
+                    // 过期条目不删除：保留 generation 高水位与幂等快照。
+                    return ControlDecision::err(
+                        "LEASE_NOT_FOUND",
+                        "lease expired",
+                        e.record.generation,
+                    );
                 }
                 if expected_generation != 0 && expected_generation != e.record.generation {
                     let cur = e.record.generation;
@@ -314,7 +351,7 @@ impl ControlPlaneState {
                     );
                     e.responses.insert(
                         request_id.to_string(),
-                        (cur, false, d.error_code.clone(), d.error_message.clone()),
+                        CachedResponse::rejected(cur, &d.error_code, &d.error_message),
                     );
                     return d;
                 }
@@ -327,18 +364,18 @@ impl ControlPlaneState {
                     );
                     e.responses.insert(
                         request_id.to_string(),
-                        (cur, false, d.error_code.clone(), d.error_message.clone()),
+                        CachedResponse::rejected(cur, &d.error_code, &d.error_message),
                     );
                     return d;
                 }
                 if operation == "lease.release" {
                     let cur = e.record.generation;
-                    let rec = e.record.clone();
-                    e.responses.insert(
-                        request_id.to_string(),
-                        (cur, true, String::new(), String::new()),
-                    );
-                    g.remove(key);
+                    let mut rec = e.record.clone();
+                    rec.last_request_id = request_id.to_string();
+                    e.record = rec.clone();
+                    // tombstone：立即过期，但保留 entry（generation 高水位 + 幂等快照）。
+                    e.expires_at = now;
+                    e.responses.insert(request_id.to_string(), CachedResponse::accepted(&rec));
                     return ControlDecision {
                         accepted: true,
                         applied_generation: cur,
@@ -364,7 +401,7 @@ impl ControlPlaneState {
                     );
                     e.responses.insert(
                         request_id.to_string(),
-                        (cur, false, d.error_code.clone(), d.error_message.clone()),
+                        CachedResponse::rejected(cur, &d.error_code, &d.error_message),
                     );
                     return d;
                 }
@@ -374,10 +411,7 @@ impl ControlPlaneState {
                 e.expires_at = now + Duration::from_secs(ttl);
                 let gen = e.record.generation;
                 let rec = e.record.clone();
-                e.responses.insert(
-                    request_id.to_string(),
-                    (gen, true, String::new(), String::new()),
-                );
+                e.responses.insert(request_id.to_string(), CachedResponse::accepted(&rec));
                 ControlDecision::ok(gen, rec, false)
             },
             _ => ControlDecision::err(
@@ -470,6 +504,227 @@ mod tests {
         // different request while held -> rejected
         let c = s.apply("r2", "k", "lease.acquire", &payload("n2", 30), 0, 1, 300);
         assert!(!c.accepted);
+    }
+
+    /// ADR-019 fencing：释放后重新获取必须继续递增 generation，不能回退。
+    #[test]
+    fn generation_monotonic_across_release() {
+        let s = ControlPlaneState::with_fixed_now(1_000);
+        let a = s.apply(
+            "r1",
+            "lease:f",
+            "lease.acquire",
+            &payload("n1", 30),
+            0,
+            1,
+            300,
+        );
+        assert!(a.accepted);
+        assert_eq!(a.applied_generation, 1);
+        let rel = s.apply(
+            "r2",
+            "lease:f",
+            "lease.release",
+            &payload("n1", 0),
+            1,
+            1,
+            300,
+        );
+        assert!(rel.accepted);
+        assert_eq!(rel.applied_generation, 1);
+        assert!(s.get("lease:f").is_none());
+        let b = s.apply(
+            "r3",
+            "lease:f",
+            "lease.acquire",
+            &payload("n2", 30),
+            0,
+            1,
+            300,
+        );
+        assert!(b.accepted);
+        assert_eq!(b.applied_generation, 2, "fencing generation 必须单调递增");
+    }
+
+    /// ADR-019 fencing：TTL 过期后重新获取同样继续递增（读操作不得丢弃高水位）。
+    #[test]
+    fn generation_monotonic_across_expiry() {
+        let s = ControlPlaneState::with_fixed_now(1_000);
+        assert!(
+            s.apply(
+                "r1",
+                "lease:e",
+                "lease.acquire",
+                &payload("n1", 1),
+                0,
+                1,
+                300
+            )
+            .accepted
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        assert!(s.get("lease:e").is_none(), "过期租约对外不可见");
+        let b = s.apply(
+            "r2",
+            "lease:e",
+            "lease.acquire",
+            &payload("n2", 30),
+            0,
+            1,
+            300,
+        );
+        assert!(b.accepted);
+        assert_eq!(b.applied_generation, 2, "过期后重新获取必须继续递增");
+    }
+
+    /// ADR-019 幂等：release 成功后的重试必须返回同一结果，而不是 LEASE_NOT_FOUND。
+    #[test]
+    fn release_replay_is_idempotent() {
+        let s = ControlPlaneState::with_fixed_now(1_000);
+        assert!(
+            s.apply(
+                "r1",
+                "lease:r",
+                "lease.acquire",
+                &payload("n1", 30),
+                0,
+                1,
+                300
+            )
+            .accepted
+        );
+        let rel = s.apply(
+            "r2",
+            "lease:r",
+            "lease.release",
+            &payload("n1", 0),
+            1,
+            1,
+            300,
+        );
+        assert!(rel.accepted);
+        let replay = s.apply(
+            "r2",
+            "lease:r",
+            "lease.release",
+            &payload("n1", 0),
+            1,
+            1,
+            300,
+        );
+        assert!(replay.accepted, "{replay:?}");
+        assert!(replay.idempotent_replay);
+        assert_eq!(replay.applied_generation, rel.applied_generation);
+    }
+
+    /// ADR-019 幂等：旧 acquire 在新一轮获取后重放，必须返回当时的 owner/generation 快照。
+    #[test]
+    fn replay_after_reacquire_keeps_snapshot() {
+        let s = ControlPlaneState::with_fixed_now(1_000);
+        let first = s.apply(
+            "r1",
+            "lease:s",
+            "lease.acquire",
+            &payload("n1", 30),
+            0,
+            1,
+            300,
+        );
+        assert!(first.accepted);
+        assert!(
+            s.apply(
+                "r2",
+                "lease:s",
+                "lease.release",
+                &payload("n1", 0),
+                1,
+                1,
+                300
+            )
+            .accepted
+        );
+        let second = s.apply(
+            "r3",
+            "lease:s",
+            "lease.acquire",
+            &payload("n2", 30),
+            0,
+            1,
+            300,
+        );
+        assert!(second.accepted);
+        assert_eq!(second.applied_generation, 2);
+        let replay = s.apply(
+            "r1",
+            "lease:s",
+            "lease.acquire",
+            &payload("n1", 30),
+            0,
+            1,
+            300,
+        );
+        assert!(replay.accepted && replay.idempotent_replay);
+        assert_eq!(replay.applied_generation, 1);
+        let rec = replay.lease.expect("accepted replay carries snapshot");
+        assert_eq!(rec.owner, "n1", "重放不得返回新租约的 owner");
+        assert_eq!(rec.generation, 1);
+        // 重放不得产生副作用
+        let cur = s.get("lease:s").expect("current lease");
+        assert_eq!(cur.owner, "n2");
+        assert_eq!(cur.generation, 2);
+    }
+
+    /// ADR-019 fencing：释放后重新获取，旧 generation 的续约必须被拒绝。
+    #[test]
+    fn stale_fencing_generation_rejected_after_reacquire() {
+        let s = ControlPlaneState::with_fixed_now(1_000);
+        assert!(
+            s.apply(
+                "r1",
+                "lease:t",
+                "lease.acquire",
+                &payload("n1", 30),
+                0,
+                1,
+                300
+            )
+            .accepted
+        );
+        assert!(
+            s.apply(
+                "r2",
+                "lease:t",
+                "lease.release",
+                &payload("n1", 0),
+                1,
+                1,
+                300
+            )
+            .accepted
+        );
+        assert!(
+            s.apply(
+                "r3",
+                "lease:t",
+                "lease.acquire",
+                &payload("n2", 30),
+                0,
+                1,
+                300
+            )
+            .accepted
+        );
+        let stale = s.apply(
+            "r4",
+            "lease:t",
+            "lease.renew",
+            &payload("n1", 30),
+            1,
+            1,
+            300,
+        );
+        assert!(!stale.accepted, "{stale:?}");
+        assert_eq!(stale.error_code, "FENCING_MISMATCH");
     }
 }
 
