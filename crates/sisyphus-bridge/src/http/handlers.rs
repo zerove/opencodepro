@@ -348,10 +348,29 @@ pub(super) async fn execute_goal_handler(
                 },
             },
         ),
-        Err(e) => (
-            crate::http::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
-            Json(serde_json::json!({ "error": e.to_string() })),
-        ),
+        Err(e) => {
+            let msg = e.to_string();
+            let hint = if msg.contains("without any real execution result")
+                || msg.contains("StrategicPivot")
+            {
+                Some("各轮均未产出可接受的真实执行结果：检查节点命令与显式成功状态、阈值/反思配置；可先用 `sisyphus sop run <id>` 验证直接执行路径。")
+            } else if msg.contains("LLM") || msg.contains("model") || msg.contains("审计") {
+                Some("目标驱动路径可能依赖 LLM/审计能力：补齐模型配置与凭据，或先用 `sop run` 验证 SOP/DAG 执行。")
+            } else {
+                None
+            };
+            let mut body = serde_json::json!({ "error": msg });
+            if let Some(h) = hint {
+                if let Some(obj) = body.as_object_mut() {
+                    obj.insert("hint".to_string(), serde_json::Value::String(h.to_string()));
+                }
+            }
+            let status_msg = body["error"].as_str().unwrap_or_default();
+            (
+                crate::http::handlers_platform::status_for_typed(Some(&e), status_msg),
+                Json(body),
+            )
+        },
     }
 }
 
