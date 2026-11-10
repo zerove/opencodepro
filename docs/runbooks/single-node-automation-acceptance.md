@@ -44,6 +44,8 @@ l4-perf.md       # 采样命令、N、min/avg/max、波动说明
 summary.md       # 分项判定与差距/阻塞
 ```
 
+> 脚本生成的模板含可选命令提示：L3 可用 `TEST_GOAL=1 ./scripts/single-node-demo-flow.sh` 或 `curl /api/execute/goal` 记录 `error/hint`；L4 可用 `./scripts/single-node-bench-sample.sh {cli|bridge} --json` 归档结构化样本。
+
 最小 `summary.md` 字段：`commit`, `date`, `scope`, `L0..L4`, `blocking_issues`, `next_actions`.
 
 ## 4. L0 契约与静态门禁
@@ -130,6 +132,8 @@ curl -sS -X POST http://127.0.0.1:8080/api/execute/goal \
   -d '{"goal":"示例目标","sop_id":"verify_sop","project_id":"default"}'
 ```
 
+> 可选：`TEST_GOAL=1 GOAL_TEXT="..." ./scripts/single-node-demo-flow.sh` 可在演示流程中探测并展示 `error/hint` 响应（不替代成功闭环证据）。
+
 **通过标准（环境具备时）**：返回成功结果并可关联 trace/事件（按配置）；失败时返回可解释 `error` 与可选 `hint`，能区分依赖缺失、StrategicPivot/无真实结果、参数或契约问题。
 
 **阻塞记录（环境缺失时）**：明确缺失的 LLM/凭据/MCP/工具；保留请求与响应证据；以 `BLOCKED` 标注 L3，不替代 L2 结论。
@@ -142,6 +146,10 @@ N=10 CLI_BIN=./target/debug/sisyphus ./scripts/single-node-bench-sample.sh cli
 
 # Bridge（固定端口/配置，建议稳定环境连续采样）
 N=10 BRIDGE_BIN=./target/debug/sisyphus-bridge ./scripts/single-node-bench-sample.sh bridge
+
+# 可选：机器可读输出，便于归档/对比
+./scripts/single-node-bench-sample.sh cli --json
+./scripts/single-node-bench-sample.sh bridge --json
 ```
 
 **通过标准**：记录 `n/min/avg/max`、环境与二进制类型（debug/release）、冷热条件；不将中断/分批样本当作连续回归结论；对显著波动给出定位项而非掩盖。
