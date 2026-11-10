@@ -21,6 +21,33 @@ pub struct BridgeClient {
     token: Option<String>,
 }
 
+fn rpc_hint(method: &str, msg: &str) -> Option<&'static str> {
+    if msg.contains("without any real execution result") || msg.contains("StrategicPivot") {
+        Some("提示: 各轮均未产出可接受的真实执行结果；检查节点命令与显式成功状态、阈值/反思配置，或先用 sop show/确定性模板验证。")
+    } else if msg.contains("LLM") || msg.contains("model") || msg.contains("审计") {
+        Some("提示: 可能依赖 LLM/审计或模型能力；请检查配置与凭据。")
+    } else if method == "execute_sop"
+        && (msg.to_ascii_lowercase().contains("not found") || msg.contains("NotFound"))
+    {
+        Some("提示: 检查 SOP ID 是否存在（`sisyphus sop list`）及 bridge 地址/工作区配置。")
+    } else {
+        None
+    }
+}
+
+fn enrich_rpc_error(
+    method: &str,
+    context_msg: impl Into<String>,
+    e: tonic::Status,
+) -> anyhow::Error {
+    let hint = rpc_hint(method, &e.to_string());
+    let err = anyhow::Error::new(e).context(context_msg.into());
+    match hint {
+        Some(h) => err.context(h),
+        None => err,
+    }
+}
+
 impl BridgeClient {
     /// 连接到正在运行的 Sisyphus 桥接守护进程。
     /// 读取 SISYPHUS_AUTH_TOKEN 环境变量作为可选 bearer token。
@@ -82,7 +109,11 @@ impl BridgeClient {
             sop_id: sop_id.to_string(),
             args: HashMap::new(),
         }))?;
-        let response = self.inner.execute_sop(request).await.context("ExecuteSOP RPC failed")?;
+        let response = self
+            .inner
+            .execute_sop(request)
+            .await
+            .map_err(|e| enrich_rpc_error("execute_sop", "ExecuteSOP RPC failed", e))?;
         Ok(response.into_inner().result)
     }
 
@@ -111,11 +142,13 @@ impl BridgeClient {
             args_json: args_json.to_string(),
             fuel_limit: 0,
         }))?;
-        let response = self
-            .inner
-            .execute_tool(request)
-            .await
-            .context(format!("ExecuteTool({tool_id}) RPC failed"))?;
+        let response = self.inner.execute_tool(request).await.map_err(|e| {
+            enrich_rpc_error(
+                "execute_tool",
+                format!("ExecuteTool({tool_id}) RPC failed"),
+                e,
+            )
+        })?;
         Ok(response.into_inner())
     }
 
@@ -178,10 +211,16 @@ impl BridgeClient {
             objective: objective.to_string(),
             context: context.to_string(),
         }))?;
-        let response =
-            self.inner.decompose_goal(request).await.context("DecomposeGoal RPC failed")?;
+        let response = self
+            .inner
+            .decompose_goal(request)
+            .await
+            .map_err(|e| enrich_rpc_error("decompose_goal", "DecomposeGoal RPC failed", e))?;
         let inner = response.into_inner();
         if !inner.error.is_empty() {
+            if let Some(hint) = rpc_hint("decompose_goal", &inner.error) {
+                anyhow::bail!("DecomposeGoal failed: {} ({})", inner.error, hint);
+            }
             anyhow::bail!("DecomposeGoal failed: {}", inner.error);
         }
         Ok(inner.tasks)
