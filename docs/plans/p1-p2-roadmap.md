@@ -49,7 +49,13 @@
 | P1-C | 示例与场景文档 | P1 | P1-A/B/E 进展 | 场景化文档与可运行示例 |
 | P1-D | 稳定性与错误态 | P1 | P1-A | 统一降级与可解释错误 |
 
-**进展（2026-11-10）**：已新增 `docs/runbooks/single-node-typical-workflow.md`（典型任务流：纯本地/服务接入/SOP 执行/会话联动，含 CLI `sop list/run` 路径），作为 P1-C/P1-E 的初始场景化交付；`fix(cli): 优化 bridge 不可达时的错误提示`（P1-D 初始改进）已落地。后续按 P1 迭代持续补齐。
+**进展（2026-11-10）**：
+- P1-C/P1-E：新增 `docs/runbooks/single-node-typical-workflow.md`、`docs/runbooks/single-node-sop-e2e-guide.md`、`docs/examples/single-node-sdk-examples.md`（场景化与端到端指引）。
+- P1-A：新增 `docs/runbooks/single-node-sessions-and-tasks.md`（本地 CLI 会话 vs bridge 服务端会话与任务流）。
+- P1-B：新增 `docs/runbooks/single-node-tools-mcp-guide.md`（工具/MCP 可发现性与使用路径）。
+- P1-D：`fix(cli): 优化 bridge 不可达时的错误提示` 已落地；`docs/runbooks/single-node-tools-and-dependencies.md` 补充错误处理与反馈一致性指引。
+- P1-F：新增 `docs/runbooks/single-node-contract-guard.md`（契约守护清单与回归流程）。
+后续按里程碑持续补齐自动化回归与体验细节。
 
 **P1 里程碑**：单机“按文档可完成典型任务流”的体验达标；契约与门禁持续全绿；差异化能力（SOP/观测）可被清晰感知。
 
@@ -61,6 +67,12 @@
 | P2-B | 单机性能与资源基线 | P1 | 测量口径确定 | 基线与回归记录 |
 | P2-C | 集成与扩展样例 | P2 | P1-C/F | 平台化集成示例 |
 | P2-D | 控制面准入（条件触发，外部前提） | 后置 | 专用 runner 真实网络硬件 | ADR-019 证据矩阵 → 准入评审（不改变默认关闭策略） |
+
+**进展（2026-11-10）**：
+- P2-A：新增 `docs/plans/single-node-orchestration-templates.md`（SOP/DAG 编排模板规划与落地路径）。
+- P2-B：新增 `docs/plans/single-node-performance-baseline.md`（单机性能/资源基线口径与记录计划）。
+- P2-C：新增 `docs/examples/single-node-integration-samples.md`（REST/SDK/观测集成样例）。
+- P2-D：仍为**外部后置**（专用 runner 真实网络证据与 ADR-019 准入），不阻塞单机 P1/P2 文档与可实施部分。
 
 **P2 里程碑**：形成可对外说明的差异化能力组合（编排+观测+集成）；性能基线可回归；控制面仅在证据完备后推进。
 

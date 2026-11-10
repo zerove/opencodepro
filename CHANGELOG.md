@@ -68,6 +68,20 @@
   - 新增 `docs/plans/p1-p2-roadmap.md`（借鉴点映射 P1/P2 任务、里程碑与验证要求）
   - 更新 `docs/comparison/opencode-omo-comparison.md`（补充 2026-11 当前状态修正与关联链接，保留历史基线）
 
+- **P1 单机产品化切面文档交付（P1-A/B/C/D/E/F）**（2026-11-10）：
+  - 新增 `docs/runbooks/single-node-contract-guard.md`（契约守护清单与回归流程，P1-F）
+  - 新增 `docs/runbooks/single-node-sessions-and-tasks.md`（本地 CLI 会话 vs bridge 服务端会话与任务流，P1-A）
+  - 新增 `docs/runbooks/single-node-tools-mcp-guide.md`（工具/MCP 可发现性与使用路径，P1-B）
+  - 新增 `docs/runbooks/single-node-sop-e2e-guide.md`（SOP 发现/执行/观测端到端，P1-E）
+  - 更新 `docs/runbooks/single-node-tools-and-dependencies.md`（补充错误处理与反馈一致性指引，P1-D）
+  - 更新 `docs/plans/p1-p2-roadmap.md`（同步 P1/P2 进展）
+
+- **P2 单机差异化初始交付（P2-A/B/C，文档与规划）**（2026-11-10）：
+  - 新增 `docs/plans/single-node-orchestration-templates.md`（SOP/DAG 编排模板规划，P2-A）
+  - 新增 `docs/plans/single-node-performance-baseline.md`（单机性能/资源基线计划，P2-B）
+  - 新增 `docs/examples/single-node-integration-samples.md`（集成与扩展样例，P2-C）
+  - P2-D（控制面生产准入）仍为外部后置：专用 runner 真实网络证据与 ADR-019 准入未满足，`cluster.control_plane.enabled` 保持 `false`
+
 - **三套官方 SDK 的集群/控制面只读观测方法**（2026-11-10）：TypeScript / Python / Go SDK
   新增 `clusterStatus()` / `cluster_status()` / `GetClusterStatus()`（`GET /api/cluster/status`，
   含 `config.control_plane`、`control_plane.security`（ADR-019 安全装配视图）、
