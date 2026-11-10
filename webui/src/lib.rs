@@ -1342,6 +1342,17 @@ async fn create_session(state: &AppState, name: &str) -> Session {
     }
 }
 
+fn format_bridge_error(status: reqwest::StatusCode, body: &str) -> String {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
+        let err = v.get("error").and_then(|x| x.as_str()).unwrap_or(body).to_string();
+        if let Some(hint) = v.get("hint").and_then(|x| x.as_str()) {
+            return format!("HTTP {status}: {err} (hint: {hint})");
+        }
+        return format!("HTTP {status}: {err}");
+    }
+    format!("HTTP {status}: {body}")
+}
+
 /// `POST /api/sessions/{id}/messages` 返回更新后的 `SessionDetail`。
 async fn add_message(
     state: &AppState,
@@ -1357,7 +1368,7 @@ async fn add_message(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("HTTP {status}: {body}"));
+        return Err(format_bridge_error(status, &body));
     }
     resp.json::<SessionDetail>().await.map_err(|e| e.to_string())
 }
@@ -1390,7 +1401,7 @@ async fn execute_sop(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("HTTP {status}: {body}"));
+        return Err(format_bridge_error(status, &body));
     }
     resp.json::<GoalExecuteResult>().await.map_err(|e| e.to_string())
 }
