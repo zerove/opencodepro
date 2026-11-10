@@ -82,13 +82,20 @@
   - 新增 `docs/examples/single-node-integration-samples.md`（集成与扩展样例，P2-C）
   - P2-D（控制面生产准入）仍为外部后置：专用 runner 真实网络证据与 ADR-019 准入未满足，`cluster.control_plane.enabled` 保持 `false`
 
+- **自动化开发场景与执行闭环深化（模板/脚本/手册）**（2026-11-10）：
+  - 新增 `docs/runbooks/single-node-dev-scenarios.md`（质量门并行评审、诊断修复验证、端到端执行与观测、失败恢复与回归）
+  - 新增场景 SOP 模板：`scenario-code-review-gate.json`（并行评审+汇聚）、`scenario-diagnose-fix-verify.json`（诊断→修复→验证）；更新 `sop-templates/README.md` 与编排模板文档
+  - 新增 `scripts/single-node-apply-sop-template.sh`（模板保存/详情校验/可选 `sop run` 执行）
+  - 实测：`scenario_code_review_gate_template` 保存(201)并 `sop run` 成功；`scenario_diagnose_fix_verify_template` 保存(201)可查询，但直接执行在当前环境触发 StrategicPivot 失败（模板有效，执行受认知阈值/配置影响，已记录）
+  - `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md` 补充 debug CLI 多次采样（N=5，`single-node-bench-sample.sh`）统计
+
 - **P1/P2 深化实施（契约冒烟自动化、SOP 模板资产、运行时基线与集成样例）**（2026-11-10）：
   - P1-F：新增 `scripts/single-node-contract-smoke.sh` 与 `make smoke-single-node`/`make smoke-single-node-quick`/`make demo-single-node`/`make readiness-check`（契约/回归与演示入口）；冒烟脚本支持 `--quick/--full` 分层与 `SMOKE_BRIDGE_HTTP` 可选 bridge 就绪检查；`docs/runbooks/single-node-contract-guard.md` 同步
   - P1-E：补充 SOP 端到端实测证据与路径差异说明（CLI `sop run verify_sop` 直接执行成功；`POST /api/execute/goal` 在无可用 LLM 时返回可解释错误）；新增 `sisyphus sop show`（HTTP 详情）；更新 runbook/验收矩阵/典型工作流
   - P1-A/B/D（CLI 体验）：新增 `sisyphus doctor`（本地+gRPC/HTTP 诊断，含关键脚本/文档与 `/health/live`、`/openapi.json` 检查）与 `sisyphus quickstart`（上手引导，含快速冒烟/演示入口）；增强 `sop list` 空态/提示文案、MCP/技能命令失败与空态的可操作提示
-  - P2-A：新增 `docs/examples/sop-templates/`（顺序、扇出/汇聚、三路并行审查等模板，含 `POST /api/sops` 保存与查询示例）；`parallel_explore_aggregate_template` 已实测保存/查询/CLI `sop run` 执行成功（受控并行 DAG 结构可观测）
-  - P2-B：`docs/benchmarks/single-node-runtime-baseline-2026-11-10.md` 扩展 dev/debug 与 release 运行时采样（bridge 就绪、只读端点延迟、CLI 命令耗时，含波动复测说明）；新增 `scripts/single-node-bench-sample.sh`（CLI/bridge 多次采样统计）；`single-node-performance-baseline.md` 同步复测计划
-  - P2-C：新增 `scripts/single-node-readiness-check.sh`（已实测）与 `scripts/single-node-demo-flow.sh`（端到端发现→执行→观测流程已实测）并在集成样例中引用；配套 `single-node-bench-sample.sh` 支持运行时采样
+  - P2-A：新增 `docs/examples/sop-templates/`（顺序、扇出/汇聚、三路并行审查及场景化模板，含 `POST /api/sops` 保存与查询示例）；`parallel_explore_aggregate_template` 与 `scenario_code_review_gate_template` 已实测保存/执行成功；`scenario_diagnose_fix_verify_template` 结构有效但执行受环境/认知配置影响（已记录）
+  - P2-B：`docs/benchmarks/single-node-runtime-baseline-2026-11-10.md` 扩展 dev/debug 与 release 运行时采样（bridge 就绪、只读端点延迟、CLI 单次与多次 N=5 采样）；新增 `scripts/single-node-bench-sample.sh`；`single-node-performance-baseline.md` 同步复测计划
+  - P2-C：新增 `scripts/single-node-readiness-check.sh`、`single-node-demo-flow.sh`、`single-node-apply-sop-template.sh`、`single-node-bench-sample.sh` 等可运行样例；`docs/examples/single-node-integration-samples.md` 与场景手册联动
   - 路线/计划文档同步：`docs/plans/p1-p2-roadmap.md` 更新 P1/P2 进展；仍保持 ADR-020 只读边界与 `cluster.control_plane.enabled=false` 默认边界
 
 - **三套官方 SDK 的集群/控制面只读观测方法**（2026-11-10）：TypeScript / Python / Go SDK

@@ -1,0 +1,37 @@
+{
+  "id": "scenario_code_review_gate_template",
+  "name": "Scenario: Code Review Gate (Parallel + Aggregate)",
+  "version": "1.0.0",
+  "config": {
+    "nodes": [
+      {
+        "name": "collect_change_context",
+        "kind": { "Test": { "command": "echo '[1/5] collect changed files, diff summary, and task goal'", "workdir": null } }
+      },
+      {
+        "name": "check_correctness",
+        "kind": { "Test": { "command": "echo '[2/5] review correctness, edge cases, and behavior risks'", "workdir": null } }
+      },
+      {
+        "name": "check_contracts_compat",
+        "kind": { "Test": { "command": "echo '[3/5] review API/CLI/SDK contracts and compatibility impact'", "workdir": null } }
+      },
+      {
+        "name": "check_quality_observability",
+        "kind": { "Test": { "command": "echo '[4/5] review tests, diagnostics, logs, and observability coverage'", "workdir": null } }
+      },
+      {
+        "name": "aggregate_gate_report",
+        "kind": { "Test": { "command": "echo '[5/5] aggregate findings: pass/fail, risks, and next actions'", "workdir": null } }
+      }
+    ],
+    "edges": [
+      [0, 1],
+      [0, 2],
+      [0, 3],
+      [1, 4],
+      [2, 4],
+      [3, 4]
+    ]
+  }
+}

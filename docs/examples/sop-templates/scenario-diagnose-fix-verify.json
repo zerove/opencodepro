@@ -1,0 +1,30 @@
+{
+  "id": "scenario_diagnose_fix_verify_template",
+  "name": "Scenario: Diagnose, Fix, and Verify",
+  "version": "1.0.0",
+  "config": {
+    "nodes": [
+      {
+        "name": "reproduce_and_collect",
+        "kind": { "Test": { "command": "echo '[1/4] reproduce issue and collect logs/errors/context'", "workdir": null } }
+      },
+      {
+        "name": "diagnose_root_cause",
+        "kind": { "Test": { "command": "echo '[2/4] form hypotheses and identify likely root cause'", "workdir": null } }
+      },
+      {
+        "name": "apply_fix",
+        "kind": { "Test": { "command": "echo '[3/4] apply targeted fix (replace with project command)'", "workdir": null } }
+      },
+      {
+        "name": "verify_and_report",
+        "kind": { "Test": { "command": "echo '[4/4] run checks/tests and report outcome + residual risks'", "workdir": null } }
+      }
+    ],
+    "edges": [
+      [0, 1],
+      [1, 2],
+      [2, 3]
+    ]
+  }
+}

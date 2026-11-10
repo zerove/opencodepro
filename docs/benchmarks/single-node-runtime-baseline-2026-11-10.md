@@ -34,13 +34,23 @@
 
 ## 补充：Debug CLI 本地命令耗时（2026-11-10，同环境参考）
 
+### 单次采样（`/usr/bin/time -p`）
+
 | 命令 | real (s) | user (s) | sys (s) | 备注 |
 |---|---:|---:|---:|---|
-| `./target/debug/sisyphus --help` | 0.05 | 0.02 | 0.02 | 单次，`/usr/bin/time -p` |
+| `./target/debug/sisyphus --help` | 0.05 | 0.02 | 0.02 | 单次 |
 | `./target/debug/sisyphus exec 'echo ok'` | 0.08 | 0.01 | 0.04 | 本地工具执行路径 |
 | `./target/debug/sisyphus --data-dir /tmp/opencode/smoke-data session list` | 0.03 | 0.01 | 0.01 | 本地会话存储读取 |
 
-> 单次采样仅作量级参考；回归对比需多次采样并固定构建/数据状态。
+### 多次采样（`scripts/single-node-bench-sample.sh cli`，N=5，debug）
+
+| 命令 | n | min (s) | avg (s) | max (s) |
+|---|---:|---:|---:|---:|
+| `sisyphus --help` | 5 | 0.010000 | 0.020000 | 0.030000 |
+| `sisyphus exec 'echo ok'` | 5 | 0.010000 | 0.012000 | 0.020000 |
+| `sisyphus --data-dir /tmp/opencode/bench-sn session list` | 5 | 0.010000 | 0.012000 | 0.020000 |
+
+> 采样结果受机器状态/缓存/构建类型影响；回归对比需固定口径多次复测。
 
 ## 补充：Release 构建运行时采样（2026-11-10，同环境参考）
 

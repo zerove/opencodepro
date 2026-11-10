@@ -117,4 +117,9 @@ sisyphus quickstart
 
 # 端到端演示（需 bridge HTTP+gRPC 可达）
 BASE=http://127.0.0.1:8080 BRIDGE_GRPC=http://127.0.0.1:50051 SOP_ID=verify_sop   ./scripts/single-node-demo-flow.sh
+
+# 保存并执行场景/模板 SOP
+BASE=http://127.0.0.1:8080 BRIDGE_GRPC=http://127.0.0.1:50051   ./scripts/single-node-apply-sop-template.sh docs/examples/sop-templates/scenario-code-review-gate.json --run
 ```
+
+**场景手册**：`docs/runbooks/single-node-dev-scenarios.md`（质量门、诊断修复验证、端到端执行路径与观测/回归）。

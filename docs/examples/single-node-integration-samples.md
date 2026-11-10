@@ -40,6 +40,7 @@ curl -s "$BASE/api/cluster/status"
 
 ## 5. 关联
 
+- `docs/runbooks/single-node-dev-scenarios.md`（自动化开发场景手册）
 - `docs/plans/p1-p2-roadmap.md`（P2-C）
 - `docs/runbooks/single-node-contract-guard.md`
 - `book/src/rest-api.md`、`book/src/sdk-reference.md`
@@ -67,14 +68,19 @@ curl -fsS "$BASE/api/sops"
 ## 7. 可运行脚本样例
 
 - `scripts/single-node-readiness-check.sh`：健康门禁 + SOP 发现 + 集群只读状态检查（`BASE`/`WS`/`TIMEOUT` 可配置）。
-- `scripts/single-node-demo-flow.sh`：端到端演示流程（就绪检查 → SOP 发现/详情 → CLI `sop run` 执行 → 观测入口），用于验证“发现-执行-观测”闭环体验。
-- `scripts/single-node-contract-smoke.sh`：P1-F 契约冒烟（门禁/关键测试/CLI 与可选 SDK/bridge 就绪检查）。
-- `docs/examples/sop-templates/`：SOP/DAG 模板资产与保存示例（含顺序与扇出/汇聚并行探索模板）。
+- `scripts/single-node-demo-flow.sh`：端到端演示流程（就绪检查 → SOP 发现/详情 → CLI `sop run` 执行 → 观测入口）。
+- `scripts/single-node-apply-sop-template.sh`：保存 SOP 模板并可选执行（`<template.json> [--run]`），适合场景化模板快速验证。
+- `scripts/single-node-contract-smoke.sh`：P1-F 契约冒烟（`--quick/--full`，可选 SDK/bridge 就绪检查）。
+- `scripts/single-node-bench-sample.sh`：CLI/bridge 运行时多次采样统计（P2-B）。
+- `docs/examples/sop-templates/`：SOP/DAG 模板资产（顺序、并行审查、场景化模板）。
 
 ```bash
-# 示例：就绪检查
+# 就绪检查
 BASE=http://127.0.0.1:8080 ./scripts/single-node-readiness-check.sh
 
-# 示例：端到端演示（需 bridge HTTP+gRPC 可达）
+# 端到端演示
 BASE=http://127.0.0.1:8080 BRIDGE_GRPC=http://127.0.0.1:50051 SOP_ID=verify_sop   ./scripts/single-node-demo-flow.sh
+
+# 保存并执行场景模板
+BASE=http://127.0.0.1:8080 BRIDGE_GRPC=http://127.0.0.1:50051   ./scripts/single-node-apply-sop-template.sh docs/examples/sop-templates/scenario-code-review-gate.json --run
 ```

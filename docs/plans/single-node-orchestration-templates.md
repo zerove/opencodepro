@@ -47,14 +47,21 @@
 - `GET /api/sops/verify_sop` 返回示例图：`a(Test: echo hi)` → `b(Test: echo ho)`，`edges=[[0,1]]`
 - **实测执行**：CLI `sop run verify_sop` 成功返回 `Test Passed` 与 `CognitionReport`（直接 SOP 路径）；`POST /api/execute/goal` 在无可用 LLM 时返回可解释错误（路径差异见 `single-node-sop-e2e-guide.md`）。
 
-### 6.2 可保存模板资产（含受控并行探索结构）
+### 6.2 可保存模板资产（含受控并行探索结构与场景模板）
 
 - `docs/examples/sop-templates/verify-sequence.json`：最小顺序模板。
 - `docs/examples/sop-templates/quality-gate-sequence.json`：顺序四步质量门骨架。
-- `docs/examples/sop-templates/parallel-explore-aggregate.json`：扇出/汇聚 DAG（`prepare -> {explore_a, explore_b} -> aggregate`），用于表达“受控探索性并行 + 汇总”的可审计编排。
-- `docs/examples/sop-templates/parallel-triple-review.json`：三路并行审查 + 汇聚 DAG（准备 → 正确性/契约/可观测性并行审查 → 汇总）。
+- `docs/examples/sop-templates/parallel-explore-aggregate.json`：扇出/汇聚 DAG（`prepare -> {explore_a, explore_b} -> aggregate`）。
+- `docs/examples/sop-templates/parallel-triple-review.json`：三路并行审查 + 汇聚 DAG。
+- `docs/examples/sop-templates/scenario-code-review-gate.json`：并行代码评审门禁场景模板（检查+汇总）。
+- `docs/examples/sop-templates/scenario-diagnose-fix-verify.json`：诊断→修复→验证顺序场景模板（占位命令需按项目替换）。
 - `docs/examples/sop-templates/README.md`：保存、查询与使用说明（需 `X-Sisyphus-Workspace-Id`）。
 
-**实测（2026-11-10）**：`parallel_explore_aggregate_template` 通过 `POST /api/sops` 保存成功（201），可被列出/查询；CLI `sop run parallel_explore_aggregate_template`（直接 SOP 路径）执行成功并返回结果与 CognitionReport（预测路径含 `prepare -> explore_path_a -> aggregate`）。
+**辅助脚本**：`scripts/single-node-apply-sop-template.sh <template.json> [--run]`（保存、查询详情，并可选通过 CLI 直接路径执行）。
+
+**实测（2026-11-10）**：
+- `parallel_explore_aggregate_template`：保存（201）、可查询，CLI `sop run` 成功并返回 CognitionReport（预测路径含 `prepare -> explore_path_a -> aggregate`）。
+- `scenario_code_review_gate_template`：通过 `scripts/single-node-apply-sop-template.sh ... --run` 保存（201）并执行成功（并行审查汇聚路径可观测）。
+- `scenario_diagnose_fix_verify_template`：保存（201）并可列出/查询；在当前环境直接 `sop run` 触发认知引擎 StrategicPivot（未产出真实执行结果）而失败——表明模板结构有效，但执行效果受认知阈值/执行器配置影响，需按环境调优或替换为确定性命令/路径。
 
 **模板化建议**：在骨架基础上替换为项目真实命令/节点类型，按需扩展并行分支与汇聚策略，并通过执行状态/trace/观测端点关联每步结果；失败路径需可解释。

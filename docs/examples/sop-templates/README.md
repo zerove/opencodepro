@@ -8,6 +8,8 @@
 - `quality-gate-sequence.json`：顺序四步“质量门”模板骨架（格式/静态检查/测试/汇总占位命令，可按项目替换）。
 - `parallel-explore-aggregate.json`：**扇出/汇聚** DAG 模板（`prepare -> {explore_a, explore_b} -> aggregate`），用于表达“受控探索性并行 + 汇总”的编排模式（实际并行调度语义以引擎执行器为准，可审计结构优先）。
 - `parallel-triple-review.json`：**三路并行审查 + 汇聚** DAG 模板（准备 → 正确性/契约/可观测性并行审查 → 汇总），用于质量评审或多视角探索场景。
+- `scenario-code-review-gate.json`：场景模板（并行代码评审门禁：正确性/契约兼容/质量观测并行检查 + 汇总）。
+- `scenario-diagnose-fix-verify.json`：场景模板（诊断→修复→验证顺序流程，占位命令需替换为项目实际命令）。
 
 ## 保存与使用（需 bridge + 工作区上下文）
 
