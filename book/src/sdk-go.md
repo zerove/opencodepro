@@ -68,7 +68,7 @@ if lease.StatusCode == sisyphus.LeaseStatusDisabled { fmt.Println(lease.StatusMe
 
 ## 错误
 
-HTTP 4xx/5xx 时返回 error；网络错误同样返回 error。
+HTTP 4xx/5xx 时返回 `*sisyphus.APIError`（含 `Status`、`Message`、可选 `Hint`、`Raw`）；网络错误返回普通 `error`。当服务端返回 `{ "error": "...", "hint": "..." }` 时，`Error()` 会附带 hint，调用方也可通过类型断言读取结构化字段。控制面租约查询在未启用/未找到等场景下仍返回 200，请按 `StatusCode` 判定。
 
 ## 测试
 

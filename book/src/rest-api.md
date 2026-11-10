@@ -8,6 +8,16 @@ OpenAPI 规范位于 [`/openapi.json`](/openapi.json)，也可通过 Swagger UI 
 
 包含 `Authorization: Bearer <token>` 请求头。token 在 `config.auth_token` 中配置。
 
+## 错误响应
+
+失败时通常返回 JSON 对象：
+
+```json
+{ "error": "..." }
+```
+
+部分执行类端点（如 `POST /api/execute/goal`、`POST /api/execute/composite`）在可判定时会附加可选 `hint` 字段，提供可操作的恢复建议（例如区分 `sop run` 直接路径与目标驱动依赖、StrategicPivot/无真实结果排查）。客户端应将 `hint` 视为可选且向后兼容字段。
+
 ## 健康检查
 
 ### `GET /health`

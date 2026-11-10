@@ -48,6 +48,7 @@
 - `make smoke-single-node` / `make smoke-single-node-quick` / `make validate-sop-templates`：回归与模板校验入口。
 - `scripts/single-node-readiness-check.sh`：bridge 运行时就绪与只读观测检查（`/health`、`/api/sops`、`/api/cluster/status`）。
 - `scripts/validate-sop-templates.sh`：校验 `docs/examples/sop-templates/*.json` 结构与必需字段。
+- `scripts/single-node-acceptance-evidence.sh`：生成验收证据目录与模板。
 - `docs/runbooks/single-node-automation-acceptance.md`：分层（L0–L4）验收步骤、证据模板与判定标准（含 LLM 依赖阻塞记录）。
 
 在具备对应工具链/环境时，也可按序手动执行以下检查（记录结果与提交号）：

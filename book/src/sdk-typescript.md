@@ -59,8 +59,7 @@ REST 写入=否）。控制面未启用 / 租约不存在时，HTTP 状态仍为
 
 ## 错误
 
-桥接返回非 2xx 时抛出 `SisyphusApiError`（含 `status`），`getState`/`getSession`
-在 404 时返回 `null`。
+桥接返回非 2xx 时抛出 `SisyphusApiError`（含 `status`、可选 `hint` 与原始 `body`）。当服务端返回 `{ "error": "...", "hint": "..." }` 时，SDK 会在异常消息中附带 hint 并暴露结构化字段。`getState`/`getSession` 在 404 时返回 `null`。
 
 ## 测试
 

@@ -56,7 +56,18 @@ case "$MODE" in
       echo "-- sisyphus $cmd --"
       for i in $(seq 1 "$N"); do
         # shellcheck disable=SC2086
-        t=$(/usr/bin/time -p $CLI_BIN $cmd >/dev/null 2> /tmp/sn-time.err; awk '/^real/{print $2}' /tmp/sn-time.err)
+        if command -v python3 >/dev/null 2>&1; then
+          t=$(python3 - "$CLI_BIN $cmd" <<'PY'
+import subprocess, sys, time
+cmd = sys.argv[1]
+t0 = time.perf_counter()
+subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+print(f"{time.perf_counter() - t0:.6f}")
+PY
+)
+        else
+          t=$(/usr/bin/time -p $CLI_BIN $cmd >/dev/null 2> /tmp/sn-time.err; awk '/^real/{print $2}' /tmp/sn-time.err)
+        fi
         echo "$t"
       done | stats
     done

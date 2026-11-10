@@ -29,6 +29,11 @@
 
 为每次验收创建目录（建议）：`docs/benchmarks/acceptance/<YYYY-MM-DD>-<tag>/`
 
+```bash
+./scripts/single-node-acceptance-evidence.sh <tag>
+# 例：./scripts/single-node-acceptance-evidence.sh nightly
+```
+
 ```text
 meta.md          # 环境、提交、配置摘要、执行人/自动化
 l0-static.log    # fmt/check/audit/模板校验/smoke --quick

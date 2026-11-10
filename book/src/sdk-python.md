@@ -57,7 +57,7 @@ if lease.status_code == "DISABLED":
 
 ## 错误
 
-网络 / HTTP 错误统一抛出 `SisyphusError`（含 API error 信息）。
+HTTP 4xx/5xx 会抛出 `SisyphusError`（含 `status`、可选 `hint` 与 `body`）。当服务端返回 `{ "error": "...", "hint": "..." }` 时，SDK 会在异常消息中附带 hint 并暴露结构化字段，便于恢复引导。`get_session` 在未找到时返回 `None`。
 
 ## 测试
 
