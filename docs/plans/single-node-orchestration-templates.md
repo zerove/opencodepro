@@ -47,10 +47,13 @@
 - `GET /api/sops/verify_sop` 返回示例图：`a(Test: echo hi)` → `b(Test: echo ho)`，`edges=[[0,1]]`
 - **实测执行**：CLI `sop run verify_sop` 成功返回 `Test Passed` 与 `CognitionReport`（直接 SOP 路径）；`POST /api/execute/goal` 在无可用 LLM 时返回可解释错误（路径差异见 `single-node-sop-e2e-guide.md`）。
 
-### 6.2 可保存模板资产
+### 6.2 可保存模板资产（含受控并行探索结构）
 
-- `docs/examples/sop-templates/verify-sequence.json`：最小顺序模板（可通过 `POST /api/sops` 保存）。
-- `docs/examples/sop-templates/quality-gate-sequence.json`：顺序四步质量门骨架（占位命令，可按项目替换）。
+- `docs/examples/sop-templates/verify-sequence.json`：最小顺序模板。
+- `docs/examples/sop-templates/quality-gate-sequence.json`：顺序四步质量门骨架。
+- `docs/examples/sop-templates/parallel-explore-aggregate.json`：扇出/汇聚 DAG（`prepare -> {explore_a, explore_b} -> aggregate`），用于表达“受控探索性并行 + 汇总”的可审计编排。
 - `docs/examples/sop-templates/README.md`：保存、查询与使用说明（需 `X-Sisyphus-Workspace-Id`）。
 
-**模板化建议**：在骨架基础上替换为项目真实命令（格式/静态检查/测试/汇总），并通过执行状态/trace/观测端点关联每步结果；失败路径需可解释（依赖、权限、配置）。
+**实测（2026-11-10）**：`parallel_explore_aggregate_template` 通过 `POST /api/sops` 保存成功（201），可被列出/查询；CLI `sop run parallel_explore_aggregate_template`（直接 SOP 路径）执行成功并返回结果与 CognitionReport（预测路径含 `prepare -> explore_path_a -> aggregate`）。
+
+**模板化建议**：在骨架基础上替换为项目真实命令/节点类型，按需扩展并行分支与汇聚策略，并通过执行状态/trace/观测端点关联每步结果；失败路径需可解释。

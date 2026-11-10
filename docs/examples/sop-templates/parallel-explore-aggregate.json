@@ -1,0 +1,51 @@
+{
+  "id": "parallel_explore_aggregate_template",
+  "name": "Parallel Explore and Aggregate Template",
+  "version": "1.0.0",
+  "config": {
+    "nodes": [
+      {
+        "name": "prepare",
+        "kind": {
+          "Test": {
+            "command": "echo '[prepare] collect context'",
+            "workdir": null
+          }
+        }
+      },
+      {
+        "name": "explore_path_a",
+        "kind": {
+          "Test": {
+            "command": "echo '[explore-a] inspect module/config path'",
+            "workdir": null
+          }
+        }
+      },
+      {
+        "name": "explore_path_b",
+        "kind": {
+          "Test": {
+            "command": "echo '[explore-b] inspect tests/docs path'",
+            "workdir": null
+          }
+        }
+      },
+      {
+        "name": "aggregate",
+        "kind": {
+          "Test": {
+            "command": "echo '[aggregate] summarize findings'",
+            "workdir": null
+          }
+        }
+      }
+    ],
+    "edges": [
+      [0, 1],
+      [0, 2],
+      [1, 3],
+      [2, 3]
+    ]
+  }
+}

@@ -67,10 +67,14 @@ curl -fsS "$BASE/api/sops"
 ## 7. 可运行脚本样例
 
 - `scripts/single-node-readiness-check.sh`：健康门禁 + SOP 发现 + 集群只读状态检查（`BASE`/`WS`/`TIMEOUT` 可配置）。
-- `scripts/single-node-contract-smoke.sh`：P1-F 契约冒烟（门禁/关键测试/CLI 与可选 SDK 检查）。
-- `docs/examples/sop-templates/`：SOP/DAG 模板资产与保存示例（`POST /api/sops`）。
+- `scripts/single-node-demo-flow.sh`：端到端演示流程（就绪检查 → SOP 发现/详情 → CLI `sop run` 执行 → 观测入口），用于验证“发现-执行-观测”闭环体验。
+- `scripts/single-node-contract-smoke.sh`：P1-F 契约冒烟（门禁/关键测试/CLI 与可选 SDK/bridge 就绪检查）。
+- `docs/examples/sop-templates/`：SOP/DAG 模板资产与保存示例（含顺序与扇出/汇聚并行探索模板）。
 
 ```bash
 # 示例：就绪检查
 BASE=http://127.0.0.1:8080 ./scripts/single-node-readiness-check.sh
+
+# 示例：端到端演示（需 bridge HTTP+gRPC 可达）
+BASE=http://127.0.0.1:8080 BRIDGE_GRPC=http://127.0.0.1:50051 SOP_ID=verify_sop   ./scripts/single-node-demo-flow.sh
 ```

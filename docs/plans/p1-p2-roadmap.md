@@ -68,9 +68,9 @@
 | P2-D | 控制面准入（条件触发，外部前提） | 后置 | 专用 runner 真实网络硬件 | ADR-019 证据矩阵 → 准入评审（不改变默认关闭策略） |
 
 **进展（2026-11-10）**：
-- P2-A：新增 `docs/plans/single-node-orchestration-templates.md` 与 `docs/examples/sop-templates/`（`verify_sop` 实测、可保存 SOP 模板资产与 `POST /api/sops` 使用说明）。
-- P2-B：新增 `docs/plans/single-node-performance-baseline.md` 与 `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`（dev/release bridge 就绪与只读端点延迟、debug/release CLI 命令耗时采样；release `--help` 单次偏高已标注待复测）。
-- P2-C：新增/增强 `docs/examples/single-node-integration-samples.md`，并提供 `scripts/single-node-readiness-check.sh` 可运行就绪检查样例（已实测通过，配合 `scripts/single-node-contract-smoke.sh`）。
+- P2-A：新增 `docs/plans/single-node-orchestration-templates.md` 与 `docs/examples/sop-templates/`（顺序与扇出/汇聚“受控并行探索”模板）；`parallel_explore_aggregate_template` 已实测保存/查询/`sop run` 执行成功并产出可观测 CognitionReport。
+- P2-B：新增 `docs/plans/single-node-performance-baseline.md` 与 `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`（dev/release bridge 就绪与只读端点延迟、CLI 命令耗时采样；release `--help` 存在波动已记录复测说明）。
+- P2-C：新增/增强 `docs/examples/single-node-integration-samples.md`；提供 `scripts/single-node-readiness-check.sh`（实测）与 `scripts/single-node-demo-flow.sh`（端到端发现→执行→观测流程实测）可运行样例，配合 `scripts/single-node-contract-smoke.sh`。
 - P1-F：契约守护补充可执行冒烟清单与自动化入口（脚本 + Make 目标）；`single-node-contract-smoke.sh` 支持 `SMOKE_BRIDGE_HTTP` 可选运行时就绪冒烟。
 - P2-D：仍为**外部后置**（专用 runner 真实网络证据与 ADR-019 准入），不阻塞单机 P1/P2 可实施交付；`cluster.control_plane.enabled` 保持 `false`。
 

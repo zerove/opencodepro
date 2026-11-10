@@ -1,11 +1,12 @@
 # SOP 模板资产（单机，P2-A）
 
-本目录提供可复用的 SOP/DAG 模板示例（JSON），用于演示与二次定制。
+本目录提供可复用的 SOP/DAG 模板示例（JSON），用于演示与二次定制（含受控并行分支结构）。
 
 ## 文件
 
 - `verify-sequence.json`：最小顺序两步模板（对应 `verify_sop` 结构的可保存形式）。
 - `quality-gate-sequence.json`：顺序四步“质量门”模板骨架（格式/静态检查/测试/汇总占位命令，可按项目替换）。
+- `parallel-explore-aggregate.json`：**扇出/汇聚** DAG 模板（`prepare -> {explore_a, explore_b} -> aggregate`），用于表达“受控探索性并行 + 汇总”的编排模式（实际并行调度语义以引擎执行器为准，可审计结构优先）。
 
 ## 保存与使用（需 bridge + 工作区上下文）
 
@@ -18,10 +19,10 @@ WS="${WS:-default}"
 curl -s -X POST "$BASE/api/sops" \
   -H 'Content-Type: application/json' \
   -H "X-Sisyphus-Workspace-Id: $WS" \
-  --data-binary @docs/examples/sop-templates/verify-sequence.json
+  --data-binary @docs/examples/sop-templates/parallel-explore-aggregate.json
 
 curl -s "$BASE/api/sops"
-curl -s -H "X-Sisyphus-Workspace-Id: $WS" "$BASE/api/sops/verify_sequence_template"
+curl -s -H "X-Sisyphus-Workspace-Id: $WS" "$BASE/api/sops/parallel_explore_aggregate_template"
 ```
 
 > 实际命令、节点类型与参数应按目标环境调整；执行前确认执行器权限与依赖。`Test` 节点 `workdir` 可为 `null` 或指定路径。
@@ -31,3 +32,4 @@ curl -s -H "X-Sisyphus-Workspace-Id: $WS" "$BASE/api/sops/verify_sequence_templa
 - `docs/plans/single-node-orchestration-templates.md`
 - `docs/runbooks/single-node-sop-e2e-guide.md`
 - `docs/runbooks/single-node-typical-workflow.md`
+- `scripts/single-node-demo-flow.sh`（端到端演示流程）

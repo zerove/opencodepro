@@ -44,15 +44,15 @@
 
 ## 补充：Release 构建运行时采样（2026-11-10，同环境参考）
 
-> 二进制：`target/release/sisyphus`、`target/release/sisyphus-bridge`（本地现有 release 产物，单次采样）。
+> 二进制：`target/release/sisyphus`、`target/release/sisyphus-bridge`（本地现有 release 产物）。
 
 | 指标 | 结果 | 备注 |
 |---|---:|---|
-| `./target/release/sisyphus --help` | real 2.34s / user 0.00s / sys 0.03s | 单次；可能受环境/首次加载影响，需多次复测确认 |
-| `./target/release/sisyphus exec 'echo ok'` | real 0.01s / user 0.00s / sys 0.01s | 单次 |
-| `./target/release/sisyphus --data-dir ... session list` | real 0.00s / user 0.00s / sys 0.00s | 单次（空/小数据集） |
+| `./target/release/sisyphus --help` | 首次单次 2.34s；复测 ~0.01s（多次） | 存在环境/冷启动波动，需固定条件多次复测 |
+| `./target/release/sisyphus exec 'echo ok'` | ~0.01s | 单次参考 |
+| `./target/release/sisyphus --data-dir ... session list` | ~0.00s | 单次参考（空/小数据集） |
 | Bridge 启动 → `/health` 就绪 | ~3287 ms | 轮询间隔 200ms，`cluster.enabled=false` |
 | `GET /health` 延迟（5 次） | 0.002275–0.002751 s | 本地回环 |
 | `GET /api/sops` 延迟（5 次） | 0.002968–0.003407 s | 本地回环 |
 
-**说明**：release 与 debug、不同机器/负载/配置下数值不可直接比较；本节用于建立同环境参考点。CLI `--help` 单次耗时偏高需后续复测排查（冷启动、动态链接、终端/环境因素等）。
+**说明**：release 与 debug、不同机器/负载/配置下数值不可直接比较；CLI 启动耗时以多次复测与同口径对比为准。
