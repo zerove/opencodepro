@@ -63,6 +63,11 @@
   - S4：`docs/plans/single-node-acceptance-matrix.md`（单机功能验收矩阵与结论）
   - 边界：不包含 ADR-019 专用 runner 真实网络证据与控制面生产启用评估；`cluster.control_plane.enabled` 保持 `false`。
 
+- **OpenCode/JCode 对标与 P1/P2 路线细化**（2026-11-10）：
+  - 新增 `docs/comparison/opencode-jcode-sisyphus-comparison-2026-11.md`（单机场景能力对照、差距与差异化结论）
+  - 新增 `docs/plans/p1-p2-roadmap.md`（借鉴点映射 P1/P2 任务、里程碑与验证要求）
+  - 更新 `docs/comparison/opencode-omo-comparison.md`（补充 2026-11 当前状态修正与关联链接，保留历史基线）
+
 - **三套官方 SDK 的集群/控制面只读观测方法**（2026-11-10）：TypeScript / Python / Go SDK
   新增 `clusterStatus()` / `cluster_status()` / `GetClusterStatus()`（`GET /api/cluster/status`，
   含 `config.control_plane`、`control_plane.security`（ADR-019 安全装配视图）、

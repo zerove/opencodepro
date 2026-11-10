@@ -1,7 +1,32 @@
 # OpencodePro vs Opencode + OhMyOpenAgent 全量比对
 
-> 评估日期: 2026-06-27
+> 评估日期: 2026-06-27（历史基线）  
 > 目标: 判断 opencodepro (Sisyphus) 能否完全替代 opencode + OhMyOpenAgent
+
+## 2026-11 更新（当前状态）
+
+> 更新日期：2026-11-10。以下为对历史结论的**当前状态修正**与补充；更完整的单机场景对标（含 JCode）见  
+> **[`docs/comparison/opencode-jcode-sisyphus-comparison-2026-11.md`](./opencode-jcode-sisyphus-comparison-2026-11.md)**，后续路线见  
+> **[`docs/plans/p1-p2-roadmap.md`](../plans/p1-p2-roadmap.md)**。
+
+### 关键修正（相对 2026-06-27）
+
+| 历史表述 | 当前状态（2026-11） | 证据/说明 |
+|---|---|---|
+| “Headless HTTP API（REST/OpenAPI vs 纯 gRPC）缺口” | ✅ 已具备 REST/OpenAPI 能力 | bridge HTTP 路由与 OpenAPI（`crates/sisyphus-bridge/src/http*`）、`/openapi.json`、文档/SDK 对齐 |
+| “Web 界面（`opencode web`）缺口” | ✅ 已具备 Web 仪表盘 | `webui/`（axum + HTMX + SSE/WebSocket），含会话/DAG/SOP/技能/集群观测等页面与 HTMX 端点 |
+| “无 TypeScript SDK / 第三方集成受限” | ✅ 已提供多端 SDK | `ide/typescript-sdk`、`ide/python-sdk`、`ide/go-sdk`；契约与只读观测能力已对齐并有测试 |
+| Session 导出/导入/分享仍缺失 | ⚠️ 仍需按当前实现核验与补齐 | 建议纳入 P1 产品化切面按实际状态验收（不沿用历史结论） |
+| 自定义工具（TS/Zod）扩展缺口 | ⚠️ 仍为产品化方向议题 | 需结合引擎主线与安全/隔离模型评估（非本轮单机收口范围） |
+
+### 当前定位补充
+
+- Sisyphus 现阶段更偏**认知引擎/执行平台**（SOP/DAG 认知循环、bridge/SDK/WebUI、可观测与契约治理），在单机主流程上已形成可验证基线（见 `docs/plans/single-node-acceptance-matrix.md`）。
+- 对标策略：**引擎优先 + 选择性产品化**；借鉴 OpenCode 的产品体验与 JCode 的协作/性能思路，但不追求全量形态复刻。
+
+---
+
+*以下为 2026-06-27 历史对比内容（保留用于回溯，部分条目已被上表修正）。*
 
 ---
 
