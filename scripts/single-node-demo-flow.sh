@@ -43,6 +43,27 @@ if [ "$RC" -ne 0 ]; then
   echo "提示: 若失败，请检查 bridge gRPC 地址、SOP 是否存在、执行器权限；execute/goal 路径与 sop run 路径不同（见 runbook）。" >&2
 fi
 
+if [ "${TEST_GOAL:-0}" = "1" ]; then
+  hr "3b) 目标驱动执行探测（HTTP，可选）"
+  GOAL_TEXT="${GOAL_TEXT:-完成示例目标}"
+  echo "POST $BASE/api/execute/goal sop_id=$SOP_ID goal=$GOAL_TEXT"
+  set +e
+  RESP=$(curl -sS -X POST "$BASE/api/execute/goal" \
+    -H "Content-Type: application/json" \
+    -H "X-Sisyphus-Workspace-Id: $WS" \
+    -d "{\"goal\":\"${GOAL_TEXT}\",\"sop_id\":\"${SOP_ID}\",\"project_id\":\"${WS}\"}")
+  GRC=$?
+  set -e
+  if [ "$GRC" -ne 0 ]; then
+    echo "curl_failed=$GRC" >&2
+  elif command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$RESP" | python3 -m json.tool 2>/dev/null || printf '%s\n' "$RESP"
+  else
+    printf '%s\n' "$RESP"
+  fi
+  echo "提示: execute/goal 可能依赖 LLM/审计配置；失败时应关注 error/hint 字段与与 sop run 路径差异。"
+fi
+
 hr "4) 观测入口（只读）"
 echo "cluster_status: $BASE/api/cluster/status"
 curl -fsS "$BASE/api/cluster/status" | head -c 240; echo
