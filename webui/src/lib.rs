@@ -2242,7 +2242,7 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 
-        // 反向：用 token-b 请求 token-b 的 router 应当通过
+        // token-b 应放行 token-b
         let resp = other
             .oneshot(
                 Request::builder()
@@ -2254,5 +2254,21 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_format_bridge_error_extracts_hint() {
+        let msg = format_bridge_error(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            r#"{"error":"boom","hint":"try sop run"}"#,
+        );
+        assert!(msg.contains("boom"));
+        assert!(msg.contains("hint: try sop run"));
+    }
+
+    #[test]
+    fn test_format_bridge_error_falls_back_to_body() {
+        let msg = format_bridge_error(reqwest::StatusCode::BAD_REQUEST, "plain failure");
+        assert_eq!(msg, "HTTP 400 Bad Request: plain failure");
     }
 }

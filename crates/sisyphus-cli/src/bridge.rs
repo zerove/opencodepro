@@ -361,3 +361,37 @@ pub(crate) fn with_bearer_auth(req: reqwest::RequestBuilder) -> reqwest::Request
         _ => req,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::rpc_hint;
+
+    #[test]
+    fn rpc_hint_strategic_pivot() {
+        let h = rpc_hint(
+            "execute_sop",
+            "All rounds completed without any real execution result (StrategicPivot)",
+        );
+        assert!(h.is_some());
+        assert!(h.unwrap().contains("显式成功状态"));
+    }
+
+    #[test]
+    fn rpc_hint_llm_dependency() {
+        let h = rpc_hint("decompose_goal", "LLM provider unavailable");
+        assert!(h.is_some());
+        assert!(h.unwrap().contains("LLM/审计"));
+    }
+
+    #[test]
+    fn rpc_hint_execute_sop_not_found() {
+        let h = rpc_hint("execute_sop", "SOP not found: verify_sop");
+        assert!(h.is_some());
+        assert!(h.unwrap().contains("sop list"));
+    }
+
+    #[test]
+    fn rpc_hint_unmatched_returns_none() {
+        assert!(rpc_hint("execute_sop", "permission denied").is_none());
+    }
+}
