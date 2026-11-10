@@ -75,7 +75,7 @@ cargo run -p sisyphus-cli -- --bridge http://127.0.0.1:50051 status
 | SN-01 | CLI 本地文件工具 | `read/write/glob/grep/exec` 对本地文件操作 | 输出正确、退出码正确 | ✅ 2026-11-10 已验证（`/tmp/opencode` 下 read/write/glob/grep/exec 均成功） |
 | SN-02 | Bridge 健康与基础接口 | 启动 bridge 后 `GET /health`、`/health/live`、`/openapi.json` | 200 与预期结构 | ✅ 2026-11-10 本地实测（正确顶层配置 `bridge_address`/`http_address`）：`GET /health` → `{"status":"SERVING","version":"0.4.0"}` |
 | SN-03 | SOP 列表与详情 | `GET /api/sops`、`GET /api/sops/{id}`、`GET /api/sops/{id}/dag`（需工作区头时按约定附加） | 契约与 SDK/WebUI 一致（`string[]`/detail/dag） | ✅ 2026-11-10 本地实测：`GET /api/sops` → `["verify_sop"]`；详情/DAG 按 SOP 与工作区上下文进一步验收 |
-| SN-04 | 目标执行（SOP） | `POST /api/execute/goal` `{sop_id, goal}` | 返回 `{output, report}` 或可解释错误 | 依赖引擎/LLM 配置；需在具备配置的环境验证 |
+| SN-04 | 目标执行（SOP） | `POST /api/execute/goal` `{sop_id, goal}`；或 CLI `sop run <id>`（直接 SOP 路径） | 返回 `{output, report}` 或可解释错误；CLI 路径可直接返回执行结果 | ✅ 2026-11-10 本地实测：CLI `sop run verify_sop` 成功返回 `Test Passed` 与 CognitionReport；`POST /api/execute/goal` 在无可用 LLM 时返回可解释错误（路径差异） |
 | SN-05 | 会话生命周期 | `POST /api/sessions` → `GET /api/sessions` → `GET /api/sessions/{id}` → `POST /api/sessions/{id}/messages` | 契约正确、状态可查询 | 按 bridge 实现与 SDK 契约验证 |
 | SN-06 | 技能 | `GET /api/skills`、`POST /api/skills/install` | 列表字段与安装语义（201 空体）一致 | 已有契约对齐与测试覆盖 |
 | SN-07 | 只读观测（集群/控制面） | `GET /api/cluster/status`、`GET /api/cluster/control/leases/{key}`；WebUI `/cluster` 面板 | 只读、默认安全；字段与文档一致 | ✅ 2026-11-10 本地实测：`GET /api/cluster/status` 返回有效 JSON（cluster/control_plane/config/consensus 等字段）；WebUI/SDK 契约与测试已覆盖 |
