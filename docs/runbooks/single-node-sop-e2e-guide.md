@@ -1,0 +1,86 @@
+# 单机 SOP 端到端指南（P1-E）
+
+> 目标：在单机环境下完成 SOP 的**发现 → 查看 → 执行 → 观测**闭环，明确契约与前置条件。
+
+## 1. 前置条件
+
+- bridge 已启动且 HTTP/gRPC 可达（见 `single-node-operation-and-verification.md`）。
+- 目标执行（`/api/execute/goal`）通常依赖 LLM/引擎配置；无配置时应返回可解释错误。
+- 需要工作区隔离的端点需附加 `X-Sisyphus-Workspace-Id`（SDK/WebUI 已支持配置）。
+
+## 2. 发现与查看
+
+### 2.1 REST
+
+```bash
+# SOP 列表（返回 string[]）
+curl -s http://127.0.0.1:8080/api/sops
+
+# SOP 详情（含配置/图定义，按实现）
+curl -s -H 'X-Sisyphus-Workspace-Id: <ws>' \
+  http://127.0.0.1:8080/api/sops/<sop-id>
+
+# DAG（WebUI/可视化用途）
+curl -s http://127.0.0.1:8080/api/sops/<sop-id>/dag
+```
+
+### 2.2 CLI（经 bridge gRPC）
+
+```bash
+sisyphus --bridge http://127.0.0.1:50051 sop list
+sisyphus --bridge http://127.0.0.1:50051 sop run <sop-id>
+```
+
+> `sop run` 的具体行为与参数以当前 CLI 实现为准；执行效果依赖引擎配置。
+
+## 3. 执行（目标/SOP）
+
+### 3.1 `POST /api/execute/goal`
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/api/execute/goal \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "goal": "完成示例目标",
+    "sop_id": "<sop-id>",
+    "project_id": "default"
+  }'
+# 预期：{"output": "...", "report": ...} 或可解释错误
+```
+
+### 3.2 SDK
+
+- TS: `executeSop(sopId, goal, projectId?, eventTx?)`
+- Python: `execute_sop(sop_id, goal, project_id=None, event_tx=None)`
+- Go: `ExecuteSOP(sopID, goal, projectID)`
+
+示例见 `../examples/single-node-sdk-examples.md`。
+
+### 3.3 组合执行与 SSE 订阅
+
+- `POST /api/execute/composite` 返回 `sse_sop_id`（`composite-<uuid>`）；订阅事件时必须使用该值（见 `book/src/sse-events.md`、`book/src/rest-api.md`）。
+- `POST /api/execute/goal` 的事件归属请求指定的 `sop_id`。
+
+## 4. 观测与追踪
+
+| 能力 | 端点/入口 | 说明 |
+|---|---|---|
+| 执行状态 | `GET /api/execute/goal/{goal_id}/status` | 当前状态 |
+| 执行轨迹 | `GET /api/execute/goal/{goal_id}/trace` | 节点事件/轨迹 |
+| 执行流 | `GET /api/execute/goal/{goal_id}/stream` | SSE 进度 |
+| 认知追踪 | `/api/cognitive/trace` 等 | 决策/解释性数据（按启用） |
+| 认知地图 | `/api/cognitive/map/:sop_id` 等 | 可视化与流式更新（按启用） |
+| 集群只读 | `/api/cluster/status`、`/api/cluster/control/leases/{key}` | 单机默认控制面关闭，仅只读观测 |
+
+## 5. 常见问题
+
+- **400（缺工作区头）**：对需要工作区上下文的端点附加 `X-Sisyphus-Workspace-Id`。
+- **执行失败但契约正确**：检查 LLM 配置、模型可用性、工具/MCP 依赖与权限。
+- **事件未收到**：确认订阅使用正确的 `sop_id` / `sse_sop_id`，并检查 SSE 连接与过滤条件。
+
+## 6. 关联文档
+
+- `single-node-typical-workflow.md`
+- `single-node-contract-guard.md`
+- `../examples/single-node-sdk-examples.md`
+- `book/src/rest-api.md`、`book/src/sse-events.md`
