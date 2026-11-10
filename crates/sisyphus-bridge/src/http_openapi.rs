@@ -126,7 +126,8 @@ fn build_document() -> Result<serde_json::Value, String> {
                     "operationId": "executeGoal",
                     "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GoalExecuteRequest"}}}},
                     "responses": {
-                        "200": {"description": "Goal execution result", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GoalExecuteResponse"}}}}
+                        "200": {"description": "Goal execution result", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/GoalExecuteResponse"}}}},
+                        "500": {"description": "Execution failed (may include actionable hint)", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
                     }
                 }
             },
@@ -1258,7 +1259,8 @@ fn build_document() -> Result<serde_json::Value, String> {
                     "type": "object",
                     "description": "Uniform error envelope returned by REST endpoints",
                     "properties": {
-                        "error": {"type": "string"}
+                        "error": {"type": "string"},
+                        "hint": {"type": "string", "description": "Optional actionable hint for operators/clients"}
                     }
                 },
 
@@ -1301,6 +1303,7 @@ fn build_document() -> Result<serde_json::Value, String> {
                     "required": ["error"],
                     "properties": {
                         "error": {"type": "string"},
+                        "hint": {"type": "string", "description": "Optional actionable hint for operators/clients"},
                         "sse_sop_id": {"type": "string", "description": "Same composite-<uuid> value the 200 response would carry; use it as ?sop_id= on /api/events"}
                     }
                 },
