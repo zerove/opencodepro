@@ -593,20 +593,32 @@ pub(super) async fn execute_composite_handler(
                 ),
             }
         },
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
+        Err(e) => {
+            let msg = e.to_string();
+            let hint = if msg.contains("without any real execution result")
+                || msg.contains("StrategicPivot")
+            {
+                Some("各轮均未产出可接受的真实执行结果：检查节点命令与显式成功状态、阈值/反思配置；可先用 `sisyphus sop run <id>` 验证直接执行路径。")
+            } else if msg.contains("LLM") || msg.contains("model") || msg.contains("审计") {
+                Some("目标驱动路径可能依赖 LLM/审计能力：补齐模型配置与凭据，或先用 `sop run` 验证 SOP/DAG 执行。")
+            } else {
+                None
+            };
             // 失败时事件已经广播出去了（转发器在 match 之前就已排空），
             // 而 composite 的 sop_id 由服务端生成、客户端无从推算。因此
             // 失败响应同样必须回传 `sse_sop_id`，否则客户端收到了事件却
             // 不知道该用哪个 sop_id 去订阅，事件流等于凭空消失。
-            //
-            // 对比 execute_goal：它的 sop_id 由客户端提供，失败时客户端
-            // 本就知道，无需回传 —— 这是两条路径的实质差异。
-            Json(serde_json::json!({
-                "error": e.to_string(),
+            let mut body = serde_json::json!({
+                "error": msg,
                 "sse_sop_id": composite_sop_id,
-            })),
-        ),
+            });
+            if let Some(h) = hint {
+                if let Some(obj) = body.as_object_mut() {
+                    obj.insert("hint".to_string(), serde_json::Value::String(h.to_string()));
+                }
+            }
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(body))
+        },
     }
 }
 
