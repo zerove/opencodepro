@@ -505,6 +505,15 @@ regs=[(n,i) for n,i in data.items() if isinstance(i,dict) and isinstance(i.get('
 		echo "Benchmark baseline saved as '$$BASELINE_NAME'"; \
 	fi
 
+
+# — Single-node contract/readiness smoke (P1-F/P2-C) —
+
+smoke-single-node:
+	@echo "━━━ Single-node contract smoke (P1-F) ━━━"
+	@./scripts/single-node-contract-smoke.sh
+
+.PHONY: smoke-single-node
+
 # — E2E smoke test (bridge daemon + stress_test) —
 
 e2e-smoke:

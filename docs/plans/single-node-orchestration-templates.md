@@ -39,14 +39,18 @@
 - `docs/runbooks/single-node-sop-e2e-guide.md`
 - `docs/runbooks/single-node-typical-workflow.md`
 
-## 6. 现有示例：`verify_sop`（单机可发现）
+## 6. 现有示例与模板资产（P2-A 落地）
 
-**发现与查看（2026-11-10 实测）**
+### 6.1 内置示例：`verify_sop`（单机可发现，2026-11-10 实测）
+
 - `GET /api/sops` → `["verify_sop"]`
-- `GET /api/sops/verify_sop`（附工作区头时按需）返回示例图：
-  - nodes: `a` = `Test{command:"echo hi"}`, `b` = `Test{command:"echo ho"}`
-  - edges: `[[0,1]]`（a → b）
+- `GET /api/sops/verify_sop` 返回示例图：`a(Test: echo hi)` → `b(Test: echo ho)`，`edges=[[0,1]]`
+- **实测执行**：CLI `sop run verify_sop` 成功返回 `Test Passed` 与 `CognitionReport`（直接 SOP 路径）；`POST /api/execute/goal` 在无可用 LLM 时返回可解释错误（路径差异见 `single-node-sop-e2e-guide.md`）。
 
-**用途**：作为最小 DAG/SOP 模板参考（顺序执行、命令类节点）。实际执行需具备对应执行器与环境权限；执行路径见 `single-node-sop-e2e-guide.md` 与 `single-node-typical-workflow.md`。
+### 6.2 可保存模板资产
 
-**模板化建议**：在此基础上扩展为“检查→构建→测试→汇总”等多步骤流程，并通过 trace/状态端点观测每步结果。
+- `docs/examples/sop-templates/verify-sequence.json`：最小顺序模板（可通过 `POST /api/sops` 保存）。
+- `docs/examples/sop-templates/quality-gate-sequence.json`：顺序四步质量门骨架（占位命令，可按项目替换）。
+- `docs/examples/sop-templates/README.md`：保存、查询与使用说明（需 `X-Sisyphus-Workspace-Id`）。
+
+**模板化建议**：在骨架基础上替换为项目真实命令（格式/静态检查/测试/汇总），并通过执行状态/trace/观测端点关联每步结果；失败路径需可解释（依赖、权限、配置）。

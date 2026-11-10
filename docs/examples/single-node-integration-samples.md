@@ -63,3 +63,14 @@ curl -fsS "$BASE/api/sops"
 ```
 
 > 生产/自动化集成应增加超时、重试与错误分类（连通性/契约/业务），并遵循契约守护清单。
+
+## 7. 可运行脚本样例
+
+- `scripts/single-node-readiness-check.sh`：健康门禁 + SOP 发现 + 集群只读状态检查（`BASE`/`WS`/`TIMEOUT` 可配置）。
+- `scripts/single-node-contract-smoke.sh`：P1-F 契约冒烟（门禁/关键测试/CLI 与可选 SDK 检查）。
+- `docs/examples/sop-templates/`：SOP/DAG 模板资产与保存示例（`POST /api/sops`）。
+
+```bash
+# 示例：就绪检查
+BASE=http://127.0.0.1:8080 ./scripts/single-node-readiness-check.sh
+```

@@ -1,0 +1,30 @@
+{
+  "id": "verify_sequence_template",
+  "name": "Verify Sequence Template",
+  "version": "1.0.0",
+  "config": {
+    "nodes": [
+      {
+        "name": "step_a",
+        "kind": {
+          "Test": {
+            "command": "echo step-a-ok",
+            "workdir": null
+          }
+        }
+      },
+      {
+        "name": "step_b",
+        "kind": {
+          "Test": {
+            "command": "echo step-b-ok",
+            "workdir": null
+          }
+        }
+      }
+    ],
+    "edges": [
+      [0, 1]
+    ]
+  }
+}

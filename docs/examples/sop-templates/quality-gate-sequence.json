@@ -1,0 +1,50 @@
+{
+  "id": "quality_gate_sequence_template",
+  "name": "Quality Gate Sequence Template",
+  "version": "1.0.0",
+  "config": {
+    "nodes": [
+      {
+        "name": "format_check",
+        "kind": {
+          "Test": {
+            "command": "echo '[gate] format check placeholder'",
+            "workdir": null
+          }
+        }
+      },
+      {
+        "name": "static_check",
+        "kind": {
+          "Test": {
+            "command": "echo '[gate] static check placeholder'",
+            "workdir": null
+          }
+        }
+      },
+      {
+        "name": "test_check",
+        "kind": {
+          "Test": {
+            "command": "echo '[gate] test check placeholder'",
+            "workdir": null
+          }
+        }
+      },
+      {
+        "name": "summary",
+        "kind": {
+          "Test": {
+            "command": "echo '[gate] all checks completed'",
+            "workdir": null
+          }
+        }
+      }
+    ],
+    "edges": [
+      [0, 1],
+      [1, 2],
+      [2, 3]
+    ]
+  }
+}

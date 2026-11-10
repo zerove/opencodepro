@@ -31,3 +31,13 @@
 
 - dev 构建与 release 构建性能差异显著；回归对比需固定构建类型与环境。
 - `execute/goal` 端到端耗时强依赖 LLM/工具配置，本次未纳入。
+
+## 补充：Debug CLI 本地命令耗时（2026-11-10，同环境参考）
+
+| 命令 | real (s) | user (s) | sys (s) | 备注 |
+|---|---:|---:|---:|---|
+| `./target/debug/sisyphus --help` | 0.05 | 0.02 | 0.02 | 单次，`/usr/bin/time -p` |
+| `./target/debug/sisyphus exec 'echo ok'` | 0.08 | 0.01 | 0.04 | 本地工具执行路径 |
+| `./target/debug/sisyphus --data-dir /tmp/opencode/smoke-data session list` | 0.03 | 0.01 | 0.01 | 本地会话存储读取 |
+
+> 单次采样仅作量级参考；回归对比需多次采样并固定构建/数据状态。
