@@ -519,6 +519,12 @@ readiness-check:
 .PHONY: demo-single-node readiness-check
 
 
+
+validate-sop-templates:
+	@./scripts/validate-sop-templates.sh
+
+.PHONY: validate-sop-templates
+
 # — Single-node contract/readiness smoke (P1-F/P2-C) —
 
 smoke-single-node:

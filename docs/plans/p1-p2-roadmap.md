@@ -71,7 +71,7 @@
 - P2-A：新增 `docs/plans/single-node-orchestration-templates.md` 与 `docs/examples/sop-templates/`（顺序、扇出/汇聚、三路并行审查及场景化模板）；`parallel_explore_aggregate_template` 与 `scenario_code_review_gate_template` 已实测保存/执行成功；`scenario_diagnose_fix_verify_template` 已保存可查询但执行受认知阈值/配置影响（需按环境调优）。
 - P2-B：新增 `docs/plans/single-node-performance-baseline.md` 与 `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`（dev/release bridge 就绪与只读端点延迟、CLI 单次与多次采样 N=5 统计）；新增 `scripts/single-node-bench-sample.sh` 支持 CLI/bridge 多次采样统计（用于固定口径复测）。
 - P2-C：新增/增强 `docs/examples/single-node-integration-samples.md`；提供 `scripts/single-node-readiness-check.sh`、`single-node-demo-flow.sh`、`single-node-apply-sop-template.sh`（模板保存+执行）、`single-node-contract-smoke.sh`、`single-node-bench-sample.sh` 等可运行样例；新增 `docs/runbooks/single-node-dev-scenarios.md`（自动化开发场景手册）。
-- P1-F：契约守护补充可执行冒烟清单与自动化入口（脚本 + Make 目标）；`single-node-contract-smoke.sh` 支持 `--quick/--full` 分层与 `SMOKE_BRIDGE_HTTP` 可选运行时就绪冒烟；`make smoke-single-node-quick` 提供快速回归入口。
+- P1-F：契约守护补充可执行冒烟清单与自动化入口（脚本 + Make 目标）；`single-node-contract-smoke.sh` 支持 `--quick/--full` 分层、SOP 模板/脚本语法校验与 `SMOKE_BRIDGE_HTTP` 可选运行时就绪冒烟；`make smoke-single-node-quick` 与 `make validate-sop-templates` 提供快速回归入口；新增 `.github/workflows/single-node-quick.yml`（workflow_dispatch）用于轻量资产检查。
 - P2-D：仍为**外部后置**（专用 runner 真实网络证据与 ADR-019 准入），不阻塞单机 P1/P2 可实施交付；`cluster.control_plane.enabled` 保持 `false`。
 
 **P2 里程碑**：形成可对外说明的差异化能力组合（编排+观测+集成）；性能基线可回归；控制面仅在证据完备后推进。

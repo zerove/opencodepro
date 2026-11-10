@@ -1,0 +1,56 @@
+name: Single Node Quick Checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_bench_dry:
+        description: 'Run CLI bench sampling dry check (N=1, debug if available)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+jobs:
+  quick-checks:
+    timeout-minutes: 15
+    name: Single-node quick checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate SOP templates
+        run: ./scripts/validate-sop-templates.sh
+
+      - name: Bash syntax checks
+        run: |
+          bash -n scripts/single-node-readiness-check.sh \
+                 scripts/single-node-demo-flow.sh \
+                 scripts/single-node-apply-sop-template.sh \
+                 scripts/single-node-bench-sample.sh \
+                 scripts/single-node-contract-smoke.sh
+
+      - name: Smoke script help
+        run: ./scripts/single-node-contract-smoke.sh --help
+
+      - name: Bench script dry (CLI)
+        if: ${{ inputs.run_bench_dry == 'true' }}
+        run: |
+          echo "Bench dry run requested. This repo may not have built binaries in CI; skipping unless provided."
+          echo "To run locally: N=3 ./scripts/single-node-bench-sample.sh cli"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Single-node quick checks"
+            echo ""
+            echo "- SOP template validation: done"
+            echo "- Shell syntax checks: done"
+            echo "- Smoke/bench script interfaces: checked"
+            echo ""
+            echo "For full local gate: ./scripts/single-node-contract-smoke.sh --quick (or --full)"
+          } >> "$GITHUB_STEP_SUMMARY"

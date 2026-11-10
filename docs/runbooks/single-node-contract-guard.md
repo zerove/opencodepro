@@ -44,9 +44,10 @@
 ## 5. 单机契约冒烟（可执行，P1-F 落地）
 
 **自动化入口**：
-- `scripts/single-node-contract-smoke.sh [--quick|--full]`（按环境可用性执行门禁/冒烟；`--quick` 跳过重型测试与 SDK 冒烟，适合快速回归；可选 `SMOKE_BRIDGE_HTTP=http://127.0.0.1:8080` 启用 bridge 运行时就绪检查；失败需区分回归与环境限制）。
-- `make smoke-single-node` / `make smoke-single-node-quick`：调用上述脚本（全量/快速回归入口）。
-- `scripts/single-node-readiness-check.sh`：bridge 运行时就绪与只读观测检查（`/health`、`/api/sops`、`/api/cluster/status`），适用于 P2-C 集成与运维前置。
+- `scripts/single-node-contract-smoke.sh [--quick|--full]`（按环境可用性执行资产/脚本校验、门禁与冒烟；`--quick` 跳过重型测试与 SDK 冒烟，适合快速回归；可选 `SMOKE_BRIDGE_HTTP=http://127.0.0.1:8080` 启用 bridge 运行时就绪检查）。
+- `make smoke-single-node` / `make smoke-single-node-quick` / `make validate-sop-templates`：回归与模板校验入口。
+- `scripts/single-node-readiness-check.sh`：bridge 运行时就绪与只读观测检查（`/health`、`/api/sops`、`/api/cluster/status`）。
+- `scripts/validate-sop-templates.sh`：校验 `docs/examples/sop-templates/*.json` 结构与必需字段。
 
 在具备对应工具链/环境时，也可按序手动执行以下检查（记录结果与提交号）：
 

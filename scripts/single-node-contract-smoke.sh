@@ -43,6 +43,10 @@ run() {
 echo "== Single-node contract smoke =="
 echo "MODE=$MODE SMOKE_BRIDGE_HTTP=${SMOKE_BRIDGE_HTTP:-<unset>}"
 
+step "资产与脚本校验"
+run "validate sop templates" ./scripts/validate-sop-templates.sh
+run "bash syntax (scripts)" bash -lc 'bash -n scripts/single-node-readiness-check.sh scripts/single-node-demo-flow.sh scripts/single-node-apply-sop-template.sh scripts/single-node-bench-sample.sh scripts/single-node-contract-smoke.sh'
+
 step "Rust 门禁（基础）"
 run "cargo fmt --check" env -u RUSTUP_TOOLCHAIN cargo fmt --all --check
 run "cargo check-all" env -u RUSTUP_TOOLCHAIN cargo check-all
