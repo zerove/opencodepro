@@ -33,7 +33,7 @@ sisyphus --bridge http://127.0.0.1:50051 sop run <sop-id>
 
 **实测（2026-11-10，单机 bridge）**：
 - `sop list` → `verify_sop (2 nodes)`
-- `sop run verify_sop` → 返回 `Result: "Test Passed: echo hi\nStdout: hi\n"` 与 `CognitionReport`（无 LLM 时 critique 不可用但 SOP 执行可完成）
+- `sop run verify_sop` → 返回 `Result`（`Test` 节点为结构化 JSON，含 `status/success/exit_code/stdout` 与可读 `message`，如 `Test Passed: echo hi...`）与 `CognitionReport`（无 LLM 时 critique 不可用但 SOP 执行可完成）
 
 > `sop run` 为直接 SOP 执行路径；执行效果依赖引擎/执行器配置。
 
