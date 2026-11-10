@@ -2118,6 +2118,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_cluster_page_serves() {
+        let router = app_with_token("http://localhost:8080".into(), None);
+        let resp = router
+            .oneshot(Request::builder().uri("/cluster").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(body.contains("集群"), "body: {body}");
+        assert!(body.contains("/htmx/cluster/status"), "body: {body}");
+    }
+
+    #[tokio::test]
     async fn test_router_index_serves_dashboard() {
         let router = app_with_token("http://localhost:8080".into(), None);
         let resp =

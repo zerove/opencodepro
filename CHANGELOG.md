@@ -179,12 +179,18 @@
     `TestGetSession`/`TestAddMessage`/`TestCreateSession`/`TestWorkspaceHeader` 等）；
     Python `python -m pytest tests/` 37 passed；TypeScript `npm run build && npm test` 33 passed。
 
-- **WebUI 集群/控制面只读观测端点补齐**（2026-11-10）：`webui/src/lib.rs` 新增
+- **WebUI 集群/控制面只读观测端点与观测页面**（2026-11-10）：`webui/src/lib.rs` 新增
   `GET /api/cluster/status` 与 `GET /api/cluster/control/leases/{key}` 的 typed
   handler + bridge 直连 helper（复用 `bridge_get` 统一附加 `X-Sisyphus-Workspace-Id`），
   类型覆盖 `config/control_plane`、`control_plane.security/stats`、`peer_manager`、
-  `consensus`、`peers[]`、`ControlLease` 全部分段。配套测试
-  （`test_cluster_status_deserializes_bridge_response`、`test_control_lease_deserializes_bridge_response`）。
+  `consensus`、`peers[]`、`ControlLease` 全部分段；并补齐集群观测页面
+  `GET /cluster` 与 HTMX 只读面板 `GET /htmx/cluster/status`、
+  `GET /htmx/cluster/control-lease`（只读，bridge 不可达时渲染默认快照）。
+  配套测试（`test_cluster_status_deserializes_bridge_response`、
+  `test_control_lease_deserializes_bridge_response`、
+  `test_htmx_cluster_status_returns_html`、
+  `test_htmx_cluster_control_lease_returns_html`、
+  `test_cluster_page_serves`）。
 
 - **WebUI（axum + HTMX）与 bridge REST 契约不一致**（2026-11-10）：`webui/src/lib.rs` 同类缺陷
   - `/htmx/exec`、`/htmx/session/{id}/messages`、`/htmx/skills/install` 之前用 `Json<T>`
