@@ -122,6 +122,7 @@ async fn main() -> Result<()> {
         &cli_perms,
         llm_client,
         &bridge_addr,
+        &sisyphus_cfg.http_address,
     )
     .await
 }

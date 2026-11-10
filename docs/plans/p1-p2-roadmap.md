@@ -50,11 +50,11 @@
 | P1-D | 稳定性与错误态 | P1 | P1-A | 统一降级与可解释错误 |
 
 **进展（2026-11-10）**：
-- P1-C/P1-E：新增 `docs/runbooks/single-node-typical-workflow.md`、`docs/runbooks/single-node-sop-e2e-guide.md`、`docs/examples/single-node-sdk-examples.md`（场景化与端到端指引）；补充 `sop run verify_sop` 成功与 `execute/goal` 无 LLM 可解释错误的路径差异实测。
+- P1-C/P1-E：新增 `docs/runbooks/single-node-typical-workflow.md`、`docs/runbooks/single-node-sop-e2e-guide.md`、`docs/examples/single-node-sdk-examples.md`（场景化与端到端指引）；补充 `sop run verify_sop` 成功与 `execute/goal` 无 LLM 可解释错误的路径差异实测；新增 `scripts/single-node-demo-flow.sh` 与 `sisyphus sop show`（HTTP 详情查看）。
 - P1-A：新增 `docs/runbooks/single-node-sessions-and-tasks.md`（本地 CLI 会话 vs bridge 服务端会话与任务流）。
-- P1-B：新增 `docs/runbooks/single-node-tools-mcp-guide.md`（工具/MCP 可发现性与使用路径）。
-- P1-D：`fix(cli): 优化 bridge 不可达时的错误提示` 已落地；`docs/runbooks/single-node-tools-and-dependencies.md` 补充错误处理与反馈一致性指引。
-- P1-F：新增 `docs/runbooks/single-node-contract-guard.md`，并落地 `scripts/single-node-contract-smoke.sh` 与 `make smoke-single-node` 可执行回归入口；runbook/验收矩阵持续补充运行时实测证据。
+- P1-B：新增 `docs/runbooks/single-node-tools-mcp-guide.md`（工具/MCP 可发现性与使用路径）；CLI 增强 `sop list`/命令引导与 `quickstart` 指引。
+- P1-D：`fix(cli): 优化 bridge 不可达时的错误提示` 已落地；新增 `sisyphus doctor`（本地+gRPC/HTTP 诊断）与 `sisyphus quickstart`（上手引导）；`docs/runbooks/single-node-tools-and-dependencies.md` 补充错误处理与反馈一致性指引。
+- P1-F：新增 `docs/runbooks/single-node-contract-guard.md`，并落地 `scripts/single-node-contract-smoke.sh` 与 `make smoke-single-node`/`make demo-single-node`/`make readiness-check` 可执行入口；runbook/验收矩阵持续补充运行时实测证据。
 
 **P1 里程碑**：单机“按文档可完成典型任务流”的体验达标；契约与门禁持续全绿；差异化能力（SOP/观测）可被清晰感知。
 

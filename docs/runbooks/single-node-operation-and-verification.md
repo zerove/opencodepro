@@ -104,3 +104,17 @@ cargo run -p sisyphus-cli -- --bridge http://127.0.0.1:50051 status
 
 - S3：补充 SDK 最小可运行示例、工具/MCP 分层说明、错误态一致性改进。
 - S4：输出单机功能矩阵验收表并与分布式后置项分离归档。
+
+
+### 1.4 CLI 诊断与快速上手（新增）
+
+```bash
+# 本地 + bridge 诊断（可选 HTTP 检查）
+sisyphus doctor --http http://127.0.0.1:8080
+
+# 快速上手指引
+sisyphus quickstart
+
+# 端到端演示（需 bridge HTTP+gRPC 可达）
+BASE=http://127.0.0.1:8080 BRIDGE_GRPC=http://127.0.0.1:50051 SOP_ID=verify_sop   ./scripts/single-node-demo-flow.sh
+```

@@ -168,6 +168,14 @@ pub enum Commands {
     Remote(RemoteCommands),
     ///启动桥接守护进程
     Daemon,
+    ///运行单机环境与连接诊断（本地 + bridge gRPC/HTTP 可选）
+    Doctor {
+        ///可选：bridge HTTP 基地址（如 http://127.0.0.1:8080），用于检查 /health 等端点
+        #[arg(long = "http")]
+        http: Option<String>,
+    },
+    ///显示单机快速上手与常用流程指引
+    Quickstart,
 
     #[command(next_help_heading = "Git", subcommand)]
     ///Git 操作（status、diff、add、commit、log、branch、checkout、push、pull）

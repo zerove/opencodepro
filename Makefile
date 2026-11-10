@@ -506,6 +506,19 @@ regs=[(n,i) for n,i in data.items() if isinstance(i,dict) and isinstance(i.get('
 	fi
 
 
+# — Single-node demo/readiness convenience (P1-C/P2-C) —
+
+demo-single-node:
+	@echo "━━━ Single-node demo flow (需 bridge HTTP+gRPC 可达) ━━━"
+	@./scripts/single-node-demo-flow.sh
+
+readiness-check:
+	@echo "━━━ Single-node readiness check ━━━"
+	@./scripts/single-node-readiness-check.sh
+
+.PHONY: demo-single-node readiness-check
+
+
 # — Single-node contract/readiness smoke (P1-F/P2-C) —
 
 smoke-single-node:

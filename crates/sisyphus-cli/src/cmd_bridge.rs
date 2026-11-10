@@ -275,6 +275,17 @@ pub enum SopCommands {
     Run { sop_id: String },
     /// 列出可用 SOP
     List,
+    /// 查看 SOP 详情（通过 bridge HTTP API）
+    Show {
+        /// SOP ID
+        sop_id: String,
+        /// bridge HTTP 基地址（默认读取 SISYPHUS_HTTP_ADDRESS 或 http://127.0.0.1:8080）
+        #[arg(long = "http")]
+        http: Option<String>,
+        /// 工作区 ID（X-Sisyphus-Workspace-Id）
+        #[arg(long = "workspace", short = 'w', default_value = "default")]
+        workspace: String,
+    },
 }
 
 #[derive(Subcommand)]

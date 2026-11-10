@@ -77,6 +77,10 @@ mod handle_tool;
 #[path = "handle_wisdom.rs"]
 mod handle_wisdom;
 
+#[path = "handle_doctor.rs"]
+mod handle_doctor;
+#[path = "handle_quickstart.rs"]
+mod handle_quickstart;
 #[path = "handle_workspace.rs"]
 mod handle_workspace;
 
@@ -95,6 +99,7 @@ pub async fn dispatch(
     cli_perms: &sisyphus_cli::permission::CliPermission,
     llm_client: Arc<dyn sisyphus_cli::tools::metis::LlmClient>,
     bridge_addr: &str,
+    http_addr: &str,
 ) -> Result<()> {
     match cli.command.as_ref().context("No command specified")? {
         // ── 文件工具 ──────────────────────────────────
@@ -218,6 +223,18 @@ pub async fn dispatch(
         Commands::LearningInsights { strategy } => {
             handle_remote::handle_learning_insights(bridge_addr, strategy).await?
         },
+        Commands::Doctor { http } => {
+            let data_dir = todo_db.parent().unwrap_or_else(|| Path::new("."));
+            let cfg_path = cli.config.as_ref().map(|p| p.to_string_lossy().to_string());
+            handle_doctor::handle_doctor(
+                bridge_addr,
+                http.as_deref(),
+                data_dir,
+                cfg_path.as_deref(),
+            )
+            .await?
+        },
+        Commands::Quickstart => handle_quickstart::handle_quickstart(bridge_addr, http_addr)?,
         Commands::Health => handle_remote::handle_health(bridge_addr).await?,
         Commands::Status => handle_remote::handle_status(bridge_addr).await?,
         Commands::Remote(sub) => handle_remote::handle_remote(sub, bridge_addr).await?,
