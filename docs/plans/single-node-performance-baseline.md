@@ -38,7 +38,7 @@
 
 ## 6. 初始采样记录
 
-- `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`：dev 构建下 bridge 就绪与只读端点延迟基线（2026-11-10）。
-- `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`（补充）：debug CLI 本地命令耗时采样（`--help`/`exec`/`session list`，`/usr/bin/time -p`，单次参考）。
+- `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`：dev 构建下 bridge 就绪与只读端点延迟基线；debug CLI 命令耗时补充（单次参考）。
+- `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`（补充）：release 构建（现有 `target/release` 产物）CLI/bridge 就绪与只读端点延迟采样；CLI `--help` 单次耗时偏高已标注待复测。
 
-> 后续：按同口径补充 release 构建（`cargo build --release -p sisyphus-cli -p sisyphus-bridge --bin sisyphus-bridge`）下的 CLI 启动与 bridge 就绪基线，并落盘新 benchmark 文件。
+> 后续：在固定环境下多次复测 release CLI 启动（冷热）、WebUI 就绪与更多只读路径分布，按同口径落盘。

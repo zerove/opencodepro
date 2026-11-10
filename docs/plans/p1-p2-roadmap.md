@@ -69,9 +69,9 @@
 
 **进展（2026-11-10）**：
 - P2-A：新增 `docs/plans/single-node-orchestration-templates.md` 与 `docs/examples/sop-templates/`（`verify_sop` 实测、可保存 SOP 模板资产与 `POST /api/sops` 使用说明）。
-- P2-B：新增 `docs/plans/single-node-performance-baseline.md` 与 `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`（bridge 就绪/只读端点延迟实测基线 + debug CLI 命令耗时补充）。
-- P2-C：新增/增强 `docs/examples/single-node-integration-samples.md`，并提供 `scripts/single-node-readiness-check.sh` 可运行就绪检查样例（配合 `scripts/single-node-contract-smoke.sh`）。
-- P1-F：契约守护补充可执行冒烟清单与自动化入口（脚本 + Make 目标）。
+- P2-B：新增 `docs/plans/single-node-performance-baseline.md` 与 `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`（dev/release bridge 就绪与只读端点延迟、debug/release CLI 命令耗时采样；release `--help` 单次偏高已标注待复测）。
+- P2-C：新增/增强 `docs/examples/single-node-integration-samples.md`，并提供 `scripts/single-node-readiness-check.sh` 可运行就绪检查样例（已实测通过，配合 `scripts/single-node-contract-smoke.sh`）。
+- P1-F：契约守护补充可执行冒烟清单与自动化入口（脚本 + Make 目标）；`single-node-contract-smoke.sh` 支持 `SMOKE_BRIDGE_HTTP` 可选运行时就绪冒烟。
 - P2-D：仍为**外部后置**（专用 runner 真实网络证据与 ADR-019 准入），不阻塞单机 P1/P2 可实施交付；`cluster.control_plane.enabled` 保持 `false`。
 
 **P2 里程碑**：形成可对外说明的差异化能力组合（编排+观测+集成）；性能基线可回归；控制面仅在证据完备后推进。

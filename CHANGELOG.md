@@ -83,12 +83,12 @@
   - P2-D（控制面生产准入）仍为外部后置：专用 runner 真实网络证据与 ADR-019 准入未满足，`cluster.control_plane.enabled` 保持 `false`
 
 - **P1/P2 深化实施（契约冒烟自动化、SOP 模板资产、运行时基线与集成样例）**（2026-11-10）：
-  - P1-F：新增 `scripts/single-node-contract-smoke.sh` 与 `make smoke-single-node`（可执行契约/回归冒烟入口）；`docs/runbooks/single-node-contract-guard.md` 同步自动化入口与手动清单
+  - P1-F：新增 `scripts/single-node-contract-smoke.sh` 与 `make smoke-single-node`（可执行契约/回归冒烟入口）；`docs/runbooks/single-node-contract-guard.md` 同步自动化入口与手动清单；冒烟脚本支持 `SMOKE_BRIDGE_HTTP` 可选 bridge 就绪检查
   - P1-E：补充 SOP 端到端实测证据与路径差异说明（CLI `sop run verify_sop` 直接执行成功；`POST /api/execute/goal` 在无可用 LLM 时返回可解释错误）；更新 runbook/验收矩阵/典型工作流
   - P2-A：新增 `docs/examples/sop-templates/`（`verify-sequence.json`、`quality-gate-sequence.json`、README，含 `POST /api/sops` 保存与查询示例）；`docs/plans/single-node-orchestration-templates.md` 补充模板资产落地说明
-  - P2-B：`docs/benchmarks/single-node-runtime-baseline-2026-11-10.md` 扩展 debug CLI 命令耗时采样，`single-node-performance-baseline.md` 同步后续 release 采样计划
-  - P2-C：新增 `scripts/single-node-readiness-check.sh`（健康/SOP/只读集群状态就绪检查）并在集成样例中引用
-  - 路线/计划文档同步：`docs/plans/p1-p2-roadmap.md` 更新 P1/P2 进展；仍保持 ADR-020 与 `cluster.control_plane.enabled=false` 默认边界
+  - P2-B：`docs/benchmarks/single-node-runtime-baseline-2026-11-10.md` 扩展 dev/debug 与 release 运行时采样（bridge 就绪、只读端点延迟、CLI 命令耗时）；`single-node-performance-baseline.md` 同步后续复测计划
+  - P2-C：新增 `scripts/single-node-readiness-check.sh`（健康/SOP/只读集群状态就绪检查，已实测）并在集成样例中引用
+  - 路线/计划文档同步：`docs/plans/p1-p2-roadmap.md` 更新 P1/P2 进展；仍保持 ADR-020 只读边界与 `cluster.control_plane.enabled=false` 默认边界
 
 - **三套官方 SDK 的集群/控制面只读观测方法**（2026-11-10）：TypeScript / Python / Go SDK
   新增 `clusterStatus()` / `cluster_status()` / `GetClusterStatus()`（`GET /api/cluster/status`，

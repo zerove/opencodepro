@@ -41,3 +41,18 @@
 | `./target/debug/sisyphus --data-dir /tmp/opencode/smoke-data session list` | 0.03 | 0.01 | 0.01 | 本地会话存储读取 |
 
 > 单次采样仅作量级参考；回归对比需多次采样并固定构建/数据状态。
+
+## 补充：Release 构建运行时采样（2026-11-10，同环境参考）
+
+> 二进制：`target/release/sisyphus`、`target/release/sisyphus-bridge`（本地现有 release 产物，单次采样）。
+
+| 指标 | 结果 | 备注 |
+|---|---:|---|
+| `./target/release/sisyphus --help` | real 2.34s / user 0.00s / sys 0.03s | 单次；可能受环境/首次加载影响，需多次复测确认 |
+| `./target/release/sisyphus exec 'echo ok'` | real 0.01s / user 0.00s / sys 0.01s | 单次 |
+| `./target/release/sisyphus --data-dir ... session list` | real 0.00s / user 0.00s / sys 0.00s | 单次（空/小数据集） |
+| Bridge 启动 → `/health` 就绪 | ~3287 ms | 轮询间隔 200ms，`cluster.enabled=false` |
+| `GET /health` 延迟（5 次） | 0.002275–0.002751 s | 本地回环 |
+| `GET /api/sops` 延迟（5 次） | 0.002968–0.003407 s | 本地回环 |
+
+**说明**：release 与 debug、不同机器/负载/配置下数值不可直接比较；本节用于建立同环境参考点。CLI `--help` 单次耗时偏高需后续复测排查（冷启动、动态链接、终端/环境因素等）。

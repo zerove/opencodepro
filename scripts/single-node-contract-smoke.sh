@@ -54,5 +54,17 @@ else
   skip "ts-sdk (npm/node_modules unavailable)"
 fi
 
+step "Bridge 运行时就绪冒烟（可选）"
+if [ -n "${SMOKE_BRIDGE_HTTP:-}" ]; then
+  if BASE="$SMOKE_BRIDGE_HTTP" WS="${SMOKE_BRIDGE_WS:-default}" TIMEOUT="${SMOKE_BRIDGE_TIMEOUT:-5}" \
+    ./scripts/single-node-readiness-check.sh >/tmp/sn-smoke.out 2>&1; then
+    ok "bridge readiness ($SMOKE_BRIDGE_HTTP)"
+  else
+    bad "bridge readiness ($SMOKE_BRIDGE_HTTP)"; tail -20 /tmp/sn-smoke.out >&2 || true
+  fi
+else
+  skip "bridge readiness (set SMOKE_BRIDGE_HTTP to enable)"
+fi
+
 printf '\n==> Summary: PASS=%d FAIL=%d SKIP=%d\n' "$PASS" "$FAIL" "$SKIP"
 if [ "$FAIL" -gt 0 ]; then exit 1; fi
