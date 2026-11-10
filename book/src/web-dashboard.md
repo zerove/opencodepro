@@ -34,6 +34,18 @@ Web 仪表盘（`webui/`：axum + HTMX + SSE + WebSocket）通过 REST 直连 br
 | GET | `/api/skills` | 本机技能列表 |
 | GET | `/api/cluster/status` | 集群/控制面只读观测（含 control_plane/security/stats） |
 | GET | `/api/cluster/control/leases/{key}` | 控制面租约只读查询（`found/status_code`，HTTP 200） |
+| GET | `/cluster` | WebUI 集群观测页面（导航 `cluster`） |
+| GET | `/htmx/cluster/status` | HTMX 集群状态面板（bridge 不可达时渲染默认快照） |
+| GET | `/htmx/cluster/control-lease?key=...` | HTMX 控制面租约只读查询（只读，`found/status_code`） |
+
+## 集群观测页面
+
+WebUI 侧提供集群只读观测入口（与 bridge 只读边界一致，ADR-020 Accepted）：
+
+- 页面 `/cluster` 挂载「集群状态」（HTMX 加载 `/htmx/cluster/status`）与
+  「控制面租约」（HTMX GET `/htmx/cluster/control-lease?key=...`）两个只读面板；
+- 面板复用 bridge 直连 helper，统一附加 `X-Sisyphus-Workspace-Id`；
+- bridge 不可达时面板返回渲染默认快照（HTTP 200），不产生写入路径。
 
 ## 已知修复（2026-11-10）
 
