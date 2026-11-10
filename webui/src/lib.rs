@@ -13,7 +13,7 @@
 use axum::{
     extract::{
         ws::{Message as WsMessage, WebSocket},
-        Path, Query, State, WebSocketUpgrade,
+        Form, Path, Query, State, WebSocketUpgrade,
     },
     http::StatusCode,
     middleware as axum_mw,
@@ -53,6 +53,11 @@ pub struct AppState {
     pub chaos_fault_probability: Arc<RwLock<f64>>,
     /// 混沌工程：启动以来注入的故障总数。
     pub chaos_fault_count: Arc<RwLock<u64>>,
+    /// 工作区标识，作为 `X-Sisyphus-Workspace-Id` 发给 bridge。
+    ///
+    /// `GET /api/sops/{id}` 等服务端按工作区隔离的端点要求该头，缺失时
+    /// 服务端返回 400。来自 `WEBUI_WORKSPACE_ID` 环境变量。
+    pub workspace_id: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -88,6 +93,9 @@ struct Session {
     name: String,
     message_count: usize,
     created_at: Option<String>,
+    #[serde(default)]
+    updated_at: Option<String>,
+    #[serde(default)]
     parent_session_id: Option<String>,
 }
 
@@ -112,37 +120,80 @@ struct SearchResult {
     content: String,
 }
 
+/// 目标执行请求（`POST /api/execute/goal`）。
+///
+/// `goal` 是用户输入的目标文本；WebUI 的表单不强制填写，未填时用
+/// `执行 SOP: <id>` 作为目标，避免向服务端发送空字符串（服务端会拒绝）。
 #[derive(Deserialize)]
 struct ExecuteRequest {
     sop_id: String,
-    context: Option<serde_json::Value>,
+    goal: Option<String>,
 }
 
+/// 目标执行响应（服务端 `GoalExecuteResponse`）：`output` 是任意 JSON
+/// （`NodeOutput`），`report` 是执行报告文本。
 #[derive(Serialize, Deserialize)]
-struct ExecuteResult {
-    sop_id: String,
-    status: String,
-    iterations: u32,
-    deviation: f64,
+struct GoalExecuteResult {
+    output: serde_json::Value,
+    report: String,
 }
 
+/// SOP 详情（`GET /api/sops/{id}`）。服务端返回
+/// `{id, name, version, config}`，其中 `config` 是 `SOPGraphConfig`。
 #[derive(Serialize, Deserialize)]
-struct SopInfo {
+struct SopDetail {
     id: String,
+    #[serde(default)]
     name: String,
-    node_count: usize,
-    description: String,
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    config: SopGraphConfig,
 }
 
+#[derive(Serialize, Deserialize, Default)]
+struct SopGraphConfig {
+    #[serde(default)]
+    nodes: Vec<SopNodeConfig>,
+    #[serde(default)]
+    edges: Vec<(usize, usize)>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SopNodeConfig {
+    name: String,
+    /// `NodeKind` 是外部标签枚举（`{"Wasm": {...}}`），只取标签名做展示。
+    #[serde(default)]
+    kind: serde_json::Value,
+}
+
+impl SopNodeConfig {
+    /// 节点类型标签（`NodeKind` 的变体名），未知结构返回 `"node"`。
+    fn kind_label(&self) -> &str {
+        match &self.kind {
+            serde_json::Value::Object(map) => {
+                map.keys().next().map(String::as_str).unwrap_or("node")
+            },
+            _ => "node",
+        }
+    }
+}
+
+/// 技能条目（`GET /api/skills`）：服务端只有
+/// `name/description/version/author/tags/source`，没有 id/downloads/rating。
 #[derive(Serialize, Deserialize)]
 struct SkillEntry {
-    id: String,
     name: String,
+    #[serde(default)]
     description: String,
-    author: String,
+    #[serde(default)]
     version: String,
-    downloads: u64,
-    rating: f64,
+    #[serde(default)]
+    author: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    source: String,
 }
 
 #[derive(Deserialize)]
@@ -177,8 +228,14 @@ struct DagGraph {
 struct SessionDetail {
     id: String,
     name: String,
+    #[serde(default)]
+    message_count: usize,
+    #[serde(default)]
+    created_at: String,
+    #[serde(default)]
+    updated_at: String,
+    #[serde(default)]
     messages: Vec<ChatMessage>,
-    metadata: HashMap<String, String>,
 }
 
 #[derive(Deserialize)]
@@ -351,6 +408,11 @@ async fn sop_page() -> Html<String> {
     let body = r#"
 <h1>SOP 管理</h1>
 <div class="card">
+  <h2>目标</h2>
+  <p class="muted">执行 SOP 时作为 <code>goal</code> 发送（留空则使用「执行 SOP: &lt;id&gt;」）。</p>
+  <textarea id="exec-goal" name="goal" rows="2" placeholder="例如：分析 crates/sisyphus-core 的执行路径" style="width:100%"></textarea>
+</div>
+<div class="card">
   <h2>可用 SOP</h2>
   <div id="sop-list" hx-get="/htmx/sops" hx-trigger="load" hx-swap="innerHTML">加载中...</div>
 </div>
@@ -363,13 +425,20 @@ async fn sop_page() -> Html<String> {
 }
 
 async fn skills_page() -> Html<String> {
-    let body = r#"
+    let body = r###"
 <h1>技能市场</h1>
 <div class="card">
-  <h2>可用技能</h2>
+  <h2>安装远端技能</h2>
+  <p class="muted">本页列出的是本机已加载技能（无 id）；远端安装按技能 ID 进行。</p>
+  <input id="skill-id" name="skill_id" placeholder="技能 ID" style="width:100%">
+  <button class="btn-sm" style="margin-top:8px" hx-post="/htmx/skills/install" hx-include="#skill-id" hx-target="#skill-install-result">安装</button>
+  <div id="skill-install-result"></div>
+</div>
+<div class="card">
+  <h2>本机技能</h2>
   <div id="skill-list" hx-get="/htmx/skills" hx-trigger="load" hx-swap="innerHTML">加载中...</div>
 </div>
-"#;
+"###;
     Html(page_shell("技能", "skills", body))
 }
 
@@ -444,16 +513,20 @@ async fn roadmap_dashboard_htmx(
 
 async fn sessions_htmx(State(state): State<Arc<AppState>>) -> Response {
     let sessions = fetch_sessions(&state).await;
-    let mut html = String::from("<table class='session-table'><thead><tr><th>名称</th><th>消息数</th><th>操作</th></tr></thead><tbody>");
+    let mut html = String::from("<table class='session-table'><thead><tr><th>名称</th><th>消息数</th><th>更新时间</th><th>操作</th></tr></thead><tbody>");
 
     for s in &sessions {
         html.push_str(&format!(
             r#"<tr>
 <td>{}</td>
 <td>{}</td>
+<td>{}</td>
 <td><button class='btn-sm' hx-get='/htmx/session/{}/detail' hx-target='#session-detail'>查看</button></td>
 </tr>"#,
-            s.name, s.message_count, s.id
+            s.name,
+            s.message_count,
+            s.updated_at.as_deref().unwrap_or("-"),
+            s.id
         ));
     }
 
@@ -506,21 +579,37 @@ async fn dag_htmx(
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
     let sop_id = params.get("sop_id").map(|s| s.as_str()).unwrap_or("default");
-    let graph = fetch_dag_graph(&state, sop_id).await;
-    let svg = render_dag_svg(&graph);
-    Html(svg).into_response()
+    match fetch_sop_detail(&state, sop_id).await {
+        Some(detail) => {
+            let graph = layout_dag(&detail.config);
+            let header = format!(
+                "<p class='muted'>SOP {} v{} — {} 个节点（布局由服务端配置推导，非运行时状态）</p>",
+                detail.id,
+                detail.version.as_deref().unwrap_or("-"),
+                detail.config.nodes.len()
+            );
+            Html(format!("{header}{}", render_dag_svg(&graph))).into_response()
+        },
+        None => Html(
+            "<p class='muted'>无法加载 SOP：bridge 不可达、SOP 不存在，或缺少工作区标识（WEBUI_WORKSPACE_ID）。</p>"
+                .to_string(),
+        )
+        .into_response(),
+    }
 }
 
 async fn sop_list_htmx(State(state): State<Arc<AppState>>) -> Response {
-    let sops = fetch_sop_list(&state).await;
-    let mut html = String::from("<table class='session-table'><thead><tr><th>名称</th><th>节点数</th><th>操作</th></tr></thead><tbody>");
-    for s in &sops {
+    // 服务端 `GET /api/sops` 返回的是 SOP ID 字符串数组，没有名称/节点数。
+    let sops = fetch_sop_ids(&state).await;
+    let mut html = String::from(
+        "<table class='session-table'><thead><tr><th>SOP ID</th><th>操作</th></tr></thead><tbody>",
+    );
+    for id in &sops {
         html.push_str(&format!(
-            r#"<tr><td>{}</td><td>{}</td><td>
-<button class='btn-sm' hx-get='/htmx/dag?sop_id={}' hx-target='#dag-container' hx-swap='innerHTML'>DAG</button>
-<button class='btn-sm btn-exec' hx-post='/htmx/exec' hx-vals='{{"sop_id":"{}"}}' hx-target='#exec-result'>运行</button>
-</td></tr>"#,
-            s.name, s.node_count, s.id, s.id
+            r#"<tr><td>{id}</td><td>
+<button class='btn-sm' hx-get='/htmx/dag?sop_id={id}' hx-target='#dag-container' hx-swap='innerHTML'>DAG</button>
+<button class='btn-sm btn-exec' hx-post='/htmx/exec' hx-vals='{{"sop_id":"{id}"}}' hx-include='#exec-goal' hx-target='#exec-result'>运行</button>
+</td></tr>"#
         ));
     }
     html.push_str("</tbody></table>");
@@ -531,18 +620,28 @@ async fn sop_list_htmx(State(state): State<Arc<AppState>>) -> Response {
 }
 
 async fn skills_list_htmx(State(state): State<Arc<AppState>>) -> Response {
+    // 服务端 `GET /api/skills` 返回 name/description/version/author/tags/source，
+    // 没有 id/downloads/rating —— 旧模板的星级与下载量是凭空展示的。
     let skills = fetch_skill_list(&state).await;
     let mut html = String::from("<div class='skill-grid'>");
     for s in &skills {
-        let stars_len = s.rating as usize;
-        let stars = format!("{}{}", "*".repeat(stars_len), "-".repeat(5 - stars_len));
+        let tags = if s.tags.is_empty() {
+            String::new()
+        } else {
+            format!("<p class='skill-author'>标签: {}</p>", s.tags.join(", "))
+        };
         html.push_str(&format!(
             r#"<div class='skill-card'><h4>{}</h4><p class='muted'>{}</p>
-<div class='skill-meta'><span class='stars'>{}</span><span>{} 下载</span></div>
-<p class='skill-author'>作者 {} v{}</p>
-<button class='btn-sm' hx-post='/htmx/skills/install' hx-vals='{{"skill_id":"{}"}}' hx-target='this' hx-swap='outerHTML'>安装</button>
+<div class='skill-meta'><span>{}</span><span>{}</span></div>
+<p class='skill-author'>作者 {} v{}</p>{}
 </div>"#,
-            s.name, s.description, stars, s.downloads, s.author, s.version, s.id
+            s.name,
+            s.description,
+            s.source,
+            s.tags.len(),
+            s.author,
+            s.version,
+            tags
         ));
     }
     html.push_str("</div>");
@@ -552,24 +651,45 @@ async fn skills_list_htmx(State(state): State<Arc<AppState>>) -> Response {
     Html(html).into_response()
 }
 
+/// HTMX 表单体（`application/x-www-form-urlencoded`）。
+///
+/// htmx 默认以 urlencoded 提交、`hx-vals` 也只是追加参数，不会改成 JSON；
+/// 旧实现用 `Json<T>` 提取器，浏览器提交会直接 415。
+#[derive(Deserialize)]
+struct ExecuteForm {
+    sop_id: String,
+    #[serde(default)]
+    goal: Option<String>,
+}
+
 async fn exec_result_htmx(
     State(state): State<Arc<AppState>>,
-    Json(req): Json<ExecuteRequest>,
+    Form(req): Form<ExecuteForm>,
 ) -> Response {
     let mut m = state.metrics.write().await;
     m.sop_executions += 1;
     drop(m);
 
-    match execute_sop(&state, &req.sop_id, req.context.as_ref()).await {
+    // 未填目标时用 SOP ID 组成一个明确目标（服务端要求非空 goal）。
+    let goal = req
+        .goal
+        .as_deref()
+        .map(str::trim)
+        .filter(|g| !g.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("执行 SOP: {}", req.sop_id));
+
+    match execute_sop(&state, &req.sop_id, &goal).await {
         Ok(r) => {
-            let cls = if r.status == "success" { "ok" } else { "err" };
+            let output =
+                serde_json::to_string_pretty(&r.output).unwrap_or_else(|_| r.output.to_string());
             Html(format!(
-                r#"<div class='exec-result status-{}'><h4>执行结果</h4>
+                r#"<div class='exec-result status-ok'><h4>执行结果</h4>
 <div class='stat'><span class='label'>SOP</span><span class='value'>{}</span></div>
-<div class='stat'><span class='label'>状态</span><span class='value'>{}</span></div>
-<div class='stat'><span class='label'>迭代次数</span><span class='value'>{}</span></div>
-<div class='stat'><span class='label'>偏差</span><span class='value'>{:.3}</span></div></div>"#,
-                cls, r.sop_id, r.status, r.iterations, r.deviation
+<div class='stat'><span class='label'>目标</span><span class='value'>{}</span></div>
+<div class='stat'><span class='label'>报告</span><span class='value'>{}</span></div>
+<pre class='muted' style='white-space:pre-wrap;'>{}</pre></div>"#,
+                req.sop_id, goal, r.report, output
             ))
             .into_response()
         },
@@ -583,7 +703,7 @@ async fn exec_result_htmx(
 async fn add_message_htmx(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,
-    Json(req): Json<MessageAddRequest>,
+    Form(req): Form<MessageAddRequest>,
 ) -> Response {
     let _ = add_message(&state, &session_id, &req.role, &req.content).await;
 
@@ -594,14 +714,22 @@ async fn add_message_htmx(
 }
 
 async fn skill_install_htmx(
-    State(_state): State<Arc<AppState>>,
-    Json(req): Json<SkillInstallRequest>,
+    State(state): State<Arc<AppState>>,
+    Form(req): Form<SkillInstallRequest>,
 ) -> Response {
-    Html(format!(
-        "<span class='installed'>已安装: {}</span>",
-        req.skill_id
-    ))
-    .into_response()
+    // 必须真的打 bridge：旧实现只回一句「已安装」，从未发出请求。
+    match install_skill(&state, &req.skill_id).await {
+        Ok(()) => Html(format!(
+            "<span class='installed'>已安装: {}</span>",
+            req.skill_id
+        ))
+        .into_response(),
+        Err(e) => Html(format!(
+            "<span class='status-err'>安装失败 {}: {e}</span>",
+            req.skill_id
+        ))
+        .into_response(),
+    }
 }
 
 // ── 混沌 HTMX 处理器 ────────────────────
@@ -790,11 +918,12 @@ async fn api_add_message(
     State(state): State<Arc<AppState>>,
     Path(sid): Path<String>,
     Json(req): Json<MessageAddRequest>,
-) -> Result<Json<ChatMessage>, StatusCode> {
+) -> Result<Json<SessionDetail>, (StatusCode, String)> {
+    // 与 bridge 保持一致：返回更新后的会话详情（不是单条消息）。
     add_message(&state, &sid, &req.role, &req.content)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         .map(Json)
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e))
 }
 
 async fn api_search(
@@ -810,25 +939,34 @@ async fn api_search(
 async fn api_execute_sop(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ExecuteRequest>,
-) -> Result<Json<ExecuteResult>, StatusCode> {
+) -> Result<Json<GoalExecuteResult>, (StatusCode, String)> {
     state.metrics.write().await.sop_executions += 1;
-    execute_sop(&state, &req.sop_id, req.context.as_ref())
+    let goal = req
+        .goal
+        .as_deref()
+        .map(str::trim)
+        .filter(|g| !g.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("执行 SOP: {}", req.sop_id));
+    execute_sop(&state, &req.sop_id, &goal)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
         .map(Json)
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e))
 }
 
-async fn api_sop_list(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<Vec<SopInfo>>, StatusCode> {
-    Ok(Json(fetch_sop_list(&state).await))
+async fn api_sop_list(State(state): State<Arc<AppState>>) -> Result<Json<Vec<String>>, StatusCode> {
+    // 直通 bridge 契约：`GET /api/sops` 是 SOP ID 数组。
+    Ok(Json(fetch_sop_ids(&state).await))
 }
 
 async fn api_dag(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<DagGraph>, StatusCode> {
-    Ok(Json(fetch_dag_graph(&state, &id).await))
+    match fetch_sop_detail(&state, &id).await {
+        Some(detail) => Ok(Json(layout_dag(&detail.config))),
+        None => Err(StatusCode::NOT_FOUND),
+    }
 }
 
 async fn api_skill_list(
@@ -838,9 +976,10 @@ async fn api_skill_list(
 }
 
 async fn api_skill_install(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<SkillInstallRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    install_skill(&state, &req.skill_id).await.map_err(|e| (StatusCode::BAD_GATEWAY, e))?;
     Ok(Json(
         serde_json::json!({"status": "installed", "skill_id": req.skill_id}),
     ))
@@ -854,9 +993,32 @@ async fn api_roadmap_dashboard(
 }
 
 // ── Bridge 客户端辅助函数 ─────────────────────
+//
+// 所有对 bridge 的读写都经 `bridge_get`/`bridge_post`，以便统一附加
+// `X-Sisyphus-Workspace-Id`：`GET /api/sops/{id}` 等服务端按工作区隔离的
+// 端点缺少该头会直接返回 400。
+
+/// `X-Sisyphus-Workspace-Id` 请求头（服务端 `WorkspaceContext` 读取）。
+const WORKSPACE_HEADER: &str = "X-Sisyphus-Workspace-Id";
+
+fn bridge_get(state: &AppState, path: &str) -> reqwest::RequestBuilder {
+    let rb = state.client.get(format!("{}{path}", state.bridge_url));
+    match &state.workspace_id {
+        Some(ws) => rb.header(WORKSPACE_HEADER, ws),
+        None => rb,
+    }
+}
+
+fn bridge_post(state: &AppState, path: &str) -> reqwest::RequestBuilder {
+    let rb = state.client.post(format!("{}{path}", state.bridge_url));
+    match &state.workspace_id {
+        Some(ws) => rb.header(WORKSPACE_HEADER, ws),
+        None => rb,
+    }
+}
 
 async fn fetch_health(state: &AppState) -> HealthResponse {
-    match state.client.get(format!("{}/health", state.bridge_url)).send().await {
+    match bridge_get(state, "/health").send().await {
         Ok(r) => r.json::<HealthResponse>().await.unwrap_or(HealthResponse {
             status: "unreachable".into(),
             version: "unknown".into(),
@@ -871,89 +1033,86 @@ async fn fetch_health(state: &AppState) -> HealthResponse {
 }
 
 async fn fetch_roadmap_dashboard(state: &AppState, project_id: &str) -> serde_json::Value {
-    match state
-        .client
-        .get(format!(
-            "{}/api/roadmap/dashboard/{}",
-            state.bridge_url, project_id
-        ))
-        .send()
-        .await
-    {
+    match bridge_get(state, &format!("/api/roadmap/dashboard/{project_id}")).send().await {
         Ok(r) => r.json::<serde_json::Value>().await.unwrap_or(serde_json::Value::Null),
         Err(_) => serde_json::Value::Null,
     }
 }
 
 async fn fetch_sessions(state: &AppState) -> Vec<Session> {
-    match state.client.get(format!("{}/api/sessions", state.bridge_url)).send().await {
+    match bridge_get(state, "/api/sessions").send().await {
         Ok(r) => r.json::<Vec<Session>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }
 }
 
+fn unknown_session_detail(id: &str) -> SessionDetail {
+    SessionDetail {
+        id: id.into(),
+        name: "unknown".into(),
+        message_count: 0,
+        created_at: String::new(),
+        updated_at: String::new(),
+        messages: vec![],
+    }
+}
+
 async fn fetch_session_detail(state: &AppState, id: &str) -> SessionDetail {
-    match state.client.get(format!("{}/api/sessions/{id}", state.bridge_url)).send().await {
-        Ok(r) => r.json::<SessionDetail>().await.unwrap_or(SessionDetail {
-            id: id.into(),
-            name: "unknown".into(),
-            messages: vec![],
-            metadata: HashMap::new(),
-        }),
-        Err(_) => SessionDetail {
-            id: id.into(),
-            name: "unknown".into(),
-            messages: vec![],
-            metadata: HashMap::new(),
+    match bridge_get(state, &format!("/api/sessions/{id}")).send().await {
+        Ok(r) => r.json::<SessionDetail>().await.unwrap_or_else(|_| unknown_session_detail(id)),
+        Err(_) => unknown_session_detail(id),
+    }
+}
+
+/// 服务端 `POST /api/sessions` 返回 `SessionDetail`（不是列表条目）。
+fn session_from_detail(detail: SessionDetail, fallback_name: &str) -> Session {
+    Session {
+        id: detail.id,
+        name: if detail.name.is_empty() {
+            fallback_name.into()
+        } else {
+            detail.name
         },
+        message_count: detail.message_count,
+        created_at: Some(detail.created_at).filter(|s| !s.is_empty()),
+        updated_at: Some(detail.updated_at).filter(|s| !s.is_empty()),
+        parent_session_id: None,
     }
 }
 
 async fn create_session(state: &AppState, name: &str) -> Session {
-    match state
-        .client
-        .post(format!("{}/api/sessions", state.bridge_url))
-        .json(&serde_json::json!({"name": name}))
-        .send()
-        .await
+    match bridge_post(state, "/api/sessions").json(&serde_json::json!({"name": name})).send().await
     {
-        Ok(r) => r.json::<Session>().await.unwrap_or(Session {
-            id: "unknown".into(),
-            name: name.into(),
-            message_count: 0,
-            created_at: None,
-            parent_session_id: None,
-        }),
-        Err(_) => Session {
-            id: "unknown".into(),
-            name: name.into(),
-            message_count: 0,
-            created_at: None,
-            parent_session_id: None,
+        Ok(r) => match r.json::<SessionDetail>().await {
+            Ok(detail) => session_from_detail(detail, name),
+            Err(_) => session_from_detail(unknown_session_detail("unknown"), name),
         },
+        Err(_) => session_from_detail(unknown_session_detail("unknown"), name),
     }
 }
 
+/// `POST /api/sessions/{id}/messages` 返回更新后的 `SessionDetail`。
 async fn add_message(
     state: &AppState,
     sid: &str,
     role: &str,
     content: &str,
-) -> Result<ChatMessage, reqwest::Error> {
-    state
-        .client
-        .post(format!("{}/api/sessions/{sid}/messages", state.bridge_url))
+) -> Result<SessionDetail, String> {
+    let resp = bridge_post(state, &format!("/api/sessions/{sid}/messages"))
         .json(&serde_json::json!({"role": role, "content": content}))
         .send()
-        .await?
-        .json::<ChatMessage>()
         .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("HTTP {status}: {body}"));
+    }
+    resp.json::<SessionDetail>().await.map_err(|e| e.to_string())
 }
 
 async fn search_memory(state: &AppState, query: &str, top_k: usize) -> Vec<SearchResult> {
-    match state
-        .client
-        .post(format!("{}/api/vector/search", state.bridge_url))
+    match bridge_post(state, "/api/vector/search")
         .json(&serde_json::json!({"query": query, "top_k": top_k}))
         .send()
         .await
@@ -963,45 +1122,114 @@ async fn search_memory(state: &AppState, query: &str, top_k: usize) -> Vec<Searc
     }
 }
 
+/// 通过 SOP 执行认知目标（`POST /api/execute/goal`）。
+///
+/// 注意：`POST /api/execute` 是**工具**执行端点（`tool_id`/`args_json`），
+/// 旧实现把 SOP 执行打到那里，请求体会被服务端拒绝。
 async fn execute_sop(
     state: &AppState,
     sop_id: &str,
-    context: Option<&serde_json::Value>,
-) -> Result<ExecuteResult, reqwest::Error> {
-    state.client.post(format!("{}/api/execute", state.bridge_url))
-        .json(&serde_json::json!({"sop_id": sop_id, "context": context.unwrap_or(&serde_json::json!({}))}))
-        .send().await?.json::<ExecuteResult>().await
+    goal: &str,
+) -> Result<GoalExecuteResult, String> {
+    let resp = bridge_post(state, "/api/execute/goal")
+        .json(&serde_json::json!({"sop_id": sop_id, "goal": goal}))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("HTTP {status}: {body}"));
+    }
+    resp.json::<GoalExecuteResult>().await.map_err(|e| e.to_string())
 }
 
-async fn fetch_sop_list(state: &AppState) -> Vec<SopInfo> {
-    match state.client.get(format!("{}/api/sops", state.bridge_url)).send().await {
-        Ok(r) => r.json::<Vec<SopInfo>>().await.unwrap_or_default(),
+/// 可用的 SOP ID 列表（服务端返回字符串数组）。
+async fn fetch_sop_ids(state: &AppState) -> Vec<String> {
+    match bridge_get(state, "/api/sops").send().await {
+        Ok(r) => r.json::<Vec<String>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }
 }
 
-async fn fetch_dag_graph(state: &AppState, sop_id: &str) -> DagGraph {
-    match state.client.get(format!("{}/api/sops/{sop_id}", state.bridge_url)).send().await {
-        Ok(r) => r.json::<DagGraph>().await.unwrap_or(DagGraph {
-            nodes: vec![],
-            edges: vec![],
-            width: 0.0,
-            height: 0.0,
-        }),
-        Err(_) => DagGraph {
-            nodes: vec![],
-            edges: vec![],
-            width: 0.0,
-            height: 0.0,
+/// 单个 SOP 详情（`GET /api/sops/{id}`）。
+async fn fetch_sop_detail(state: &AppState, sop_id: &str) -> Option<SopDetail> {
+    let resp = bridge_get(state, &format!("/api/sops/{sop_id}")).send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    resp.json::<SopDetail>().await.ok()
+}
+
+/// 把 `SOPGraphConfig` 铺成固定网格布局（服务端不提供坐标）。
+///
+/// 纯函数：节点按索引以 4 列网格排布，边按索引映射；未知索引的边被丢弃，
+/// 而不是画到 (0,0)。
+fn layout_dag(config: &SopGraphConfig) -> DagGraph {
+    const NODE_W: f64 = 120.0;
+    const NODE_H: f64 = 40.0;
+    const GAP_X: f64 = 40.0;
+    const GAP_Y: f64 = 40.0;
+    const COLS: usize = 4;
+
+    let nodes: Vec<DagNode> = config
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| DagNode {
+            id: i.to_string(),
+            label: format!("{} ({})", n.name, n.kind_label()),
+            status: "pending".to_string(),
+            x: 20.0 + (i % COLS) as f64 * (NODE_W + GAP_X),
+            y: 20.0 + (i / COLS) as f64 * (NODE_H + GAP_Y),
+        })
+        .collect();
+
+    let edges: Vec<DagEdge> = config
+        .edges
+        .iter()
+        .filter(|(from, to)| *from < nodes.len() && *to < nodes.len())
+        .map(|(from, to)| DagEdge {
+            from: from.to_string(),
+            to: to.to_string(),
+        })
+        .collect();
+
+    let rows = nodes.len().div_ceil(COLS);
+    DagGraph {
+        width: if nodes.is_empty() {
+            0.0
+        } else {
+            COLS as f64 * (NODE_W + GAP_X)
         },
+        height: rows as f64 * (NODE_H + GAP_Y),
+        nodes,
+        edges,
     }
 }
 
 async fn fetch_skill_list(state: &AppState) -> Vec<SkillEntry> {
-    match state.client.get(format!("{}/api/skills", state.bridge_url)).send().await {
+    match bridge_get(state, "/api/skills").send().await {
         Ok(r) => r.json::<Vec<SkillEntry>>().await.unwrap_or_default(),
         Err(_) => vec![],
     }
+}
+
+/// 安装远端技能（`POST /api/skills/install`，成功返回 201 且无响应体）。
+///
+/// 早期实现只在前端显示「已安装」而不请求 bridge —— 那是伪造成功。
+async fn install_skill(state: &AppState, skill_id: &str) -> Result<(), String> {
+    let resp = bridge_post(state, "/api/skills/install")
+        .json(&serde_json::json!({"skill_id": skill_id}))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("HTTP {status}: {body}"));
+    }
+    Ok(())
 }
 
 // ── SVG DAG 渲染器 ──────────────────────────
@@ -1096,7 +1324,9 @@ pub fn app(bridge_url: String) -> Router {
     // 从环境变量读取可选认证 token。设置后，所有非公开路由
     // 需携带 `Authorization: Bearer <WEBUI_API_KEY>`。
     let auth_token: Option<String> = std::env::var("WEBUI_API_KEY").ok().filter(|s| !s.is_empty());
-    app_with_token(bridge_url, auth_token)
+    let workspace_id: Option<String> =
+        std::env::var("WEBUI_WORKSPACE_ID").ok().filter(|s| !s.is_empty());
+    app_with_config(bridge_url, auth_token, workspace_id)
 }
 
 /// 与 [`app`] 相同，但认证 token 由调用方显式给出而非读环境变量。
@@ -1107,6 +1337,18 @@ pub fn app(bridge_url: String) -> Router {
 /// 变量永久残留给后续测试——失败现场表现为「某个无关测试突然开始
 /// 401」，极难归因。
 pub fn app_with_token(bridge_url: String, auth_token: Option<String>) -> Router {
+    app_with_config(bridge_url, auth_token, None)
+}
+
+/// 与 [`app_with_token`] 相同，并显式给出工作区标识。
+///
+/// 测试与嵌入式用法走这个入口：既不读进程环境变量，也能覆盖
+/// `X-Sisyphus-Workspace-Id` 的行为。
+pub fn app_with_config(
+    bridge_url: String,
+    auth_token: Option<String>,
+    workspace_id: Option<String>,
+) -> Router {
     // 先按 token 克隆出中间件 State，再把所有权交给 `AppState`。
     let auth_state = AuthToken(auth_token.clone());
 
@@ -1124,6 +1366,7 @@ pub fn app_with_token(bridge_url: String, auth_token: Option<String>) -> Router 
         chaos_enabled: Arc::new(AtomicBool::new(false)),
         chaos_fault_probability: Arc::new(RwLock::new(0.1)),
         chaos_fault_count: Arc::new(RwLock::new(0)),
+        workspace_id,
     });
 
     // 公开路由：无需认证即可访问
@@ -1202,6 +1445,7 @@ mod tests {
             chaos_enabled: Arc::new(AtomicBool::new(false)),
             chaos_fault_probability: Arc::new(RwLock::new(0.1)),
             chaos_fault_count: Arc::new(RwLock::new(0)),
+            workspace_id: None,
         })
     }
 
@@ -1327,6 +1571,142 @@ mod tests {
     }
 
     // ── 路由测试 ─────────────────────────────────────────
+
+    // ── SOP / DAG / 执行 / 技能契约映射（服务端真实契约） ─────────
+
+    #[test]
+    fn test_sop_list_decodes_string_array() {
+        // 服务端 `GET /api/sops` 返回 string[]。
+        let sops: Vec<String> =
+            serde_json::from_str(r#"["sop-a", "sop-b"]"#).expect("decode sop list");
+        assert_eq!(sops, vec!["sop-a".to_string(), "sop-b".to_string()]);
+    }
+
+    #[test]
+    fn test_goal_execute_result_decodes_output_and_report() {
+        // 服务端 `POST /api/execute/goal` 返回 {output, report}。
+        let result: GoalExecuteResult =
+            serde_json::from_str(r#"{"output":{"answer":42},"report":"ok"}"#)
+                .expect("decode result");
+        assert_eq!(result.report, "ok");
+        assert_eq!(result.output["answer"], 42);
+    }
+
+    #[test]
+    fn test_sop_detail_decodes_server_fields() {
+        // 服务端 `GET /api/sops/{id}` 返回 {id, name, version, config}。
+        let detail: SopDetail = serde_json::from_str(
+            r#"{"id":"sop-a","name":"SOP A","version":"1.0.0","config":{"nodes":[{"name":"Fetch","kind":{"Wasm":{"tool_id":"fetch"}}}],"edges":[]}}"#,
+        )
+        .expect("decode sop detail");
+        assert_eq!(detail.id, "sop-a");
+        assert_eq!(detail.version.as_deref(), Some("1.0.0"));
+        assert_eq!(detail.config.nodes.len(), 1);
+        assert_eq!(detail.config.nodes[0].kind_label(), "Wasm");
+    }
+
+    #[test]
+    fn test_skill_entry_decodes_real_server_fields() {
+        // 服务端 `GET /api/skills` 字段：name/description/version/author/tags/source。
+        let skills: Vec<SkillEntry> = serde_json::from_str(
+            r#"[{"name":"demo","description":"demo desc","version":"0.1.0","author":"alice","tags":["demo"],"source":"builtin"}]"#,
+        )
+        .expect("decode skills");
+        assert_eq!(skills[0].name, "demo");
+        assert_eq!(skills[0].source, "builtin");
+        assert_eq!(skills[0].tags, vec!["demo".to_string()]);
+    }
+
+    #[test]
+    fn test_layout_dag_assigns_indices_and_drops_unknown_edges() {
+        let config = SopGraphConfig {
+            nodes: vec![
+                SopNodeConfig {
+                    name: "Fetch".into(),
+                    kind: serde_json::json!({"Wasm": {"tool_id": "fetch"}}),
+                },
+                SopNodeConfig {
+                    name: "Filter".into(),
+                    kind: serde_json::json!({"Wasm": {"tool_id": "filter"}}),
+                },
+            ],
+            edges: vec![(0usize, 1usize)],
+        };
+        let graph = layout_dag(&config);
+        assert_eq!(graph.nodes.len(), 2);
+        assert_eq!(graph.edges.len(), 1);
+        assert_eq!(graph.nodes[0].id, "0");
+        assert_eq!(graph.nodes[1].id, "1");
+    }
+
+    #[test]
+    fn test_layout_dag_empty_config_yields_empty_graph() {
+        let graph = layout_dag(&SopGraphConfig::default());
+        assert!(graph.nodes.is_empty());
+        assert!(graph.edges.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_htmx_exec_accepts_form_encoded_body() {
+        // htmx 提交的是 application/x-www-form-urlencoded（`hx-vals` 只是
+        // 追加参数），旧实现用 Json<T> 提取器 → 415。现改 Form<T>，断言
+        // 表单可进入到 handler 后因 bridge 不可达返回「错误」分支（而非 415）。
+        let router = app_with_token("http://localhost:8080".into(), None);
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/htmx/exec")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from("sop_id=sop1&goal=analyze"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(body.contains("exec-result"), "body: {body}");
+    }
+
+    #[tokio::test]
+    async fn test_htmx_add_message_accepts_form_encoded_body() {
+        let router = app_with_token("http://localhost:8080".into(), None);
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/htmx/session/s1/messages")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from("role=user&content=hello"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // bridge 不可达 → handler 重新渲染会话详情（不崩溃、不 415）。
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_htmx_skill_install_accepts_form_encoded_body() {
+        let router = app_with_token("http://localhost:8080".into(), None);
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/htmx/skills/install")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(Body::from("skill_id=sk1"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // bridge 不可达 → install_skill 报错 → handler 渲染错误分支（200）。
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(body.contains("sk1"), "body: {body}");
+    }
 
     #[tokio::test]
     async fn test_router_index_serves_dashboard() {

@@ -174,6 +174,17 @@
     `TestGetSession`/`TestAddMessage`/`TestCreateSession`/`TestWorkspaceHeader` 等）；
     Python `python -m pytest tests/` 37 passed；TypeScript `npm run build && npm test` 33 passed。
 
+- **WebUI（axum + HTMX）与 bridge REST 契约不一致**（2026-11-10）：`webui/src/lib.rs` 同类缺陷
+  - `/htmx/exec`、`/htmx/session/{id}/messages`、`/htmx/skills/install` 之前用 `Json<T>`
+    提取器，浏览器/htmx 提交 body（urlencoded）→ 415；现改为 `Form<T>`（`/api/*` 保持 `Json`）。
+  - SOP 执行打 `POST /api/execute`（工具端点）；现打 `POST /api/execute/goal` 并发送
+    `{sop_id, goal}`，响应 `{output, report}`；执行结果展示 report + output。
+  - SOP 列表按 `SopInfo` 解析（服务端返回 `string[]`）→ 改为 ID 列表；新增 SOP 详情
+    （`name/version/config`）与 DAG 网格布局（`SOPGraphConfig` → 坐标）。
+  - 技能列表按不存在的 `id/downloads/rating` 解析 → 按真实字段。
+  - 技能安装之前只前端「已安装」不请求 bridge → 现在真实调用 `POST /api/skills/install`。
+  - 新增 `WEBUI_WORKSPACE_ID`（→ `X-Sisyphus-Workspace-Id`）。
+
 - **ADR-019 租约 fencing/幂等缺陷**（2026-11-08）：`ControlPlaneState` 在释放/过期后不再删除 key 条目，
   `generation` 作为高水位持续递增——此前释放或 TTL 过期后重新获取会退回 `generation=1`，使旧 fencing
   token 重新有效；`lease.release` 成功后保留 tombstone，同 `request_id` 重试返回同一结果（此前返回
