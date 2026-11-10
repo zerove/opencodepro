@@ -269,6 +269,7 @@ fn page_shell(title: &str, nav_active: &str, body: &str) -> String {
         ("dag", "/dag", "DAG"),
         ("sop", "/sop", "SOP"),
         ("skills", "/skills", "技能"),
+        ("cluster", "/cluster", "集群"),
         ("chaos", "/chaos", "混沌"),
         ("cogmap", "/cogmap", "认知地图"),
     ];
@@ -447,6 +448,25 @@ async fn skills_page() -> Html<String> {
 async fn cogmap_page() -> Html<String> {
     let body = include_str!("../templates/cogmap.html");
     Html(page_shell("实时认知地图", "cogmap", body))
+}
+
+async fn cluster_page() -> Html<String> {
+    let body = r##"
+<h1>集群</h1>
+<div class="card">
+  <h2>集群状态</h2>
+  <div id="cluster-status" hx-get="/htmx/cluster/status" hx-trigger="load" hx-swap="innerHTML">加载中...</div>
+</div>
+<div class="card">
+  <h2>控制面租约</h2>
+  <form hx-get="/htmx/cluster/control-lease" hx-trigger="submit" hx-target="#cluster-lease-result">
+    <label>租约 key: <input name="key" value="lease:n3-quorum"></label>
+    <button class="btn-sm" type="submit">查询</button>
+  </form>
+  <div id="cluster-lease-result">加载中...</div>
+</div>
+"##;
+    Html(page_shell("集群", "cluster", body))
 }
 
 async fn chaos_page() -> Html<String> {
@@ -735,6 +755,41 @@ async fn skill_install_htmx(
 // ── 混沌 HTMX 处理器 ────────────────────
 
 /// 返回混沌状态的 HTML 片段，显示启用/禁用状态、当前故障概率和故障总数。
+async fn cluster_status_htmx(State(state): State<Arc<AppState>>) -> Response {
+    let status = fetch_cluster_status(&state).await;
+    let html = format!(
+        r#"<div class='card'><h2>集群状态</h2>
+<div class='stat'><span class='label'>enabled</span><span class='value'>{}</span></div>
+<div class='stat'><span class='label'>cluster_name</span><span class='value'>{}</span></div>
+<div class='stat'><span class='label'>control_plane.effective_armed</span><span class='value'>{}</span></div>
+<div class='stat'><span class='label'>peers</span><span class='value'>{}</span></div>
+</div>"#,
+        status.enabled,
+        status.cluster_name,
+        status.control_plane.security.effective_armed,
+        status.peers.len()
+    );
+    Html(html).into_response()
+}
+
+async fn cluster_control_lease_htmx(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let key = params.get("key").cloned().unwrap_or_else(|| "lease:n3-quorum".to_string());
+    let lease = fetch_control_lease(&state, &key).await;
+    Html(format!(
+        r#"<div class='card'><h2>控制面租约</h2>
+<div class='stat'><span class='label'>key</span><span class='value'>{}</span></div>
+<div class='stat'><span class='label'>found</span><span class='value'>{}</span></div>
+<div class='stat'><span class='label'>status_code</span><span class='value'>{}</span></div>
+<div class='stat'><span class='label'>status_message</span><span class='value'>{}</span></div>
+</div>"#,
+        key, lease.found, lease.status_code, lease.status_message
+    ))
+    .into_response()
+}
+
 async fn chaos_status_htmx(State(state): State<Arc<AppState>>) -> Response {
     let enabled = state.chaos_enabled.load(Ordering::Relaxed);
     let prob = *state.chaos_fault_probability.read().await;
@@ -1606,6 +1661,9 @@ pub fn app_with_config(
         .route("/api/skills", get(api_skill_list))
         .route("/api/skills/install", post(api_skill_install))
         .route("/api/auth/validate", post(auth_validate))
+        .route("/cluster", get(cluster_page))
+        .route("/htmx/cluster/status", get(cluster_status_htmx))
+        .route("/htmx/cluster/control-lease", get(cluster_control_lease_htmx))
         .route("/api/cluster/status", get(api_cluster_status))
         .route(
             "/api/cluster/control/leases/{key}",
@@ -2024,6 +2082,39 @@ mod tests {
         assert!(lease.found);
         assert_eq!(lease.status_code, "OK");
         assert_eq!(lease.generation, 1);
+    }
+
+    #[tokio::test]
+    async fn test_htmx_cluster_status_returns_html() {
+        let router = app_with_token("http://localhost:8080".into(), None);
+        let resp = router
+            .oneshot(Request::builder().uri("/htmx/cluster/status").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        // bridge 不可达 → 渲染默认状态快照（200 + HTML 片段）。
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(body.contains("集群状态"), "body: {body}");
+    }
+
+    #[tokio::test]
+    async fn test_htmx_cluster_control_lease_returns_html() {
+        let router = app_with_token("http://localhost:8080".into(), None);
+        let resp = router
+            .oneshot(
+                Request::builder()
+                    .uri("/htmx/cluster/control-lease?key=lease:n3-quorum")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // bridge 不可达 → 渲染默认租约快照（200 + HTML 片段）。
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(body.contains("控制面租约"), "body: {body}");
     }
 
     #[tokio::test]
