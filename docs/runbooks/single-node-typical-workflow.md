@@ -38,11 +38,16 @@ curl -s http://127.0.0.1:8080/openapi.json | head
 curl -s http://127.0.0.1:8080/api/sops
 curl -s http://127.0.0.1:8080/api/skills
 
-# 3) 只读观测（单机默认 cluster.control_plane.enabled=false）
+# 3) CLI 经 bridge（gRPC，默认地址可用 --bridge 覆盖）
+# sisyphus --bridge http://127.0.0.1:50051 health
+# sisyphus --bridge http://127.0.0.1:50051 sop list
+# sisyphus --bridge http://127.0.0.1:50051 sop run <sop-id>   # 依赖引擎/LLM 配置
+
+# 4) 只读观测（单机默认 cluster.control_plane.enabled=false）
 curl -s http://127.0.0.1:8080/api/cluster/status
 curl -s http://127.0.0.1:8080/api/cluster/control/leases/lease:demo
 
-# 4) WebUI（可选）
+# 5) WebUI（可选）
 # WEBUI_BRIDGE_URL=http://127.0.0.1:8080 cargo run -p sisyphus-webui --bin sisyphus-webui
 # 浏览器访问 http://127.0.0.1:3000 与 /cluster
 ```
