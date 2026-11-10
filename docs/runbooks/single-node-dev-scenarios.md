@@ -107,6 +107,7 @@ N=10 ./scripts/single-node-bench-sample.sh cli
 
 - 模板：`docs/examples/sop-templates/`
 - 运行/验收：`docs/runbooks/single-node-operation-and-verification.md`
+- 自动化能力验收：`docs/runbooks/single-node-automation-acceptance.md`
 - 契约守护：`docs/runbooks/single-node-contract-guard.md`
 - 典型流：`docs/runbooks/single-node-typical-workflow.md`
 - SOP 端到端：`docs/runbooks/single-node-sop-e2e-guide.md`

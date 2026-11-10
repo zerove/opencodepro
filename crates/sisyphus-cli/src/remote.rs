@@ -135,7 +135,12 @@ pub async fn run_list_skills(client: &mut BridgeClient) -> Result<()> {
 pub async fn run_exec_sop(client: &mut BridgeClient, sop_id: &str) -> Result<()> {
     println!("Executing SOP: {sop_id}...");
     let result = client.execute_sop(sop_id).await?;
-    println!("Result:\n{result}");
+    let rendered = if let Ok(v) = serde_json::from_str::<serde_json::Value>(&result) {
+        serde_json::to_string_pretty(&v).unwrap_or(result.clone())
+    } else {
+        result
+    };
+    println!("Result:\n{rendered}");
     Ok(())
 }
 
