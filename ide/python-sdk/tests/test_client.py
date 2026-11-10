@@ -7,17 +7,25 @@ import json
 from unittest.mock import patch, MagicMock
 import pytest
 from sisyphus_sdk import (
-    SisyphusClient,
+    LEASE_STATUS_DISABLED,
+    LEASE_STATUS_OK,
+    ClusterPeer,
+    ClusterStatus,
+    ControlLease,
+    ExperienceShareResult,
+    GoalExecuteResult,
     HealthResponse,
     Session,
+    SessionDetail,
+    SessionSummary,
     SearchResult,
-    ExecuteResult,
-    SopInfo,
     SkillEntry,
+    SisyphusClient,
     SisyphusError,
+    SopDetail,
     AnomalyReport,
     SharedExperience,
-    ExperienceShareResult,
+    ToolExecuteResult,
 )
 
 
@@ -115,22 +123,47 @@ class TestSessions:
         assert result is None
 
     def test_create_session(self, client, mock_urlopen):
-        """create_session() 应该返回新创建的 Session"""
+        """create_session() 应该返回新创建的会话详情"""
         mock_urlopen.return_value = mock_response(
-            {"id": "s3", "name": "New Session", "message_count": 0}
+            {
+                "id": "s3",
+                "name": "New Session",
+                "message_count": 0,
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+                "messages": [],
+            },
+            201,
         )
         result = client.create_session("New Session")
-        assert isinstance(result, Session)
+        assert isinstance(result, SessionDetail)
         assert result.name == "New Session"
+        assert result.messages == []
 
     def test_add_message(self, client, mock_urlopen):
-        """add_message() 应该返回消息字典"""
+        """add_message() 应该返回更新后的会话详情"""
         mock_urlopen.return_value = mock_response(
-            {"role": "user", "content": "hello", "id": "m1"}
+            {
+                "id": "s1",
+                "name": "Session 1",
+                "message_count": 1,
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:01Z",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "hello",
+                        "created_at": "2026-01-01T00:00:01Z",
+                    }
+                ],
+            }
         )
         result = client.add_message("s1", "user", "hello")
-        assert result["role"] == "user"
-        assert result["content"] == "hello"
+        assert isinstance(result, SessionDetail)
+        assert result.message_count == 1
+        assert result.messages[0].content == "hello"
+        req = mock_urlopen.call_args[0][0]
+        assert req.full_url.endswith("/api/sessions/s1/messages")
 
 
 # ── Search ─────────────────────────────────────────
@@ -170,21 +203,51 @@ class TestSearch:
 class TestExecution:
     """SOP 执行相关测试"""
 
-    def test_execute_sop(self, client, mock_urlopen):
-        """execute_sop() 应该返回 ExecuteResult"""
+    def test_execute_sop_posts_to_goal_endpoint(self, client, mock_urlopen):
+        """execute_sop() 必须走 POST /api/execute/goal（不是 /api/execute）"""
         mock_urlopen.return_value = mock_response(
-            {
-                "sop_id": "sop1",
-                "status": "completed",
-                "iterations": 3,
-                "deviation": 0.1,
-            }
+            {"output": {"answer": 42}, "report": "ok"}
         )
-        result = client.execute_sop("sop1", {"input": "hello"})
-        assert isinstance(result, ExecuteResult)
-        assert result.sop_id == "sop1"
-        assert result.status == "completed"
-        assert result.iterations == 3
+        result = client.execute_sop("sop1", goal="Analyze code", project_id="proj1")
+        assert isinstance(result, GoalExecuteResult)
+        assert result.report == "ok"
+        assert result.output == {"answer": 42}
+
+        req = mock_urlopen.call_args[0][0]
+        assert req.method == "POST"
+        assert req.full_url.endswith("/api/execute/goal")
+        assert json.loads(req.data.decode()) == {
+            "sop_id": "sop1",
+            "goal": "Analyze code",
+            "project_id": "proj1",
+        }
+
+    def test_execute_sop_omits_optional_project(self, client, mock_urlopen):
+        """未指定 project_id / event_tx 时不应发送这两个字段"""
+        mock_urlopen.return_value = mock_response({"output": None, "report": ""})
+        client.execute_sop("sop1", goal="goal")
+        req = mock_urlopen.call_args[0][0]
+        assert json.loads(req.data.decode()) == {"sop_id": "sop1", "goal": "goal"}
+
+    def test_execute_tool_posts_to_tool_endpoint(self, client, mock_urlopen):
+        """execute_tool() 走 POST /api/execute，args_json 保持字符串"""
+        mock_urlopen.return_value = mock_response(
+            {"status": "SUCCESS", "result_json": '{"ok":true}'}
+        )
+        args = '{"path":"/tmp/a.txt"}'
+        result = client.execute_tool("file_read", args, fuel_limit=1000)
+        assert isinstance(result, ToolExecuteResult)
+        assert result.status == "SUCCESS"
+        assert result.result_json == '{"ok":true}'
+
+        req = mock_urlopen.call_args[0][0]
+        assert req.full_url.endswith("/api/execute")
+        body = json.loads(req.data.decode())
+        assert body == {
+            "tool_id": "file_read",
+            "args_json": args,
+            "fuel_limit": 1000,
+        }
 
 
 # ── SOPs ─────────────────────────────────────────
@@ -193,28 +256,31 @@ class TestExecution:
 class TestSops:
     """SOP 管理相关测试"""
 
-    def test_list_sops(self, client, mock_urlopen):
-        """list_sops() 应该返回 SopInfo 列表"""
-        mock_urlopen.return_value = mock_response(
-            [
-                {
-                    "id": "sop1",
-                    "name": "SOP 1",
-                    "node_count": 5,
-                    "description": "Test SOP",
-                }
-            ]
-        )
+    def test_list_sops_returns_id_list(self, client, mock_urlopen):
+        """list_sops() 返回服务端实际契约：SOP ID 字符串数组"""
+        mock_urlopen.return_value = mock_response(["sop1", "sop2"])
         result = client.list_sops()
-        assert len(result) == 1
-        assert isinstance(result[0], SopInfo)
-        assert result[0].id == "sop1"
+        assert result == ["sop1", "sop2"]
 
-    def test_get_dag(self, client, mock_urlopen):
-        """get_dag() 应该返回字典"""
+    def test_get_sop_returns_detail(self, client, mock_urlopen):
+        """get_sop() 应该返回 SopDetail"""
         mock_urlopen.return_value = mock_response(
-            {"nodes": [], "edges": []}
+            {
+                "id": "sop1",
+                "name": "SOP 1",
+                "version": "1.0.0",
+                "config": {"nodes": []},
+            }
         )
+        result = client.get_sop("sop1")
+        assert isinstance(result, SopDetail)
+        assert result.id == "sop1"
+        assert result.version == "1.0.0"
+        assert result.config == {"nodes": []}
+
+    def test_get_dag_returns_dict(self, client, mock_urlopen):
+        """get_dag()（兼容别名）应该返回原始字典"""
+        mock_urlopen.return_value = mock_response({"nodes": [], "edges": []})
         result = client.get_dag("sop1")
         assert isinstance(result, dict)
         assert "nodes" in result
@@ -226,18 +292,17 @@ class TestSops:
 class TestSkills:
     """技能管理相关测试"""
 
-    def test_list_skills(self, client, mock_urlopen):
-        """list_skills() 应该返回 SkillEntry 列表"""
+    def test_list_skills_uses_server_fields(self, client, mock_urlopen):
+        """list_skills() 必须按服务端字段解码（无 id/downloads/rating）"""
         mock_urlopen.return_value = mock_response(
             [
                 {
-                    "id": "sk1",
                     "name": "Skill 1",
                     "description": "Test",
-                    "author": "author",
                     "version": "1.0",
-                    "downloads": 100,
-                    "rating": 4.5,
+                    "author": "author",
+                    "tags": ["demo"],
+                    "source": "builtin",
                 }
             ]
         )
@@ -245,14 +310,30 @@ class TestSkills:
         assert len(result) == 1
         assert isinstance(result[0], SkillEntry)
         assert result[0].name == "Skill 1"
+        assert result[0].tags == ["demo"]
+        assert result[0].source == "builtin"
 
-    def test_install_skill(self, client, mock_urlopen):
-        """install_skill() 应该返回字典"""
+    def test_list_skills_tolerates_extra_server_fields(self, client, mock_urlopen):
+        """服务端新增字段不应让 SDK 抛 TypeError"""
         mock_urlopen.return_value = mock_response(
-            {"success": True, "skill_id": "sk1"}
+            [{"name": "Skill 1", "future_field": "ignored"}]
         )
-        result = client.install_skill("sk1")
-        assert result["success"] is True
+        result = client.list_skills()
+        assert result[0].name == "Skill 1"
+
+    def test_install_skill_accepts_empty_201_body(self, client, mock_urlopen):
+        """install_skill() 成功时服务端返回 201 且无响应体"""
+        resp = MagicMock()
+        resp.__enter__.return_value = resp
+        resp.read.return_value = b""
+        resp.status = 201
+        resp.__exit__.return_value = None
+        mock_urlopen.return_value = resp
+
+        assert client.install_skill("sk1") is None
+        req = mock_urlopen.call_args[0][0]
+        assert req.full_url.endswith("/api/skills/install")
+        assert json.loads(req.data.decode()) == {"skill_id": "sk1"}
 
 
 # ── Auth ─────────────────────────────────────────
@@ -386,6 +467,156 @@ class TestExperienceSharing:
         assert result.error == "experience not found"
 
 
+# ── 集群 / 控制面只读观测 ─────────────────────────
+
+
+class TestClusterObservation:
+    """集群与控制面只读端点测试"""
+
+    def test_cluster_status_parses_nested_views(self, client, mock_urlopen):
+        """cluster_status() 应该解析嵌套的配置/安全/peer 视图"""
+        mock_urlopen.return_value = mock_response(
+            {
+                "enabled": True,
+                "cluster_name": "demo",
+                "config": {
+                    "node_id": "node-1",
+                    "peer_ttl_secs": 30,
+                    "join_timeout_secs": 5,
+                    "strategy_sync_interval_secs": 10,
+                    "static_peers": ["node-2:50051"],
+                    "control_plane_enabled": True,
+                    "control_plane": {
+                        "enabled": True,
+                        "propose_timeout_ms": 2000,
+                        "connect_timeout_ms": 1000,
+                        "lease_ttl_min_secs": 5,
+                        "lease_ttl_max_secs": 300,
+                    },
+                },
+                "control_plane": {
+                    "configured": True,
+                    "coordinator_configured": True,
+                    "security": {
+                        "tls_enabled_config": True,
+                        "tls_wired": True,
+                        "submit_auth_mode_config": "mtls_subject_allowlist",
+                        "submit_auth_enforced": True,
+                        "app_layer_submit_auth_enforced": True,
+                        "effective_armed": True,
+                        "allowed_submit_subjects_count": 3,
+                        "note": "ADR-019",
+                    },
+                    "stats": {"accepts": 2},
+                },
+                "peer_manager": {
+                    "self_node_id": "node-1",
+                    "leader_id": "node-1",
+                    "is_leader": True,
+                    "cluster_size": 2,
+                    "state_proposal_broadcasts": 7,
+                    "experience_sync": {
+                        "broadcasts": 1,
+                        "inbound_delivered": 2,
+                        "inbound_applied": 2,
+                        "inbound_rejected": 0,
+                        "inbound_rejected_deserialize": 0,
+                        "inbound_rejected_quality": 0,
+                        "inbound_rejected_apply": 0,
+                    },
+                },
+                "consensus": {"leader_id": "node-1", "is_leader": True},
+                "peers": [
+                    {
+                        "node_id": "node-1",
+                        "grpc_addr": "http://127.0.0.1:50051",
+                        "joined_at": 0,
+                        "last_seen_secs_ago": 0,
+                    },
+                    {
+                        "node_id": "node-2",
+                        "grpc_addr": "http://127.0.0.1:50052",
+                        "joined_at": 0,
+                        "last_seen_secs_ago": None,
+                    },
+                ],
+            }
+        )
+        status = client.cluster_status()
+        assert isinstance(status, ClusterStatus)
+        assert status.enabled is True
+        assert status.cluster_name == "demo"
+
+        # 嵌套 dataclass 而不是原始 dict（否则调用方要自己拆 JSON）
+        assert status.config.node_id == "node-1"
+        assert status.config.control_plane.lease_ttl_max_secs == 300
+        assert status.control_plane.security.tls_wired is True
+        assert status.control_plane.security.allowed_submit_subjects_count == 3
+        assert status.control_plane.stats == {"accepts": 2}
+        assert status.peer_manager.experience_sync.inbound_applied == 2
+        assert status.peer_manager.cluster_size == 2
+        assert status.consensus.is_leader is True
+
+        assert len(status.peers) == 2
+        assert isinstance(status.peers[0], ClusterPeer)
+        assert status.peers[1].last_seen_secs_ago is None
+
+        req = mock_urlopen.call_args[0][0]
+        assert req.method == "GET"
+        assert req.full_url.endswith("/api/cluster/status")
+
+    def test_cluster_status_tolerates_disabled_and_missing_fields(self, client, mock_urlopen):
+        """单节点/未启用时字段缺失不应抛异常"""
+        mock_urlopen.return_value = mock_response({"enabled": False, "peers": []})
+        status = client.cluster_status()
+        assert status.enabled is False
+        assert status.peers == []
+        assert status.config.control_plane.enabled is False
+        assert status.control_plane.configured is False
+
+    def test_control_lease_disabled_is_not_an_error(self, client, mock_urlopen):
+        """控制面关闭时返回 200 + DISABLED（不是异常）"""
+        mock_urlopen.return_value = mock_response(
+            {
+                "found": False,
+                "key": "lease:demo",
+                "owner": "",
+                "generation": 0,
+                "expires_at_unix_ms": 0,
+                "last_request_id": "",
+                "status_code": LEASE_STATUS_DISABLED,
+                "status_message": "cluster.control_plane.enabled is false (ADR-019 gate)",
+            }
+        )
+        lease = client.control_lease("lease:demo")
+        assert isinstance(lease, ControlLease)
+        assert lease.found is False
+        assert lease.status_code == LEASE_STATUS_DISABLED
+
+    def test_control_lease_encodes_key(self, client, mock_urlopen):
+        """key 必须被 URL 编码后拼进路径"""
+        mock_urlopen.return_value = mock_response(
+            {
+                "found": True,
+                "key": "lease/demo",
+                "owner": "node-1",
+                "generation": 4,
+                "expires_at_unix_ms": 1_700_000_000_000,
+                "last_request_id": "req-1",
+                "status_code": LEASE_STATUS_OK,
+                "status_message": "",
+            }
+        )
+        lease = client.control_lease("lease/demo")
+        assert lease.found is True
+        assert lease.owner == "node-1"
+        assert lease.generation == 4
+        assert lease.status_code == LEASE_STATUS_OK
+
+        req = mock_urlopen.call_args[0][0]
+        assert "/api/cluster/control/leases/lease%2Fdemo" in req.full_url
+
+
 # ── 错误处理 ──────────────────────────────────────
 
 
@@ -438,3 +669,13 @@ class TestConstructor:
         c.health()
         req = mock_urlopen.call_args[0][0]
         assert req.headers["Authorization"] == "Bearer my-token"
+
+    def test_workspace_id_used_in_header(self, mock_urlopen):
+        """workspace_id 应该作为 X-Sisyphus-Workspace-Id 头发送"""
+        c = SisyphusClient(base_url="http://test.local", workspace_id="proj1")
+        mock_urlopen.return_value = mock_response(
+            {"id": "sop1", "name": "SOP 1", "config": {}}
+        )
+        c.get_sop("sop1")
+        req = mock_urlopen.call_args[0][0]
+        assert req.headers["X-sisyphus-workspace-id"] == "proj1"

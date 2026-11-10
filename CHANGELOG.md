@@ -56,6 +56,16 @@
 
 ### Added
 
+- **三套官方 SDK 的集群/控制面只读观测方法**（2026-11-10）：TypeScript / Python / Go SDK
+  新增 `clusterStatus()` / `cluster_status()` / `GetClusterStatus()`（`GET /api/cluster/status`，
+  含 `config.control_plane`、`control_plane.security`（ADR-019 安全装配视图）、
+  `peer_manager.experience_sync`、`consensus`、`peers[]`）与
+  `controlLease(key)` / `control_lease()` / `GetControlLease()`（`GET /api/cluster/control/leases/{key}`）。
+  租约查询为只读（ADR-020：REST 写入=否）：控制面未启用 / 租约不存在 / 状态未装配时端点仍返回
+  HTTP 200，SDK 以 `status_code`（`OK`/`NOT_FOUND`/`DISABLED`/`UNAVAILABLE`）与 `found` 表达结果，
+  不抛异常。三端测试：Go `TestGetClusterStatus`/`TestGetControlLeaseDisabled`/`TestGetControlLeaseOK`，
+  Python `TestClusterObservation`（4 项），TypeScript `clusterStatus()`/`controlLease()`（3 项）。
+
 - **集群协调状态端点**（Phase 6.1，只读）：`GET /api/cluster/status`（`operationId: getClusterStatus`）
   返回集群配置快照、peer manager 视图（self/leader/cluster_size/peers/last_seen_secs_ago、
   `state_proposal_broadcasts`、`experience_sync{broadcasts,inbound_delivered,inbound_applied,inbound_rejected}`）
@@ -137,6 +147,32 @@
     `OK`；`tests/control_plane_mtls_test` 4 项；`peer::tls` 4 项 fail-closed。
 
 ### Fixed
+
+- **三套官方 SDK 与 bridge REST 真实契约不一致**（2026-11-10）：旧版 SDK 按服务端不存在的
+  契约实现，调用即失败（请求体被拒 / 响应解码报错），已按
+  `crates/sisyphus-bridge/src/http/{mod.rs,types.rs,handlers*.rs}` 逐项校正：
+  - **SOP 执行端点错误**：`executeSOP/execute_sop/ExecuteSOP` 原本打 `POST /api/execute`
+    （那是**工具**执行端点，要求 `tool_id`/`args_json`）并发送 `{sop_id, context}`。
+    现改为 `POST /api/execute/goal`，请求体 `{goal, sop_id, project_id?, event_tx?}`，
+    响应 `GoalExecuteResult{output, report}`；新增独立的 `executeTool()` 走 `/api/execute`。
+  - **`list_sops` 返回类型错误**：服务端返回 `string[]`，SDK 却按 `SopInfo{id,name,node_count,description}`
+    解码（`node_count`/`description` 字段不存在）。现返回 ID 列表，并新增 `get_sop()` 解析
+    `{id, name, version, config}`。
+  - **`skills` 字段错误**：服务端为 `{name, description, version, author, tags, source}`，
+    SDK 却期望 `{id, downloads, rating}`。已按真实字段修正。
+  - **201 空响应体解码失败**：`POST /api/skills/install` 成功返回 201 且无响应体，Python/TS
+    原先直接 `json.loads`/`resp.json()` 会抛错；现容忍空体（返回 `None`/`undefined`）。
+  - **会话结构错误**：`list_sessions` 应为 `SessionSummary`（无 `messages`/`metadata`），
+    `create_session`/`add_message` 返回 `SessionDetail`，`add_message` 返回更新后的会话而非
+    消息对象；三端均已修正并补测试。
+  - **未实现方法在文档中列出**：TS README/SDK 文档列出的 `executeSOP(sopId, context)`、
+    `getDag`、`listSops()` 返回对象等与实现不符，已按实际方法重写并补齐
+    `createSession`/`addMessage`/`validateAuth`/`listSops`/`getSop`/`listSkills`/`installSkill`。
+  - **工作区头缺失**：`GET /api/sops/{id}` 要求 `X-Sisyphus-Workspace-Id`（缺失 400），
+    三端 SDK 现支持 `workspaceId`/`workspace_id`/`Client.WorkspaceID` 并自动附加。
+  - 测试：Go `go test ./...` ok（新增 `TestExecuteSOP`/`TestExecuteTool`/`TestGetSOP`/
+    `TestGetSession`/`TestAddMessage`/`TestCreateSession`/`TestWorkspaceHeader` 等）；
+    Python `python -m pytest tests/` 37 passed；TypeScript `npm run build && npm test` 33 passed。
 
 - **ADR-019 租约 fencing/幂等缺陷**（2026-11-08）：`ControlPlaneState` 在释放/过期后不再删除 key 条目，
   `generation` 作为高水位持续递增——此前释放或 TTL 过期后重新获取会退回 `generation=1`，使旧 fencing

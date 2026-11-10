@@ -93,9 +93,9 @@ func TestListSessions(t *testing.T) {
 }
 
 func TestCreateSession(t *testing.T) {
-	// createSession() 应该返回新创建的会话
-	expected := Session{ID: "s3", Name: "New Session", MessageCount: 0}
-	srv := mockServer(t, 200, expected)
+	// createSession() 应该返回新创建的会话详情（POST /api/sessions → SessionDetail）
+	expected := SessionDetail{ID: "s3", Name: "New Session", MessageCount: 0}
+	srv := mockServer(t, 201, expected)
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "")
@@ -108,6 +108,54 @@ func TestCreateSession(t *testing.T) {
 	}
 	if s.Name != "New Session" {
 		t.Errorf("期望 Name='New Session'，得到 %s", s.Name)
+	}
+}
+
+func TestGetSession(t *testing.T) {
+	expected := SessionDetail{
+		ID: "s1", Name: "Session 1", MessageCount: 1,
+		Messages: []MessageDto{{Role: "user", Content: "hi"}},
+	}
+	srv := mockServer(t, 200, expected)
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	s, err := c.GetSession("s1")
+	if err != nil {
+		t.Fatalf("GetSession() 返回错误: %v", err)
+	}
+	if len(s.Messages) != 1 || s.Messages[0].Content != "hi" {
+		t.Errorf("期望解析出 1 条消息，得到 %+v", s.Messages)
+	}
+}
+
+func TestAddMessage(t *testing.T) {
+	// addMessage() 必须 POST 到 /api/sessions/{id}/messages 并回传更新后的会话
+	var gotPath string
+	var gotBody map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		json.NewEncoder(w).Encode(SessionDetail{
+			ID: "s1", Name: "Session 1", MessageCount: 2,
+			Messages: []MessageDto{{Role: "user", Content: "hello"}},
+		})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	s, err := c.AddMessage("s1", "user", "hello")
+	if err != nil {
+		t.Fatalf("AddMessage() 返回错误: %v", err)
+	}
+	if gotPath != "/api/sessions/s1/messages" {
+		t.Errorf("期望请求 /api/sessions/s1/messages，得到 %s", gotPath)
+	}
+	if gotBody["role"] != "user" || gotBody["content"] != "hello" {
+		t.Errorf("请求体不正确: %v", gotBody)
+	}
+	if s.MessageCount != 2 {
+		t.Errorf("期望 MessageCount=2，得到 %d", s.MessageCount)
 	}
 }
 
@@ -136,38 +184,79 @@ func TestSearchMemory(t *testing.T) {
 // ── 执行 ─────────────────────────────────────
 
 func TestExecuteSOP(t *testing.T) {
-	// executeSOP() 应该返回执行结果
-	srv := mockServer(t, 200, ExecuteResult{
-		SopID:      "sop1",
-		Status:     "completed",
-		Iterations: 3,
-		Deviation:  0.1,
-	})
+	// executeSOP() 应该走 /api/execute/goal，并解出 output/report
+	var gotPath string
+	var gotBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"output": map[string]interface{}{"answer": 42},
+			"report": "ok",
+		})
+	}))
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "")
-	result, err := c.ExecuteSOP("sop1", map[string]interface{}{"input": "hello"})
+	result, err := c.ExecuteSOP("sop1", "Analyze code", "proj1")
 	if err != nil {
 		t.Fatalf("ExecuteSOP() 返回错误: %v", err)
 	}
-	if result.SopID != "sop1" {
-		t.Errorf("期望 SopID=sop1，得到 %s", result.SopID)
+	if gotPath != "/api/execute/goal" {
+		t.Errorf("期望请求 /api/execute/goal，得到 %s", gotPath)
 	}
-	if result.Status != "completed" {
-		t.Errorf("期望 Status=completed，得到 %s", result.Status)
+	if gotBody["goal"] != "Analyze code" || gotBody["sop_id"] != "sop1" || gotBody["project_id"] != "proj1" {
+		t.Errorf("请求体不符合 /api/execute/goal 契约: %v", gotBody)
 	}
-	if result.Iterations != 3 {
-		t.Errorf("期望 Iterations=3，得到 %d", result.Iterations)
+	if result.Report != "ok" {
+		t.Errorf("期望 Report=ok，得到 %s", result.Report)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(result.Output, &out); err != nil {
+		t.Fatalf("output 不是合法 JSON: %v", err)
+	}
+	if out["answer"] != float64(42) {
+		t.Errorf("期望 output.answer=42，得到 %v", out["answer"])
+	}
+}
+
+func TestExecuteTool(t *testing.T) {
+	// executeTool() 应该走 /api/execute（工具执行）并保持 args_json 为字符串
+	var gotPath string
+	var gotBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "SUCCESS", "result_json": "{\"ok\":true}",
+		})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	result, err := c.ExecuteTool("file_read", `{"path":"/tmp/a.txt"}`, 1000)
+	if err != nil {
+		t.Fatalf("ExecuteTool() 返回错误: %v", err)
+	}
+	if gotPath != "/api/execute" {
+		t.Errorf("期望请求 /api/execute，得到 %s", gotPath)
+	}
+	if gotBody["tool_id"] != "file_read" {
+		t.Errorf("期望 tool_id=file_read，得到 %v", gotBody["tool_id"])
+	}
+	if gotBody["args_json"] != `{"path":"/tmp/a.txt"}` {
+		t.Errorf("args_json 必须是 JSON 字符串，得到 %v", gotBody["args_json"])
+	}
+	if result.Status != "SUCCESS" {
+		t.Errorf("期望 Status=SUCCESS，得到 %s", result.Status)
 	}
 }
 
 // ── SOPs ──────────────────────────────────────
 
 func TestListSOPs(t *testing.T) {
-	// listSOPs() 应该返回 SOP 列表
-	srv := mockServer(t, 200, []SopInfo{
-		{ID: "sop1", Name: "SOP 1", NodeCount: 5, Description: "Test SOP"},
-	})
+	// listSOPs() 返回服务端实际契约：SOP ID 字符串数组
+	srv := mockServer(t, 200, []string{"sop1", "sop2"})
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "")
@@ -175,23 +264,39 @@ func TestListSOPs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListSOPs() 返回错误: %v", err)
 	}
-	if len(sops) != 1 {
-		t.Fatalf("期望 1 个 SOP，得到 %d", len(sops))
+	if len(sops) != 2 {
+		t.Fatalf("期望 2 个 SOP，得到 %d", len(sops))
 	}
-	if sops[0].ID != "sop1" {
-		t.Errorf("期望 ID=sop1，得到 %s", sops[0].ID)
+	if sops[0] != "sop1" {
+		t.Errorf("期望 ID=sop1，得到 %s", sops[0])
+	}
+}
+
+func TestGetSOP(t *testing.T) {
+	srv := mockServer(t, 200, map[string]interface{}{
+		"id": "sop1", "name": "SOP 1", "version": "1.0.0",
+		"config": map[string]interface{}{"nodes": []interface{}{}},
+	})
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	sop, err := c.GetSOP("sop1")
+	if err != nil {
+		t.Fatalf("GetSOP() 返回错误: %v", err)
+	}
+	if sop.ID != "sop1" {
+		t.Errorf("期望 ID=sop1，得到 %s", sop.ID)
 	}
 }
 
 // ── Skills ───────────────────────────────────
 
 func TestListSkills(t *testing.T) {
-	// listSkills() 应该返回技能列表
+	// listSkills() 必须按服务端字段（name/description/version/author/tags/source）解码
 	srv := mockServer(t, 200, []SkillEntry{
 		{
-			ID: "sk1", Name: "Skill 1", Description: "Test",
-			Author: "author", Version: "1.0",
-			Downloads: 100, Rating: 4.5,
+			Name: "Skill 1", Description: "Test", Author: "author",
+			Version: "1.0", Tags: []string{"demo"}, Source: "builtin",
 		},
 	})
 	defer srv.Close()
@@ -207,11 +312,16 @@ func TestListSkills(t *testing.T) {
 	if skills[0].Name != "Skill 1" {
 		t.Errorf("期望 Name='Skill 1'，得到 %s", skills[0].Name)
 	}
+	if skills[0].Source != "builtin" {
+		t.Errorf("期望 Source=builtin，得到 %s", skills[0].Source)
+	}
 }
 
 func TestInstallSkill(t *testing.T) {
-	// installSkill() 成功时不应返回错误
-	srv := mockServer(t, 200, map[string]string{"success": "true"})
+	// installSkill() 成功时服务端返回 201 且无响应体
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "")
@@ -399,6 +509,126 @@ func TestUnshareExperience(t *testing.T) {
 	}
 }
 
+// ── 集群 / 控制面只读观测 ─────────────────
+
+func TestGetClusterStatus(t *testing.T) {
+	// 解析 GET /api/cluster/status 的只读快照（含控制面安全装配视图）
+	srv := mockServer(t, 200, map[string]interface{}{
+		"enabled":      true,
+		"cluster_name": "demo",
+		"config": map[string]interface{}{
+			"node_id": "node-1", "peer_ttl_secs": 30, "join_timeout_secs": 5,
+			"strategy_sync_interval_secs": 10, "static_peers": []string{"node-2:50051"},
+			"control_plane_enabled": true,
+			"control_plane": map[string]interface{}{
+				"enabled": true, "propose_timeout_ms": 2000,
+				"connect_timeout_ms": 1000, "lease_ttl_min_secs": 5, "lease_ttl_max_secs": 300,
+			},
+		},
+		"control_plane": map[string]interface{}{
+			"configured": true, "coordinator_configured": true,
+			"security": map[string]interface{}{
+				"tls_enabled_config": true, "tls_wired": true,
+				"submit_auth_mode_config": "mtls_subject_allowlist",
+				"submit_auth_enforced":    true, "app_layer_submit_auth_enforced": true,
+				"effective_armed": true, "allowed_submit_subjects_count": 3,
+				"note": "ADR-019",
+			},
+			"stats": map[string]interface{}{"accepts": 2},
+		},
+		"peer_manager": map[string]interface{}{
+			"self_node_id": "node-1", "leader_id": "node-1", "is_leader": true,
+			"cluster_size": 3, "state_proposal_broadcasts": 7,
+			"experience_sync": map[string]interface{}{
+				"broadcasts": 1, "inbound_delivered": 2, "inbound_applied": 2,
+				"inbound_rejected": 0, "inbound_rejected_deserialize": 0,
+				"inbound_rejected_quality": 0, "inbound_rejected_apply": 0,
+			},
+		},
+		"consensus": map[string]interface{}{"leader_id": "node-1", "is_leader": true},
+		"peers": []map[string]interface{}{
+			{"node_id": "node-1", "grpc_addr": "http://127.0.0.1:50051", "joined_at": 0, "last_seen_secs_ago": 0},
+			{"node_id": "node-2", "grpc_addr": "http://127.0.0.1:50052", "joined_at": 0, "last_seen_secs_ago": nil},
+		},
+	})
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	status, err := c.GetClusterStatus()
+	if err != nil {
+		t.Fatalf("GetClusterStatus() 返回错误: %v", err)
+	}
+	if !status.Enabled || status.ClusterName != "demo" {
+		t.Errorf("期望 enabled=true cluster_name=demo，得到 %+v", status)
+	}
+	if !status.ControlPlane.Security.TLSWired {
+		t.Error("期望 control_plane.security.tls_wired=true")
+	}
+	if status.ControlPlane.Security.AllowedSubmitSubjectsCount != 3 {
+		t.Errorf("期望 allowlist=3，得到 %d", status.ControlPlane.Security.AllowedSubmitSubjectsCount)
+	}
+	if status.PeerManager.ClusterSize != 3 || !status.PeerManager.IsLeader {
+		t.Errorf("期望 cluster_size=3/is_leader=true，得到 %+v", status.PeerManager)
+	}
+	if len(status.Peers) != 2 {
+		t.Fatalf("期望 2 个 peer，得到 %d", len(status.Peers))
+	}
+	if status.Peers[1].LastSeenSecsAgo != nil {
+		t.Error("期望未知 last_seen_secs_ago 解码为 nil")
+	}
+	if len(status.ControlPlane.Stats) == 0 || string(status.ControlPlane.Stats) == "null" {
+		t.Errorf("期望 stats 非 null，得到 %s", status.ControlPlane.Stats)
+	}
+}
+
+func TestGetControlLeaseDisabled(t *testing.T) {
+	// 控制面关闭时端点仍返回 200 + DISABLED（不是错误）
+	srv := mockServer(t, 200, ControlLease{
+		Found:         false,
+		Key:           "lease:demo",
+		StatusCode:    LeaseStatusDisabled,
+		StatusMessage: "cluster.control_plane.enabled is false (ADR-019 gate)",
+	})
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	lease, err := c.GetControlLease("lease:demo")
+	if err != nil {
+		t.Fatalf("GetControlLease() 返回错误: %v", err)
+	}
+	if lease.Found {
+		t.Error("期望 found=false")
+	}
+	if lease.StatusCode != LeaseStatusDisabled {
+		t.Errorf("期望 status_code=DISABLED，得到 %s", lease.StatusCode)
+	}
+}
+
+func TestGetControlLeaseOK(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		json.NewEncoder(w).Encode(ControlLease{
+			Found: true, Key: "lease/demo", Owner: "node-1", Generation: 4,
+			ExpiresAtUnixMS: 1_700_000_000_000, LastRequestID: "req-1",
+			StatusCode: LeaseStatusOK,
+		})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	lease, err := c.GetControlLease("lease/demo")
+	if err != nil {
+		t.Fatalf("GetControlLease() 返回错误: %v", err)
+	}
+	if gotPath != "/api/cluster/control/leases/lease%2Fdemo" && gotPath != "/api/cluster/control/leases/lease/demo" {
+		t.Errorf("路径不正确: %s", gotPath)
+	}
+	if lease.Generation != 4 || lease.Owner != "node-1" {
+		t.Errorf("期望 generation=4 owner=node-1，得到 %+v", lease)
+	}
+}
+
 // ── 错误处理 ─────────────────────────────────
 
 func TestHttpError(t *testing.T) {
@@ -430,5 +660,24 @@ func TestAuthHeader(t *testing.T) {
 	expected := "Bearer my-token"
 	if receivedToken != expected {
 		t.Errorf("期望 Authorization=%s，得到 %s", expected, receivedToken)
+	}
+}
+
+func TestWorkspaceHeader(t *testing.T) {
+	// GET /api/sops/{id} 要求 X-Sisyphus-Workspace-Id；验证 Client.WorkspaceID 生效
+	var receivedWorkspace string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedWorkspace = r.Header.Get("X-Sisyphus-Workspace-Id")
+		json.NewEncoder(w).Encode(SopDetail{ID: "sop1", Name: "SOP 1"})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "")
+	c.WorkspaceID = "proj1"
+	if _, err := c.GetSOP("sop1"); err != nil {
+		t.Fatalf("GetSOP() 返回错误: %v", err)
+	}
+	if receivedWorkspace != "proj1" {
+		t.Errorf("期望 X-Sisyphus-Workspace-Id=proj1，得到 %q", receivedWorkspace)
 	}
 }

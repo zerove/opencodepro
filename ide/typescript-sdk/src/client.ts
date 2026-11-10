@@ -1,29 +1,52 @@
 // Sisyphus TypeScript SDK — REST API 客户端
+//
+// 端点契约以 `crates/sisyphus-bridge/src/http/` 为准。特别注意：
+//   POST /api/execute      → 工具执行（tool_id / args_json）
+//   POST /api/execute/goal → SOP 目标执行（goal / sop_id）
 
 import type {
   SisyphusConfig,
   HealthResponse,
   StateEntry,
   SearchResult,
-  Session,
-  ExecutionResult,
+  SessionSummary,
+  SessionDetail,
+  GoalExecuteResult,
+  ToolExecuteResult,
+  SopDetail,
+  SkillEntry,
   AnomalyReport,
   SharedExperience,
   ExperienceShareResult,
+  ClusterStatus,
+  ControlLease,
 } from './types';
 
 const DEFAULT_BASE_URL = 'http://localhost:8080';
 const DEFAULT_TIMEOUT = 30_000;
 
+/** 服务端返回非 2xx 时抛出的错误，携带 HTTP 状态码。 */
+export class SisyphusApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'SisyphusApiError';
+    this.status = status;
+  }
+}
+
 export class SisyphusClient {
   private baseUrl: string;
   private timeout: number;
   private authToken?: string;
+  private workspaceId?: string;
 
   constructor(config: SisyphusConfig = {}) {
     this.baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
     this.timeout = config.timeoutMs || DEFAULT_TIMEOUT;
     this.authToken = config.authToken;
+    this.workspaceId = config.workspaceId;
   }
 
   private async request<T>(
@@ -37,6 +60,9 @@ export class SisyphusClient {
     if (this.authToken) {
       headers['Authorization'] = `Bearer ${this.authToken}`;
     }
+    if (this.workspaceId) {
+      headers['X-Sisyphus-Workspace-Id'] = this.workspaceId;
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeout);
@@ -45,18 +71,21 @@ export class SisyphusClient {
       const resp = await fetch(`${this.baseUrl}${path}`, {
         method,
         headers,
-        body: body ? JSON.stringify(body) : undefined,
+        body: body === undefined ? undefined : JSON.stringify(body),
         signal: controller.signal,
       });
 
       if (!resp.ok) {
         const text = await resp.text().catch(() => '');
-        throw new Error(
+        throw new SisyphusApiError(
+          resp.status,
           `Sisyphus API error ${resp.status}: ${text || resp.statusText}`,
         );
       }
 
-      return (await resp.json()) as T;
+      // 201/204 等成功响应可能没有响应体（例如技能安装）。
+      const text = await resp.text();
+      return (text ? JSON.parse(text) : undefined) as T;
     } finally {
       clearTimeout(timer);
     }
@@ -70,27 +99,25 @@ export class SisyphusClient {
 
   // ── 状态 CRUD ─────────────────────────────────
 
-  async getState(
-    projectId: string,
-    key: string,
-  ): Promise<StateEntry | null> {
+  async getState(projectId: string, key: string): Promise<StateEntry | null> {
     try {
       return await this.request<StateEntry>(
         'GET',
         `/api/state/${encodeURIComponent(key)}?project_id=${encodeURIComponent(projectId)}`,
       );
-    } catch (e: any) {
-      if (e.message?.includes('404')) return null;
+    } catch (e) {
+      if (e instanceof SisyphusApiError && e.status === 404) return null;
       throw e;
     }
   }
 
+  /** 写入状态（服务端返回 204，无响应体）。 */
   async setState(
     projectId: string,
     key: string,
     value: unknown,
   ): Promise<void> {
-    await this.request('PUT', `/api/state/${encodeURIComponent(key)}`, {
+    await this.request<undefined>('PUT', `/api/state/${encodeURIComponent(key)}`, {
       project_id: projectId,
       value,
     });
@@ -117,32 +144,141 @@ export class SisyphusClient {
 
   // ── 会话 ────────────────────────────────────
 
-  async listSessions(): Promise<Session[]> {
-    return this.request<Session[]>('GET', '/api/sessions');
+  async listSessions(): Promise<SessionSummary[]> {
+    return this.request<SessionSummary[]>('GET', '/api/sessions');
   }
 
-  async getSession(id: string): Promise<Session | null> {
+  async getSession(id: string): Promise<SessionDetail | null> {
     try {
-      return await this.request<Session>(
+      return await this.request<SessionDetail>(
         'GET',
         `/api/sessions/${encodeURIComponent(id)}`,
       );
-    } catch (e: any) {
-      if (e.message?.includes('404')) return null;
+    } catch (e) {
+      if (e instanceof SisyphusApiError && e.status === 404) return null;
       throw e;
     }
   }
 
+  async createSession(name: string): Promise<SessionDetail> {
+    return this.request<SessionDetail>('POST', '/api/sessions', { name });
+  }
+
+  /** 向会话追加一条消息，返回更新后的会话详情。 */
+  async addMessage(
+    sessionId: string,
+    role: string,
+    content: string,
+  ): Promise<SessionDetail> {
+    return this.request<SessionDetail>(
+      'POST',
+      `/api/sessions/${encodeURIComponent(sessionId)}/messages`,
+      { role, content },
+    );
+  }
+
   // ── 执行 ───────────────────────────────────
 
+  /**
+   * 通过 SOP 执行认知目标（`POST /api/execute/goal`）。
+   *
+   * 注意：`/api/execute` 是**工具**执行端点，不是 SOP 执行；旧版本 SDK 把
+   * 两者混为一谈，请求体会被服务端拒绝。
+   */
   async executeSop(
     sopId: string,
-    context?: Record<string, unknown>,
-  ): Promise<ExecutionResult> {
-    return this.request<ExecutionResult>('POST', '/api/execute', {
-      sop_id: sopId,
-      context: context || {},
+    goal: string,
+    projectId?: string,
+    eventTx?: boolean,
+  ): Promise<GoalExecuteResult> {
+    const body: Record<string, unknown> = { sop_id: sopId, goal };
+    if (projectId !== undefined) body['project_id'] = projectId;
+    if (eventTx !== undefined) body['event_tx'] = eventTx;
+    return this.request<GoalExecuteResult>('POST', '/api/execute/goal', body);
+  }
+
+  /**
+   * 按工具 ID 执行工具（`POST /api/execute`）。
+   *
+   * `argsJson` 是工具参数的 JSON **字符串**；`fuelLimit` 传 0 或省略表示
+   * 使用服务端默认值。
+   */
+  async executeTool(
+    toolId: string,
+    argsJson: string = '{}',
+    fuelLimit: number = 0,
+  ): Promise<ToolExecuteResult> {
+    const body: Record<string, unknown> = {
+      tool_id: toolId,
+      args_json: argsJson,
+    };
+    if (fuelLimit > 0) body['fuel_limit'] = fuelLimit;
+    return this.request<ToolExecuteResult>('POST', '/api/execute', body);
+  }
+
+  // ── SOP 管理 ───────────────────────────────
+
+  /** 返回可用的 SOP ID 列表（服务端返回字符串数组）。 */
+  async listSops(): Promise<string[]> {
+    return this.request<string[]>('GET', '/api/sops');
+  }
+
+  /**
+   * 获取单个 SOP 的配置（`GET /api/sops/{id}`）。
+   *
+   * 该端点按工作区隔离：服务端要求 `X-Sisyphus-Workspace-Id` 头，
+   * 因此在构造器中配置 `workspaceId`（或改用支持传工作区的调用方式），
+   * 否则服务端返回 400。
+   */
+  async getSop(sopId: string): Promise<SopDetail> {
+    return this.request<SopDetail>(
+      'GET',
+      `/api/sops/${encodeURIComponent(sopId)}`,
+    );
+  }
+
+  // ── 技能 ─────────────────────────────────
+
+  async listSkills(): Promise<SkillEntry[]> {
+    return this.request<SkillEntry[]>('GET', '/api/skills');
+  }
+
+  /** 安装远端技能（`POST /api/skills/install`）。成功时服务端返回 201 且无响应体。 */
+  async installSkill(skillId: string): Promise<void> {
+    await this.request<undefined>('POST', '/api/skills/install', {
+      skill_id: skillId,
     });
+  }
+
+  // ── 认证 ─────────────────────────────────
+
+  async validateAuth(apiKey: string): Promise<boolean> {
+    const resp = await this.request<{ valid: boolean; message: string }>(
+      'POST',
+      '/api/auth/validate',
+      { api_key: apiKey },
+    );
+    return resp?.valid === true;
+  }
+
+  // ── 集群 / 控制面只读观测 ─────────────────
+
+  /** 读取集群协调的只读快照（`GET /api/cluster/status`）。 */
+  async clusterStatus(): Promise<ClusterStatus> {
+    return this.request<ClusterStatus>('GET', '/api/cluster/status');
+  }
+
+  /**
+   * 读取指定 key 的控制面租约（`GET /api/cluster/control/leases/{key}`）。
+   *
+   * 该端点只读。控制面未启用 / 租约不存在时服务端仍返回 200，
+   * 请以 `status_code` 判定（OK / NOT_FOUND / DISABLED / UNAVAILABLE）。
+   */
+  async controlLease(key: string): Promise<ControlLease> {
+    return this.request<ControlLease>(
+      'GET',
+      `/api/cluster/control/leases/${encodeURIComponent(key)}`,
+    );
   }
 
   // ── 认知循环可观测性 ──────────────────────────
