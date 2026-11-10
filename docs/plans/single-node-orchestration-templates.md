@@ -52,6 +52,7 @@
 - `docs/examples/sop-templates/verify-sequence.json`：最小顺序模板。
 - `docs/examples/sop-templates/quality-gate-sequence.json`：顺序四步质量门骨架。
 - `docs/examples/sop-templates/parallel-explore-aggregate.json`：扇出/汇聚 DAG（`prepare -> {explore_a, explore_b} -> aggregate`），用于表达“受控探索性并行 + 汇总”的可审计编排。
+- `docs/examples/sop-templates/parallel-triple-review.json`：三路并行审查 + 汇聚 DAG（准备 → 正确性/契约/可观测性并行审查 → 汇总）。
 - `docs/examples/sop-templates/README.md`：保存、查询与使用说明（需 `X-Sisyphus-Workspace-Id`）。
 
 **实测（2026-11-10）**：`parallel_explore_aggregate_template` 通过 `POST /api/sops` 保存成功（201），可被列出/查询；CLI `sop run parallel_explore_aggregate_template`（直接 SOP 路径）执行成功并返回结果与 CognitionReport（预测路径含 `prepare -> explore_path_a -> aggregate`）。

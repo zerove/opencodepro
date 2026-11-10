@@ -17,6 +17,7 @@ pub fn run_list() -> Result<()> {
         println!("    .sisyphus/skills/");
         println!();
         println!("To install a skill:  sisyphus skill install <path-to-SKILL.md>");
+        println!("提示: 也可使用 `sisyphus doctor` 检查本地环境，或查看 docs/runbooks/single-node-tools-mcp-guide.md 了解技能/工具发现路径。");
         return Ok(());
     }
 
@@ -64,7 +65,7 @@ pub fn run_show(name: &str) -> Result<()> {
         },
         None => {
             anyhow::bail!(
-                "Skill '{}' not found. Use 'sisyphus skill list' to see available skills.",
+                "Skill '{}' not found. Use 'sisyphus skill list' to see available skills, or 'sisyphus skill install <path-to-SKILL.md>' 安装技能。",
                 name
             );
         },
