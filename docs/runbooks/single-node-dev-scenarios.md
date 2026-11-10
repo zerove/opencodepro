@@ -84,6 +84,7 @@ BASE=http://127.0.0.1:8080 BRIDGE_GRPC=http://127.0.0.1:50051 SOP_ID=verify_sop 
 | bridge 连接失败 / 超时 | 连通性 | `sisyphus doctor --http ...`；确认 `bridge_address`/`http_address`（顶层）、端口与进程 |
 | 404/400（SOP/工作区/契约） | 契约/参数 | 核对 SOP ID、`X-Sisyphus-Workspace-Id`、请求体与 `docs/runbooks/single-node-contract-guard.md` |
 | `execute/goal` 报模型/LLM 不可用 | 依赖缺失 | 改用 `sop run` 验证 DAG 执行；或补齐 LLM 配置后重试目标驱动路径 |
+| `AllIterationsPivoted` / StrategicPivot（无真实执行结果） | 认知/执行判定 | 确认节点命令可成功退出且 `Test` 输出含显式成功状态；先用 `sop run` + 确定性模板定位；再检查 LLM/反思与阈值配置 |
 | MCP/工具调用失败 | 依赖/鉴权/参数 | `sisyphus mcp info -- <connect...>` 先发现；检查凭据、网络与参数 JSON |
 | 权限/沙箱限制 | 环境 | 按 runbook 分层降级；在允许环境执行对应步骤 |
 

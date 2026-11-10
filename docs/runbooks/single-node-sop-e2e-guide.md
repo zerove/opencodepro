@@ -83,6 +83,8 @@ curl -s -X POST http://127.0.0.1:8080/api/execute/goal \
 - **400（缺工作区头）**：对需要工作区上下文的端点附加 `X-Sisyphus-Workspace-Id`。
 - **执行失败但契约正确**：检查 LLM 配置、模型可用性、工具/MCP 依赖与权限。
 - **事件未收到**：确认订阅使用正确的 `sop_id` / `sse_sop_id`，并检查 SSE 连接与过滤条件。
+- **`AllIterationsPivoted without any real execution result` / StrategicPivot**：认知循环各轮均未产出可接受的真实执行结果。排查：节点命令/工具是否真实成功、`Test` 节点输出是否含显式 `status/success/exit_code`、预测/反思与 LLM 可用性、收敛阈值与监督策略。可先用 `sisyphus sop run <id>`（直接路径）与确定性命令模板验证执行链路，再排查目标驱动 `execute/goal` 依赖。
+- **`execute/goal` 返回 LLM/审计相关错误**：目标驱动路径依赖模型与审计能力；缺配置时属可解释失败。先用 `sop run` 验证 SOP/DAG 可执行，补齐 LLM/凭据后重试。
 
 ## 6. 关联文档
 
