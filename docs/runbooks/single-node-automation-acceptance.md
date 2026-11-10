@@ -152,6 +152,8 @@ N=10 BRIDGE_BIN=./target/debug/sisyphus-bridge ./scripts/single-node-bench-sampl
 |---|---|
 | bridge 不可达 | CLI/脚本给出可操作提示（地址、doctor/readiness） |
 | SOP/参数/工作区错误 | 明确 4xx/错误信息与修正方向 |
+| `execute/goal` / composite 执行失败 | 返回可解释 `error`；命中时附带可选 `hint`（HTTP），SDK/CLI/TUI 应展示或暴露 hint 与恢复建议 |
+| `sop run`（gRPC/CLI）失败 | CLI/TUI 输出错误并按模式给出 StrategicPivot/LLM 相关可操作提示 |
 | `execute/goal` LLM 依赖缺失 | 可解释错误（含 `hint` 时优先展示），建议改用 `sop run` 或补齐配置 |
 | StrategicPivot/无真实结果 | 指引检查显式成功输出、阈值/反思与执行链路 |
 | MCP/技能空态或失败 | 可发现性与下一步操作提示清晰 |
