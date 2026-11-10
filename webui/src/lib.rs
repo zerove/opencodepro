@@ -1646,6 +1646,24 @@ mod tests {
         assert!(graph.edges.is_empty());
     }
 
+    #[test]
+    fn test_session_from_detail_maps_created_fields() {
+        let detail = SessionDetail {
+            id: "s3".into(),
+            name: "New Session".into(),
+            message_count: 2,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:01Z".into(),
+            messages: vec![],
+        };
+        let session = session_from_detail(detail, "fallback-name");
+        assert_eq!(session.id, "s3");
+        assert_eq!(session.name, "New Session");
+        assert_eq!(session.message_count, 2);
+        assert_eq!(session.created_at.as_deref(), Some("2026-01-01T00:00:00Z"));
+        assert_eq!(session.updated_at.as_deref(), Some("2026-01-01T00:00:01Z"));
+    }
+
     #[tokio::test]
     async fn test_htmx_exec_accepts_form_encoded_body() {
         // htmx 提交的是 application/x-www-form-urlencoded（`hx-vals` 只是
