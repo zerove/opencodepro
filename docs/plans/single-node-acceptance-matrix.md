@@ -9,7 +9,7 @@
 | 领域 | 能力项 | 状态 | 证据 | 备注 |
 |---|---|---|---|---|
 | 核心引擎 | 认知循环 / DAG / SOP 核心实现与单测 | ✅ 通过 | `cargo test -p sisyphus-core --lib` 116 passed | 端到端 goal 执行依赖 LLM/运行环境配置 |
-| Bridge | HTTP/gRPC 服务、路由与契约面 | ✅ 通过（主流程） | 路由与 handler 实现、契约对齐；lib 测试 179 passed | `sandboxd_client` 3 项在本环境 Permission denied（环境限制），不阻塞非沙箱主流程 |
+| Bridge | HTTP/gRPC 服务、路由与契约面 | ✅ 通过（主流程） | 路由与 handler 实现、契约对齐；lib 测试 179 passed；2026-11-10 本地实测 `GET /health`、`/api/sops`、`/api/cluster/status` 返回预期 | `sandboxd_client` 3 项在本环境 Permission denied（环境限制），不阻塞非沙箱主流程 |
 | CLI | 本地文件/命令工具 | ✅ 通过 | `read/write/glob/grep/exec` 实测（SN-01） |  |
 | CLI | 子命令体系与编译可用性 | ✅ 通过 | `cargo check -p sisyphus-cli`；`sisyphus --help` 可用 | 依赖 bridge/外部服务的子命令需按分层验收 |
 | WebUI | 页面、HTMX、契约对齐、只读观测 | ✅ 通过 | `cargo test -p sisyphus-webui` 26 passed；集群页面/HTMX/REST 端点已实现 | 实际对接需运行 bridge 并配置 `WEBUI_BRIDGE_URL` |

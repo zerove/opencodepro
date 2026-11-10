@@ -73,12 +73,12 @@ cargo run -p sisyphus-cli -- --bridge http://127.0.0.1:50051 status
 | 编号 | 项目 | 步骤 | 预期 | 证据/备注 |
 |---|---|---|---|---|
 | SN-01 | CLI 本地文件工具 | `read/write/glob/grep/exec` 对本地文件操作 | 输出正确、退出码正确 | ✅ 2026-11-10 已验证（`/tmp/opencode` 下 read/write/glob/grep/exec 均成功） |
-| SN-02 | Bridge 健康与基础接口 | 启动 bridge 后 `GET /health`、`/health/live`、`/openapi.json` | 200 与预期结构 | 待在目标环境按步骤 3.1/3.2 执行并记录；注意端口与顶层配置字段 |
-| SN-03 | SOP 列表与详情 | `GET /api/sops`、`GET /api/sops/{id}`、`GET /api/sops/{id}/dag`（需工作区头时按约定附加） | 契约与 SDK/WebUI 一致（`string[]`/detail/dag） | 契约已在建议二批次对齐；端到端以本地 bridge 实测为准 |
+| SN-02 | Bridge 健康与基础接口 | 启动 bridge 后 `GET /health`、`/health/live`、`/openapi.json` | 200 与预期结构 | ✅ 2026-11-10 本地实测（正确顶层配置 `bridge_address`/`http_address`）：`GET /health` → `{"status":"SERVING","version":"0.4.0"}` |
+| SN-03 | SOP 列表与详情 | `GET /api/sops`、`GET /api/sops/{id}`、`GET /api/sops/{id}/dag`（需工作区头时按约定附加） | 契约与 SDK/WebUI 一致（`string[]`/detail/dag） | ✅ 2026-11-10 本地实测：`GET /api/sops` → `["verify_sop"]`；详情/DAG 按 SOP 与工作区上下文进一步验收 |
 | SN-04 | 目标执行（SOP） | `POST /api/execute/goal` `{sop_id, goal}` | 返回 `{output, report}` 或可解释错误 | 依赖引擎/LLM 配置；需在具备配置的环境验证 |
 | SN-05 | 会话生命周期 | `POST /api/sessions` → `GET /api/sessions` → `GET /api/sessions/{id}` → `POST /api/sessions/{id}/messages` | 契约正确、状态可查询 | 按 bridge 实现与 SDK 契约验证 |
 | SN-06 | 技能 | `GET /api/skills`、`POST /api/skills/install` | 列表字段与安装语义（201 空体）一致 | 已有契约对齐与测试覆盖 |
-| SN-07 | 只读观测（集群/控制面） | `GET /api/cluster/status`、`GET /api/cluster/control/leases/{key}`；WebUI `/cluster` 面板 | 只读、默认安全；字段与文档一致 | ✅ WebUI/SDK/bridge 契约与测试已覆盖（本批次） |
+| SN-07 | 只读观测（集群/控制面） | `GET /api/cluster/status`、`GET /api/cluster/control/leases/{key}`；WebUI `/cluster` 面板 | 只读、默认安全；字段与文档一致 | ✅ 2026-11-10 本地实测：`GET /api/cluster/status` 返回有效 JSON（cluster/control_plane/config/consensus 等字段）；WebUI/SDK 契约与测试已覆盖 |
 | SN-08 | WebUI 契约路径 | HTMX 表单提交、SOP/DAG/技能页面 | 与 bridge 契约一致、无 415/404 误用 | ✅ WebUI 测试 26 passed |
 | SN-09 | SDK 最小调用 | TS/Py/Go 对接本地 bridge（health/sops/execute_sop 等） | 方法签名与返回符合契约 | ✅ 单元测试通过；建议补最小可运行示例（S3） |
 | SN-10 | 认知追踪/地图（如启用） | `/api/cognitive/trace`、`/api/cognitive/map/*` 等 | 端点可达、返回符合 OpenAPI | 按实际启用状态验收 |
@@ -89,6 +89,7 @@ cargo run -p sisyphus-cli -- --bridge http://127.0.0.1:50051 status
 - `cargo test -p sisyphus-webui`：26 passed
 - `cargo check -p sisyphus-cli`：通过；`sisyphus --help` 可用
 - CLI 本地工具：`read/write/glob/grep/exec` 实测通过（SN-01）
+- Bridge 本地实测（正确顶层配置）：`GET /health` → `{"status":"SERVING","version":"0.4.0"}`；`GET /api/sops` → `["verify_sop"]`；`GET /api/cluster/status` 返回有效只读快照（SN-02/SN-03/SN-07）
 - SDK：Go `go test ./...`、Python 38 passed、TS 34 passed（建议二批次）
 - 门禁：`cargo check-all`、`cargo fmt --all --check`、`make audit`、相关 clippy 通过（以批次记录为准）
 
