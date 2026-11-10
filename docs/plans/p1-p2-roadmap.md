@@ -53,7 +53,7 @@
 - P1-C/P1-E：新增 `docs/runbooks/single-node-typical-workflow.md`、`docs/runbooks/single-node-sop-e2e-guide.md`、`docs/examples/single-node-sdk-examples.md`（场景化与端到端指引）；补充 `sop run verify_sop` 成功与 `execute/goal` 无 LLM 可解释错误的路径差异实测；新增 `scripts/single-node-demo-flow.sh` 与 `sisyphus sop show`（HTTP 详情查看）。
 - P1-A：新增 `docs/runbooks/single-node-sessions-and-tasks.md`（本地 CLI 会话 vs bridge 服务端会话与任务流）。
 - P1-B：新增 `docs/runbooks/single-node-tools-mcp-guide.md`（工具/MCP 可发现性与使用路径）；CLI 增强 `sop list`/命令引导与 `quickstart` 指引。
-- P1-D：`fix(cli): 优化 bridge 不可达时的错误提示` 已落地；新增 `sisyphus doctor`（本地+gRPC/HTTP 诊断）与 `sisyphus quickstart`（上手引导）；`docs/runbooks/single-node-tools-and-dependencies.md` 补充错误处理与反馈一致性指引。
+- P1-D：`fix(cli): 优化 bridge 不可达时的错误提示` 已落地；新增 `sisyphus doctor`（本地+gRPC/HTTP 诊断，含关键脚本/文档与 `/health/live`、`/openapi.json` 检查）与 `sisyphus quickstart`（上手引导）；`docs/runbooks/single-node-tools-and-dependencies.md` 补充错误处理与反馈一致性指引。
 - P1-F：新增 `docs/runbooks/single-node-contract-guard.md`，并落地 `scripts/single-node-contract-smoke.sh` 与 `make smoke-single-node`/`make demo-single-node`/`make readiness-check` 可执行入口；runbook/验收矩阵持续补充运行时实测证据。
 
 **P1 里程碑**：单机“按文档可完成典型任务流”的体验达标；契约与门禁持续全绿；差异化能力（SOP/观测）可被清晰感知。
@@ -68,10 +68,10 @@
 | P2-D | 控制面准入（条件触发，外部前提） | 后置 | 专用 runner 真实网络硬件 | ADR-019 证据矩阵 → 准入评审（不改变默认关闭策略） |
 
 **进展（2026-11-10）**：
-- P2-A：新增 `docs/plans/single-node-orchestration-templates.md` 与 `docs/examples/sop-templates/`（顺序与扇出/汇聚“受控并行探索”模板）；`parallel_explore_aggregate_template` 已实测保存/查询/`sop run` 执行成功并产出可观测 CognitionReport。
+- P2-A：新增 `docs/plans/single-node-orchestration-templates.md` 与 `docs/examples/sop-templates/`（顺序、扇出/汇聚、三路并行审查等受控并行探索模板）；`parallel_explore_aggregate_template` 已实测保存/查询/`sop run` 执行成功并产出可观测 CognitionReport。
 - P2-B：新增 `docs/plans/single-node-performance-baseline.md` 与 `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`（dev/release bridge 就绪与只读端点延迟、CLI 命令耗时采样；release `--help` 存在波动已记录复测说明）。
 - P2-C：新增/增强 `docs/examples/single-node-integration-samples.md`；提供 `scripts/single-node-readiness-check.sh`（实测）与 `scripts/single-node-demo-flow.sh`（端到端发现→执行→观测流程实测）可运行样例，配合 `scripts/single-node-contract-smoke.sh`。
-- P1-F：契约守护补充可执行冒烟清单与自动化入口（脚本 + Make 目标）；`single-node-contract-smoke.sh` 支持 `SMOKE_BRIDGE_HTTP` 可选运行时就绪冒烟。
+- P1-F：契约守护补充可执行冒烟清单与自动化入口（脚本 + Make 目标）；`single-node-contract-smoke.sh` 支持 `--quick/--full` 分层与 `SMOKE_BRIDGE_HTTP` 可选运行时就绪冒烟；`make smoke-single-node-quick` 提供快速回归入口。
 - P2-D：仍为**外部后置**（专用 runner 真实网络证据与 ADR-019 准入），不阻塞单机 P1/P2 可实施交付；`cluster.control_plane.enabled` 保持 `false`。
 
 **P2 里程碑**：形成可对外说明的差异化能力组合（编排+观测+集成）；性能基线可回归；控制面仅在证据完备后推进。

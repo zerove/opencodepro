@@ -44,8 +44,8 @@
 ## 5. 单机契约冒烟（可执行，P1-F 落地）
 
 **自动化入口**：
-- `scripts/single-node-contract-smoke.sh`（按环境可用性执行 Rust 门禁/关键测试、CLI 本地冒烟、SDK 冒烟；可选 `SMOKE_BRIDGE_HTTP=http://127.0.0.1:8080` 启用 bridge 运行时就绪冒烟；失败需区分回归与环境限制）。
-- `make smoke-single-node`：调用上述脚本（P1-F 可执行回归入口）。
+- `scripts/single-node-contract-smoke.sh [--quick|--full]`（按环境可用性执行门禁/冒烟；`--quick` 跳过重型测试与 SDK 冒烟，适合快速回归；可选 `SMOKE_BRIDGE_HTTP=http://127.0.0.1:8080` 启用 bridge 运行时就绪检查；失败需区分回归与环境限制）。
+- `make smoke-single-node` / `make smoke-single-node-quick`：调用上述脚本（全量/快速回归入口）。
 - `scripts/single-node-readiness-check.sh`：bridge 运行时就绪与只读观测检查（`/health`、`/api/sops`、`/api/cluster/status`），适用于 P2-C 集成与运维前置。
 
 在具备对应工具链/环境时，也可按序手动执行以下检查（记录结果与提交号）：

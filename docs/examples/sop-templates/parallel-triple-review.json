@@ -1,0 +1,62 @@
+{
+  "id": "parallel_triple_review_template",
+  "name": "Parallel Triple Review and Aggregate Template",
+  "version": "1.0.0",
+  "config": {
+    "nodes": [
+      {
+        "name": "prepare_context",
+        "kind": {
+          "Test": {
+            "command": "echo '[prepare] collect scope and constraints'",
+            "workdir": null
+          }
+        }
+      },
+      {
+        "name": "review_correctness",
+        "kind": {
+          "Test": {
+            "command": "echo '[review] correctness and behavior checks'",
+            "workdir": null
+          }
+        }
+      },
+      {
+        "name": "review_contracts",
+        "kind": {
+          "Test": {
+            "command": "echo '[review] API/contract and compatibility checks'",
+            "workdir": null
+          }
+        }
+      },
+      {
+        "name": "review_observability",
+        "kind": {
+          "Test": {
+            "command": "echo '[review] tests, logs, and observability checks'",
+            "workdir": null
+          }
+        }
+      },
+      {
+        "name": "aggregate_report",
+        "kind": {
+          "Test": {
+            "command": "echo '[aggregate] produce consolidated review summary'",
+            "workdir": null
+          }
+        }
+      }
+    ],
+    "edges": [
+      [0, 1],
+      [0, 2],
+      [0, 3],
+      [1, 4],
+      [2, 4],
+      [3, 4]
+    ]
+  }
+}

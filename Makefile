@@ -522,10 +522,14 @@ readiness-check:
 # — Single-node contract/readiness smoke (P1-F/P2-C) —
 
 smoke-single-node:
-	@echo "━━━ Single-node contract smoke (P1-F) ━━━"
-	@./scripts/single-node-contract-smoke.sh
+	@echo "━━━ Single-node contract smoke (P1-F, full) ━━━"
+	@./scripts/single-node-contract-smoke.sh --full
 
-.PHONY: smoke-single-node
+smoke-single-node-quick:
+	@echo "━━━ Single-node contract smoke (P1-F, quick) ━━━"
+	@./scripts/single-node-contract-smoke.sh --quick
+
+.PHONY: smoke-single-node smoke-single-node-quick
 
 # — E2E smoke test (bridge daemon + stress_test) —
 

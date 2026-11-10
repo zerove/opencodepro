@@ -5,6 +5,7 @@ pub fn handle_quickstart(bridge_addr: &str, http_addr: &str) -> Result<()> {
     println!("== 1. 诊断与就绪 ==");
     println!("  sisyphus doctor --http {http_addr}");
     println!("  BASE={http_addr} ./scripts/single-node-readiness-check.sh");
+    println!("  ./scripts/single-node-contract-smoke.sh --quick  # 快速门禁+本地冒烟（可选 SMOKE_BRIDGE_HTTP={http_addr}）");
     println!();
     println!("== 2. 启动服务（如需 bridge/WebUI 能力） ==");
     println!(

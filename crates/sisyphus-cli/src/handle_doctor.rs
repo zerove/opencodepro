@@ -45,6 +45,24 @@ pub async fn handle_doctor(
         warn("数据目录不存在（首次运行命令时可能自动创建）");
     }
 
+    let key_paths = [
+        ("scripts/single-node-readiness-check.sh", "就绪检查脚本"),
+        ("scripts/single-node-demo-flow.sh", "端到端演示脚本"),
+        ("scripts/single-node-contract-smoke.sh", "契约冒烟脚本"),
+        ("docs/examples/sop-templates/README.md", "SOP 模板资产说明"),
+        (
+            "docs/runbooks/single-node-operation-and-verification.md",
+            "单机运行与验收文档",
+        ),
+    ];
+    for (p, label) in key_paths {
+        if Path::new(p).exists() {
+            ok(format!("{label}: {p}"));
+        } else {
+            warn(format!("{label}缺失: {p}"));
+        }
+    }
+
     println!("\n== Bridge gRPC ==");
     match sisyphus_cli::bridge::BridgeClient::connect(bridge_addr).await {
         Ok(mut client) => {
@@ -63,7 +81,9 @@ pub async fn handle_doctor(
         },
         Err(e) => {
             fail(format!("gRPC 不可达: {e}"));
-            println!("  建议: 启动 bridge（例如 `cargo run -p sisyphus-bridge --bin sisyphus-bridge`），并检查 --bridge / SISYPHUS_CONFIG 中 bridge_address。");
+            println!(
+                "  建议: 启动 bridge（例如 `cargo run -p sisyphus-bridge --bin sisyphus-bridge`），并检查 --bridge / SISYPHUS_CONFIG 中 bridge_address。"
+            );
         },
     }
 
@@ -75,6 +95,8 @@ pub async fn handle_doctor(
             Ok(client) => {
                 for (name, path) in [
                     ("health", "/health"),
+                    ("health_live", "/health/live"),
+                    ("openapi", "/openapi.json"),
                     ("sops", "/api/sops"),
                     ("cluster_status", "/api/cluster/status"),
                 ] {
@@ -91,10 +113,10 @@ pub async fn handle_doctor(
                                     preview.replace('\n', " ")
                                 ));
                             } else {
-                                warn(format!("{name}: HTTP {}", status.as_u16()));
+                                warn(format!("{name}: HTTP {} ({url})", status.as_u16()));
                             }
                         },
-                        Err(e) => warn(format!("{name}: 请求失败: {e}")),
+                        Err(e) => warn(format!("{name}: 请求失败: {e} ({url})")),
                     }
                 }
             },
@@ -108,6 +130,7 @@ pub async fn handle_doctor(
     println!("  - 快速上手: sisyphus quickstart");
     println!("  - 端到端演示: ./scripts/single-node-demo-flow.sh（需 bridge HTTP+gRPC 可达）");
     println!("  - 就绪检查:   ./scripts/single-node-readiness-check.sh");
-    println!("  - 契约冒烟:   make smoke-single-node（耗时较长）");
+    println!("  - 快速契约冒烟: ./scripts/single-node-contract-smoke.sh --quick（可选 SMOKE_BRIDGE_HTTP=...）");
+    println!("  - 全量契约冒烟: make smoke-single-node（耗时较长）");
     Ok(())
 }
