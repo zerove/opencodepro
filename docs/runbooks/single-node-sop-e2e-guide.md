@@ -31,7 +31,11 @@ sisyphus --bridge http://127.0.0.1:50051 sop list
 sisyphus --bridge http://127.0.0.1:50051 sop run <sop-id>
 ```
 
-> `sop run` 的具体行为与参数以当前 CLI 实现为准；执行效果依赖引擎配置。
+**实测（2026-11-10，单机 bridge）**：
+- `sop list` → `verify_sop (2 nodes)`
+- `sop run verify_sop` → 返回 `Result: "Test Passed: echo hi\nStdout: hi\n"` 与 `CognitionReport`（无 LLM 时 critique 不可用但 SOP 执行可完成）
+
+> `sop run` 为直接 SOP 执行路径；执行效果依赖引擎/执行器配置。
 
 ## 3. 执行（目标/SOP）
 
@@ -47,6 +51,8 @@ curl -s -X POST http://127.0.0.1:8080/api/execute/goal \
   }'
 # 预期：{"output": "...", "report": ...} 或可解释错误
 ```
+
+**说明（实测）**：`execute/goal` 为目标驱动路径，可能触发 LLM 审计/推理；在无可用 LLM 配置时可能返回可解释错误（如模型不可用/审计失败）。与 CLI `sop run`（直接 SOP 执行）是不同路径，验收时需区分。
 
 ### 3.2 SDK
 

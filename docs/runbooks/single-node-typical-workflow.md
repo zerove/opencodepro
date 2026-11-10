@@ -54,21 +54,25 @@ curl -s http://127.0.0.1:8080/api/cluster/control/leases/lease:demo
 
 **验收要点**：端点可达、返回与契约一致；WebUI 面板在 bridge 不可达时降级显示默认快照（只读）。
 
-## 场景 C：SOP 目标执行（需配置）
+## 场景 C：SOP 执行（按路径区分）
 
-适用：通过 bridge 执行目标（SOP/DAG + 认知循环）。
+适用：通过 bridge 执行 SOP/目标（SOP/DAG + 认知循环）。
 
 ```bash
-# REST：POST /api/execute/goal
+# REST：POST /api/execute/goal（目标驱动，可能依赖 LLM 审计/推理）
 curl -s -X POST http://127.0.0.1:8080/api/execute/goal \
   -H 'Content-Type: application/json' \
   -d '{"sop_id":"<sop-id>","goal":"完成示例目标"}'
-# 预期：{"output":..., "report":...} 或可解释错误（依赖/配置缺失时不应静默成功）
+# 预期：{"output":..., "report":...} 或可解释错误（无可用 LLM 时可能失败）
+
+# CLI：直接 SOP 执行（经 gRPC bridge）
+# sisyphus --bridge http://127.0.0.1:50051 sop run <sop-id>
+# 实测：verify_sop 可在无 LLM 配置下完成 Test 节点执行并返回结果/CognitionReport
 ```
 
 SDK 调用方式见 `docs/examples/single-node-sdk-examples.md`（`executeSop/execute_sop/ExecuteSOP`）。
 
-**验收要点**：在具备 LLM/引擎配置的环境下端到端成功；无配置时返回明确错误。
+**验收要点**：区分 `execute/goal` 与 `sop run` 路径；在具备配置的环境下端到端成功，无配置时返回明确错误（不静默成功）。
 
 ## 场景 D：会话与执行联动（经 bridge）
 
