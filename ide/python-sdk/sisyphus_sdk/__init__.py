@@ -275,7 +275,18 @@ class ControlLease:
 
 class SisyphusError(Exception):
     """Sisyphus SDK 基础错误。"""
-    pass
+
+    def __init__(
+        self,
+        message: str,
+        status: Optional[int] = None,
+        hint: Optional[str] = None,
+        body: Any = None,
+    ):
+        super().__init__(message)
+        self.status = status
+        self.hint = hint
+        self.body = body
 
 
 def _build(cls, data):
@@ -331,7 +342,26 @@ class SisyphusClient:
                     return None
                 return json.loads(raw.decode())
         except HTTPError as e:
-            raise SisyphusError(f"API error {e.code}: {e.read().decode()}")
+            raw_body = e.read().decode(errors="replace")
+            err_msg = raw_body
+            hint = None
+            parsed = None
+            if raw_body:
+                try:
+                    parsed = json.loads(raw_body)
+                    if isinstance(parsed, dict):
+                        if isinstance(parsed.get("error"), str):
+                            err_msg = parsed["error"]
+                        if isinstance(parsed.get("hint"), str):
+                            hint = parsed["hint"]
+                except Exception:
+                    parsed = None
+            msg = f"API error {e.code}: {err_msg}"
+            if hint:
+                msg += f" (hint: {hint})"
+            raise SisyphusError(msg, status=e.code, hint=hint, body=parsed if parsed is not None else raw_body)
+        except SisyphusError:
+            raise
         except Exception as e:
             raise SisyphusError(f"Request failed: {e}")
 

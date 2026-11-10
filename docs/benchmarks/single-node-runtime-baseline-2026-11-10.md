@@ -90,3 +90,25 @@
 | `GET /api/sops` 延迟 (s) | 10 | 0.002408 | 0.0026694 | 0.002902 | N=10（同上批次聚合） |
 
 > 已获得 N=10 聚合样本（非单次连续命令，受环境中断影响分批采集）；仍建议在稳定专用环境按固定冷热条件做连续 `N>=10` 复测并区分 debug/release 后用于回归判定。
+
+## 补充：Release 多次采样（2026-11-10，同环境参考）
+
+> 二进制：`target/release/sisyphus`、`target/release/sisyphus-bridge`（本地现有产物）；采样过程受环境中断影响时采用分步/手工循环采集。
+
+### Release CLI（`scripts/single-node-bench-sample.sh cli`，N=5）
+
+| 命令 | n | min (s) | avg (s) | max (s) | 备注 |
+|---|---:|---:|---:|---:|---|
+| `sisyphus --help` | 5 | 0.000000 | 0.174000 | 0.870000 | `/usr/bin/time -p` 粒度较粗，存在单次高值 |
+| `sisyphus exec 'echo ok'` | 5 | 0.000000 | 0.000000 | 0.000000 | 低于计时粒度 |
+| `sisyphus --data-dir /tmp/opencode/bench-sn session list` | 5 | 0.000000 | 0.000000 | 0.000000 | 低于计时粒度 |
+
+### Release Bridge（手工循环采样，N=5，dummy embedding，`cluster.enabled=false`）
+
+| 指标 | n | min | avg | max | 备注 |
+|---|---:|---:|---:|---:|---|
+| Bridge 启动 → `/health` 就绪 (ms) | 4* | 124 | 827.25 | 1126 | 首轮计时样本异常（-1885ms）已剔除；HTTP `127.0.0.1:15531` |
+| `GET /health` 延迟 (s) | 5 | 0.001137 | 0.0012678 | 0.001455 | 本地回环 |
+| `GET /api/sops` 延迟 (s) | 5 | 0.001535 | 0.0017432 | 0.002069 | 本地回环 |
+
+> Release 与 debug 不可直接横比；CLI 需更高精度计时与冷热分离复测，Bridge 建议在稳定环境连续采样并记录构建/配置/负载条件。

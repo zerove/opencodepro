@@ -263,6 +263,21 @@ type ControlLease struct {
 	StatusMessage   string `json:"status_message"`
 }
 
+// APIError 表示服务端返回的 HTTP 错误，可能包含可操作 hint。
+type APIError struct {
+	Status  int
+	Message string
+	Hint    string
+	Raw     string
+}
+
+func (e *APIError) Error() string {
+	if e.Hint != "" {
+		return fmt.Sprintf("API error %d: %s (hint: %s)", e.Status, e.Message, e.Hint)
+	}
+	return fmt.Sprintf("API error %d: %s", e.Status, e.Message)
+}
+
 // Health 检查 bridge 状态。
 func (c *Client) Health() (*HealthResponse, error) {
 	var h HealthResponse
@@ -519,7 +534,19 @@ func (c *Client) do(req *http.Request, result interface{}) error {
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+		raw := string(body)
+		msg := raw
+		hint := ""
+		var parsed map[string]interface{}
+		if err := json.Unmarshal(body, &parsed); err == nil {
+			if v, ok := parsed["error"].(string); ok && v != "" {
+				msg = v
+			}
+			if v, ok := parsed["hint"].(string); ok && v != "" {
+				hint = v
+			}
+		}
+		return &APIError{Status: resp.StatusCode, Message: msg, Hint: hint, Raw: raw}
 	}
 
 	if result != nil {

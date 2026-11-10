@@ -25,14 +25,18 @@ import type {
 const DEFAULT_BASE_URL = 'http://localhost:8080';
 const DEFAULT_TIMEOUT = 30_000;
 
-/** 服务端返回非 2xx 时抛出的错误，携带 HTTP 状态码。 */
+/** 服务端返回非 2xx 时抛出的错误，携带 HTTP 状态码与可选 hint。 */
 export class SisyphusApiError extends Error {
   readonly status: number;
+  readonly hint?: string;
+  readonly body?: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, hint?: string, body?: unknown) {
     super(message);
     this.name = 'SisyphusApiError';
     this.status = status;
+    this.hint = hint;
+    this.body = body;
   }
 }
 
@@ -77,10 +81,25 @@ export class SisyphusClient {
 
       if (!resp.ok) {
         const text = await resp.text().catch(() => '');
-        throw new SisyphusApiError(
-          resp.status,
-          `Sisyphus API error ${resp.status}: ${text || resp.statusText}`,
-        );
+        let parsed: unknown = undefined;
+        let errMsg = text || resp.statusText;
+        let hint: string | undefined;
+        if (text) {
+          try {
+            parsed = JSON.parse(text);
+            if (parsed && typeof parsed === 'object') {
+              const obj = parsed as Record<string, unknown>;
+              if (typeof obj['error'] === 'string') errMsg = obj['error'];
+              if (typeof obj['hint'] === 'string') hint = obj['hint'];
+            }
+          } catch {
+            // keep text message
+          }
+        }
+        const message = hint
+          ? `Sisyphus API error ${resp.status}: ${errMsg} (hint: ${hint})`
+          : `Sisyphus API error ${resp.status}: ${errMsg}`;
+        throw new SisyphusApiError(resp.status, message, hint, parsed ?? text);
       }
 
       // 201/204 等成功响应可能没有响应体（例如技能安装）。
