@@ -47,7 +47,9 @@ impl BridgeClient {
         }
 
         Err(anyhow::anyhow!(
-            "Bridge at {addr} unreachable (tried IPv6 and IPv4)"
+            "无法连接到 bridge: {addr}（已尝试 IPv6/IPv4，超时 3s）。\n\
+             请确认 bridge 已启动（例如: `cargo run -p sisyphus-bridge --bin sisyphus-bridge`），\n\
+             并检查地址/端口配置（SISYPHUS_CONFIG 中 bridge_address 或 --bridge 参数）。"
         ))
     }
 
