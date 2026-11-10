@@ -56,6 +56,13 @@
 
 ### Added
 
+- **单机全功能基线与验收交付（S1–S4）**（2026-11-10）：按“引擎优先、选择性产品化、单机优先”推进单机能力闭环。
+  - S1：`docs/plans/single-node-full-functionality-audit.md`（范围定义、基线证据、能力矩阵与缺口清单）
+  - S2：`docs/runbooks/single-node-operation-and-verification.md`（单机启动、配置要点、端到端验收清单与已验证证据；CLI 本地工具 `read/write/glob/grep/exec` 实测）
+  - S3：`docs/examples/single-node-sdk-examples.md`（TS/Python/Go 最小示例）、`docs/runbooks/single-node-tools-and-dependencies.md`（工具与依赖分层说明）
+  - S4：`docs/plans/single-node-acceptance-matrix.md`（单机功能验收矩阵与结论）
+  - 边界：不包含 ADR-019 专用 runner 真实网络证据与控制面生产启用评估；`cluster.control_plane.enabled` 保持 `false`。
+
 - **三套官方 SDK 的集群/控制面只读观测方法**（2026-11-10）：TypeScript / Python / Go SDK
   新增 `clusterStatus()` / `cluster_status()` / `GetClusterStatus()`（`GET /api/cluster/status`，
   含 `config.control_plane`、`control_plane.security`（ADR-019 安全装配视图）、
