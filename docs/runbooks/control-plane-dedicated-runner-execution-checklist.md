@@ -5,6 +5,26 @@
 > [`docs/benchmarks/control-plane-dedicated-runner-evidence-2026-11-08.md`](../../benchmarks/control-plane-dedicated-runner-evidence-2026-11-08.md)（证据汇总）。
 > 边界：本清单只固化交接顺序；所有证据结论必须来自真实运行，禁止虚构。
 
+## 2026-11-10 现场执行记录（loopback N=3 TLS/mTLS 链路）
+
+> 处理「阻塞问题」时的**可执行部分**：针对 `make evidence-control-plane-tls-n3`
+> （`scripts/run-control-plane-tls-evidence-n3.sh`，loopback + 单主机多进程 N=3）
+> 的真实执行，本次已完成并通过。
+
+- **执行时间**：2026-11-10 10:07–10:09（证书生成 → 3 bridge 启动 → 收敛 → harness → JSON 落盘）。
+- **命令**：`make evidence-control-plane-tls-n3`。
+- **结果**：exit 0；输出 `✅ N=3 TLS evidence JSONs written under ./control-plane-certs-n3`。
+- **证据文件**：`control-plane-certs-n3/` 下 `harness-n3-quorum-submit-*.json` / `harness-n3-get-*.json` /
+  `harness-n3-submit-node-*.json`（bridge 配置/日志/CAs 亦在 `control-plane-certs-n3/`）。
+- **观测要点**：quorum submit `accepted=true`；`uncertain=false`；Get 租约 `status_code=OK`。
+
+### 本次执行后的交接结论
+
+- [x] N=3 TLS/mTLS 多节点证据流水线（loopback）真实执行通过（exit 0，JSON 证据落盘）。
+- [ ] 专用 runner 真实网络证据矩阵（N=3 分区注入/少数派不可提交/`QUORUM_NOT_REACHED`、leader 变更安全性、
+  TLS 长稳/证书轮换/fail-closed、回滚演练）—— 待**专用 runner（真实网络）**硬件侧执行。
+- [ ] ADR-019 准入条件满足后，方可评估 `cluster.control_plane.enabled` 生产启用（默认仍为 `false`）。
+
 ## 交接前置
 
 - [ ] 专用 runner（N=3 节点，真实网络可达，loopback 或独立网段）已准备；
