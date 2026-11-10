@@ -1079,12 +1079,26 @@ impl App {
                 self.sop_status = format!("failed: {e}");
             },
             crate::tui::background::BgOp::SopExecuted { sop_id, result } => {
-                self.sop_result = Some(result);
+                let rendered = serde_json::from_str::<serde_json::Value>(&result)
+                    .ok()
+                    .and_then(|v| serde_json::to_string_pretty(&v).ok())
+                    .unwrap_or(result);
+                self.sop_result = Some(rendered);
                 self.sop_status = format!("executed {sop_id}");
             },
             crate::tui::background::BgOp::SopExecuteFailed { sop_id, error } => {
+                let hint = if error.contains("without any real execution result")
+                    || error.contains("StrategicPivot")
+                {
+                    " 提示: 检查节点显式成功状态/阈值与反思配置；可先用 sop show/确定性模板验证。"
+                } else if error.contains("LLM") || error.contains("model") || error.contains("审计")
+                {
+                    " 提示: 可能依赖 LLM/审计能力；请检查配置与凭据。"
+                } else {
+                    ""
+                };
                 self.sop_result = None;
-                self.sop_status = format!("execute {sop_id} failed: {error}");
+                self.sop_status = format!("execute {sop_id} failed: {error}{hint}");
             },
             crate::tui::background::BgOp::SopTraceFetched { sop_id, trace } => {
                 self.sop_trace = trace
