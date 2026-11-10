@@ -17,7 +17,7 @@
    - [ ] `make gen-control-plane-test-certs ARGS="--out <DIR> --node n1 --node n2 --node n3"`
    - [ ] 私钥权限 `0600`；CA/节点证书双用途（ServerAuth+ClientAuth，SAN 含 `DNS:<n>,DNS:localhost,IP:127.0.0.1`）。
 2. **节点配置（每节点 TOML）**：`[cluster]`（enabled + peers）+ `[cluster.control_plane]`（tls_enabled / tls_ca_cert_path / tls_client_cert_path+key / tls_domain_name / submit_auth_mode / allowed_submit_subjects）。
-3. **启动 3 bridge**：`SISYPHUS_CONFIG=<cfg> SISYPHUS_BRIDGE_ADDRESS=<host>:50051 SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY=true ./target/debug/sisyphus-bridge`（独立端口；TLS 由 control_plane 装配生效）。
+3. **启动 3 bridge**：`SISYPHUS_CONFIG=<cfg> SISYPHUS_BRIDGE_ADDRESS=http://<host-or-ip>:50051 SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY=true ./target/debug/sisyphus-bridge`（独立端口；TLS 由 control_plane 装配生效）。
 4. **集群收敛 + 多数派提交**：leader 等待 `cluster_size>=2` → quorum submit/get（leader：`accepted=true / accepts>=2 / cluster_size=3`）→ get 核对。
 5. **真实网络证据矩阵**：
    - [ ] N=3 正常提交（多数派 ack）；

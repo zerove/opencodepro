@@ -4,15 +4,19 @@
 > （真实证书/SAN、真实网络证据、TLS 长稳/回滚）。
 > 边界：本 runbook 指导在**专用 runner + 真实网络**（N=3 节点，loopback 或独立网段）执行
 > TLS/mTLS 控制面证据采集；`scripts/run-control-plane-tls-evidence.sh`（`make
-> evidence-control-plane-tls`）是 **loopback 冒烟/单节点流水线**，本 runbook 用于其
-> 升级为专用 runner 真实多节点证据。
+> evidence-control-plane-tls`）是 **loopback 冒烟/单节点流水线**，
+> `scripts/run-control-plane-tls-evidence-n3.sh`（`make evidence-control-plane-tls-n3`）
+> 是 **loopback N=3 多节点证据流水线**；本 runbook 用于将该流水线升级为专用 runner 真实多节点
+> 证据。真实证书/SAN/secret 必须由专用 runner 侧准备（测试 PKI 禁止用于生产信任链）。
 
 ## 前置条件
 
 1. 专用 runner（N=3 节点，真实网络可达）已就绪，且：
    - `openssl`/`rcgen` PKI 工具可用（推荐 `make gen-control-plane-test-certs ARGS="--out <DIR> --node <n1> --node <n2> --node <n3>"`）；
    - `cargo build -p sisyphus-bridge --no-default-features` 完成；
-   - bridge 可监听独立端口（`SISYPHUS_BRIDGE_ADDRESS=<host>:50051`）。
+   - bridge 可监听独立端口（`SISYPHUS_BRIDGE_ADDRESS=http://<host-or-ip>:50051`；
+     须带 `http://` 前缀并填写可解析为 IP 的 host/port，满足 `[bridge].bridge_address`
+     `validate_address` 要求；专用 runner 端口规划见交接清单）。
 
 ## 步骤 1：生成 PKI（仅测试用途，禁止用于生产信任链）
 
@@ -50,7 +54,7 @@ allowed_submit_subjects = ["DNS:n1", "DNS:n2", "DNS:n3"]
 
 ## 步骤 3：启动 N 个 bridge（TLS 共享 gRPC 端口语义）
 
-- 每个节点主机起一个 bridge：`SISYPHUS_CONFIG=<cfg> SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY=true ./target/debug/sisyphus-bridge`
+- 每个节点主机起一个 bridge：`SISYPHUS_CONFIG=<cfg> SISYPHUS_BRIDGE_ADDRESS=http://<host-or-ip>:50051 SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY=true ./target/debug/sisyphus-bridge`（独立端口；TLS 由 control_plane 装配生效）。
 - TLS 应用于该 bridge 的 gRPC server（共享端口内的 server TLS）；`tls_enabled+wired` 时
   coordinator / `GrpcPeerProposer` 用 client mTLS 互连。
 - 等待就绪：loopback 用 `nc -z`（IPv4/IPv6）轮询；真实网段用连接探测。
