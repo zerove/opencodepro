@@ -122,13 +122,23 @@ impl RuntimeSupervisor for SisyphusSupervisor {
         // P0-3：显式状态字段优先（status/success/exit_code），
         // 无显式状态时才回退到文本嗅探。
         let output_str = output.0.as_str().unwrap_or("");
+        let explicit_ok = output.explicit_status() == Some(true);
         let is_obvious_error = output.indicates_failure()
             || output_str.contains("Exception")
             || output_str.contains("ResourceExhausted");
 
-        if !is_obvious_error && !output_str.is_empty() && self.prediction.success_probability >= 0.5
+        let has_content =
+            !output_str.is_empty() || !matches!(output.as_value(), serde_json::Value::Null);
+        if !is_obvious_error
+            && has_content
+            && (self.prediction.success_probability >= 0.5 || explicit_ok)
         {
-            tracing::info!(node = %node_name, "Fast-track: node output appears healthy, skipping LLM reflection");
+            tracing::info!(
+                node = %node_name,
+                explicit_ok,
+                success_probability = self.prediction.success_probability,
+                "Fast-track: node output appears healthy, skipping LLM reflection"
+            );
             return Ok(SupervisorDecision::Continue { deviation: 0.05 });
         }
 

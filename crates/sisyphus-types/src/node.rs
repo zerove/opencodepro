@@ -220,7 +220,7 @@ impl SOPNode for TestSOPNode {
         let result =
             self.test_executor.run_test(&self.test_command, self.workdir.as_deref()).await?;
 
-        let output_str = if result.success {
+        let message = if result.success {
             format!(
                 "Test Passed: {}\nStdout: {}",
                 self.test_command, result.stdout
@@ -234,7 +234,19 @@ impl SOPNode for TestSOPNode {
             )
         };
 
-        Ok(NodeOutput::from(Value::String(output_str)))
+        // 结构化输出：提供显式 status/success/exit_code，便于监督/反思与观测；
+        // 同时保留 message/stdout/stderr 供人读与兼容展示。
+        Ok(NodeOutput::from(serde_json::json!({
+            "status": if result.success { "ok" } else { "error" },
+            "success": result.success,
+            "exit_code": result.exit_code,
+            "command": self.test_command,
+            "message": message,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "error_summary": result.error_summary,
+            "duration_ms": result.duration_ms,
+        })))
     }
     fn name(&self) -> &str {
         &self.name

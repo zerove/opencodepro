@@ -62,6 +62,6 @@
 **实测（2026-11-10）**：
 - `parallel_explore_aggregate_template`：保存（201）、可查询，CLI `sop run` 成功并返回 CognitionReport（预测路径含 `prepare -> explore_path_a -> aggregate`）。
 - `scenario_code_review_gate_template`：通过 `scripts/single-node-apply-sop-template.sh ... --run` 保存（201）并执行成功（并行审查汇聚路径可观测）。
-- `scenario_diagnose_fix_verify_template`：保存（201）并可列出/查询；在当前环境直接 `sop run` 触发认知引擎 StrategicPivot（未产出真实执行结果）而失败——表明模板结构有效，但执行效果受认知阈值/执行器配置影响，需按环境调优或替换为确定性命令/路径。
+- `scenario_diagnose_fix_verify_template`：保存（201）并可列出/查询；当前 `Test` 节点输出已结构化（显式 `status/success/exit_code`）且运行时监督对显式成功输出支持快速通过，在 debug/本地验证中直接 `sop run` 可返回真实执行结果（认知报告可能仍含偏差/未收敛记录，属反思层信号）；跨环境仍需按执行器/LLM/阈值配置验证。
 
 **模板化建议**：在骨架基础上替换为项目真实命令/节点类型，按需扩展并行分支与汇聚策略，并通过执行状态/trace/观测端点关联每步结果；失败路径需可解释。

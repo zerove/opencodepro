@@ -68,7 +68,7 @@
 | P2-D | 控制面准入（条件触发，外部前提） | 后置 | 专用 runner 真实网络硬件 | ADR-019 证据矩阵 → 准入评审（不改变默认关闭策略） |
 
 **进展（2026-11-10）**：
-- P2-A：新增 `docs/plans/single-node-orchestration-templates.md` 与 `docs/examples/sop-templates/`（顺序、扇出/汇聚、三路并行审查及场景化模板）；`parallel_explore_aggregate_template` 与 `scenario_code_review_gate_template` 已实测保存/执行成功；`scenario_diagnose_fix_verify_template` 已保存可查询但执行受认知阈值/配置影响（需按环境调优）。
+- P2-A：新增 `docs/plans/single-node-orchestration-templates.md` 与 `docs/examples/sop-templates/`（顺序、扇出/汇聚、三路并行审查及场景化模板）；`parallel_explore_aggregate_template`、`scenario_code_review_gate_template`、`scenario_diagnose_fix_verify_template` 已实测保存与直接 `sop run` 可执行（`Test` 节点输出结构化 + 显式成功快速通过）；认知反思偏差/收敛表现仍受环境与阈值影响，需按配置持续验证。
 - P2-B：新增 `docs/plans/single-node-performance-baseline.md` 与 `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`（dev/release bridge 就绪与只读端点延迟、CLI 单次与多次采样 N=5 统计）；新增 `scripts/single-node-bench-sample.sh` 支持 CLI/bridge 多次采样统计（用于固定口径复测）。
 - P2-C：新增/增强 `docs/examples/single-node-integration-samples.md`；提供 `scripts/single-node-readiness-check.sh`、`single-node-demo-flow.sh`、`single-node-apply-sop-template.sh`（模板保存+执行）、`single-node-contract-smoke.sh`、`single-node-bench-sample.sh` 等可运行样例；新增 `docs/runbooks/single-node-dev-scenarios.md`（自动化开发场景手册）。
 - P1-F：契约守护补充可执行冒烟清单与自动化入口（脚本 + Make 目标）；`single-node-contract-smoke.sh` 支持 `--quick/--full` 分层、SOP 模板/脚本语法校验与 `SMOKE_BRIDGE_HTTP` 可选运行时就绪冒烟；`make smoke-single-node-quick` 与 `make validate-sop-templates` 提供快速回归入口；新增 `.github/workflows/single-node-quick.yml`（workflow_dispatch）用于轻量资产检查。
