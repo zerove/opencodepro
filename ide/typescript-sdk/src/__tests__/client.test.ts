@@ -267,6 +267,20 @@ describe('SisyphusClient', () => {
     expect(requestBody(mockFn)).toEqual({ sop_id: 'sop1', goal: 'goal' });
   });
 
+  it('executeSop() 应透传 eventTx', async () => {
+    const mockFn = vi
+      .fn()
+      .mockResolvedValue(createMockResponse({ output: null, report: '' }));
+    vi.stubGlobal('fetch', mockFn);
+
+    await client.executeSop('sop1', 'goal', undefined, true);
+    expect(requestBody(mockFn)).toEqual({
+      sop_id: 'sop1',
+      goal: 'goal',
+      event_tx: true,
+    });
+  });
+
   it('executeTool() 必须走 /api/execute 并保持 args_json 为字符串', async () => {
     const mockFn = vi.fn().mockResolvedValue(
       createMockResponse({

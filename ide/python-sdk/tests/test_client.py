@@ -229,6 +229,17 @@ class TestExecution:
         req = mock_urlopen.call_args[0][0]
         assert json.loads(req.data.decode()) == {"sop_id": "sop1", "goal": "goal"}
 
+    def test_execute_sop_sends_event_tx(self, client, mock_urlopen):
+        """event_tx 可选布尔值应原样透传进 /api/execute/goal 请求体"""
+        mock_urlopen.return_value = mock_response({"output": None, "report": ""})
+        client.execute_sop("sop1", goal="g", event_tx=True)
+        req = mock_urlopen.call_args[0][0]
+        assert json.loads(req.data.decode()) == {
+            "sop_id": "sop1",
+            "goal": "g",
+            "event_tx": True,
+        }
+
     def test_execute_tool_posts_to_tool_endpoint(self, client, mock_urlopen):
         """execute_tool() 走 POST /api/execute，args_json 保持字符串"""
         mock_urlopen.return_value = mock_response(
