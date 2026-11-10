@@ -134,21 +134,48 @@ pub async fn run_list_skills(client: &mut BridgeClient) -> Result<()> {
 /// Run exec sop.
 pub async fn run_exec_sop(client: &mut BridgeClient, sop_id: &str) -> Result<()> {
     println!("Executing SOP: {sop_id}...");
-    let result = client.execute_sop(sop_id).await?;
-    let rendered = if let Ok(v) = serde_json::from_str::<serde_json::Value>(&result) {
-        serde_json::to_string_pretty(&v).unwrap_or(result.clone())
-    } else {
-        result
-    };
-    println!("Result:\n{rendered}");
-    Ok(())
+    match client.execute_sop(sop_id).await {
+        Ok(result) => {
+            let rendered = if let Ok(v) = serde_json::from_str::<serde_json::Value>(&result) {
+                serde_json::to_string_pretty(&v).unwrap_or(result)
+            } else {
+                result
+            };
+            println!("Result:\n{rendered}");
+            Ok(())
+        },
+        Err(e) => {
+            let msg = format!("{e:#}");
+            if msg.contains("without any real execution result") || msg.contains("StrategicPivot") {
+                eprintln!(
+                    "提示: 各轮均未产出可接受的真实执行结果；请检查节点命令与显式成功状态、阈值/反思配置。可先用 `sisyphus sop show <id>` 与确定性模板验证执行链路。"
+                );
+            } else if msg.contains("LLM") || msg.contains("model") || msg.contains("审计") {
+                eprintln!(
+                    "提示: 该执行可能依赖 LLM/审计能力；请补齐配置与凭据，或改用/验证直接 SOP 执行路径。"
+                );
+            }
+            Err(e)
+        },
+    }
 }
 
 /// Run decompose goal.
 pub async fn run_decompose_goal(client: &mut BridgeClient, goal: &str) -> Result<()> {
     println!("Decomposing goal: {goal}...");
     // 为 CLI 命令使用虚拟 goal_id 与空上下文
-    let tasks = client.decompose_goal("cli-goal", goal, "").await?;
+    let tasks = match client.decompose_goal("cli-goal", goal, "").await {
+        Ok(t) => t,
+        Err(e) => {
+            let msg = format!("{e:#}");
+            if msg.contains("LLM") || msg.contains("model") || msg.contains("审计") {
+                eprintln!(
+                    "提示: 目标分解通常依赖 LLM/规划能力；请检查模型配置与凭据，或先用 `sisyphus sop list` 验证可用 SOP。"
+                );
+            }
+            return Err(e);
+        },
+    };
     if tasks.is_empty() {
         println!("No tasks generated.");
         println!("提示: 目标分解可能依赖 LLM/规划能力配置；可先用 `sisyphus sop list` 与模板化 SOP 验证执行链路。");
