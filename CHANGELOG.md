@@ -174,6 +174,13 @@
     `TestGetSession`/`TestAddMessage`/`TestCreateSession`/`TestWorkspaceHeader` 等）；
     Python `python -m pytest tests/` 37 passed；TypeScript `npm run build && npm test` 33 passed。
 
+- **WebUI 集群/控制面只读观测端点补齐**（2026-11-10）：`webui/src/lib.rs` 新增
+  `GET /api/cluster/status` 与 `GET /api/cluster/control/leases/{key}` 的 typed
+  handler + bridge 直连 helper（复用 `bridge_get` 统一附加 `X-Sisyphus-Workspace-Id`），
+  类型覆盖 `config/control_plane`、`control_plane.security/stats`、`peer_manager`、
+  `consensus`、`peers[]`、`ControlLease` 全部分段。配套测试
+  （`test_cluster_status_deserializes_bridge_response`、`test_control_lease_deserializes_bridge_response`）。
+
 - **WebUI（axum + HTMX）与 bridge REST 契约不一致**（2026-11-10）：`webui/src/lib.rs` 同类缺陷
   - `/htmx/exec`、`/htmx/session/{id}/messages`、`/htmx/skills/install` 之前用 `Json<T>`
     提取器，浏览器/htmx 提交 body（urlencoded）→ 415；现改为 `Form<T>`（`/api/*` 保持 `Json`）。

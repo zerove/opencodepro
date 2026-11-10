@@ -985,11 +985,207 @@ async fn api_skill_install(
     ))
 }
 
+// ── 集群 / 控制面只读观测 ─────────────────────
+
+/// 控制面安全装配视图（ADR-019）。
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct ControlPlaneSecurityView {
+    tls_enabled_config: bool,
+    tls_wired: bool,
+    submit_auth_mode_config: String,
+    submit_auth_enforced: bool,
+    app_layer_submit_auth_enforced: bool,
+    effective_armed: bool,
+    allowed_submit_subjects_count: u64,
+    note: String,
+}
+
+/// 控制面统计快照（未装配时为 null）。
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct ControlPlaneStats {
+    #[serde(default)]
+    submit_total: u64,
+    #[serde(default)]
+    accepted: u64,
+    #[serde(default)]
+    rejected: u64,
+    #[serde(default)]
+    uncertain: u64,
+    #[serde(default)]
+    disabled: u64,
+    #[serde(default)]
+    unavailable: u64,
+}
+
+/// `[cluster.control_plane]` 生效配置快照。
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct ControlPlaneConfigView {
+    enabled: bool,
+    propose_timeout_ms: u64,
+    connect_timeout_ms: u64,
+    lease_ttl_min_secs: u64,
+    lease_ttl_max_secs: u64,
+}
+
+/// `[cluster]` 生效配置快照。
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct ClusterConfigView {
+    node_id: String,
+    #[serde(default)]
+    peer_ttl_secs: u64,
+    #[serde(default)]
+    join_timeout_secs: u64,
+    #[serde(default)]
+    strategy_sync_interval_secs: u64,
+    #[serde(default)]
+    static_peers: Vec<String>,
+    #[serde(default)]
+    control_plane_enabled: bool,
+    #[serde(default)]
+    control_plane: ControlPlaneConfigView,
+}
+
+/// 控制面运行时状态（只读）。
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct ControlPlaneStatus {
+    configured: bool,
+    #[serde(default)]
+    coordinator_configured: bool,
+    #[serde(default)]
+    security: ControlPlaneSecurityView,
+    #[serde(default)]
+    stats: Option<ControlPlaneStats>,
+}
+
+/// peer manager 的只读视图。
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct PeerManagerView {
+    #[serde(default)]
+    self_node_id: Option<String>,
+    #[serde(default)]
+    leader_id: Option<String>,
+    #[serde(default)]
+    is_leader: bool,
+    #[serde(default)]
+    cluster_size: u64,
+    #[serde(default)]
+    state_proposal_broadcasts: u64,
+    #[serde(default)]
+    experience_sync: PeerExperienceSync,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct PeerExperienceSync {
+    #[serde(default)]
+    broadcasts: u64,
+    #[serde(default)]
+    inbound_delivered: u64,
+    #[serde(default)]
+    inbound_applied: u64,
+    #[serde(default)]
+    inbound_rejected: u64,
+    #[serde(default)]
+    inbound_rejected_deserialize: u64,
+    #[serde(default)]
+    inbound_rejected_quality: u64,
+    #[serde(default)]
+    inbound_rejected_apply: u64,
+}
+
+/// 集群协调只读快照（`GET /api/cluster/status`）。
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct ClusterStatus {
+    enabled: bool,
+    cluster_name: String,
+    #[serde(default)]
+    config: ClusterConfigView,
+    #[serde(default)]
+    control_plane: ControlPlaneStatus,
+    #[serde(default)]
+    peer_manager: PeerManagerView,
+    #[serde(default)]
+    consensus: ConsensusView,
+    #[serde(default)]
+    peers: Vec<ClusterPeer>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct ConsensusView {
+    #[serde(default)]
+    leader_id: Option<String>,
+    #[serde(default)]
+    is_leader: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct ClusterPeer {
+    node_id: String,
+    grpc_addr: String,
+    #[serde(default)]
+    joined_at: u64,
+    #[serde(default)]
+    last_seen_secs_ago: Option<u64>,
+}
+
+/// 控制面租约查询响应（`GET /api/cluster/control/leases/{key}`，只读）。
+#[derive(Serialize, Deserialize, Clone, Default)]
+struct ControlLease {
+    found: bool,
+    key: String,
+    #[serde(default)]
+    owner: String,
+    #[serde(default)]
+    generation: u64,
+    #[serde(default)]
+    expires_at_unix_ms: u64,
+    #[serde(default)]
+    last_request_id: String,
+    #[serde(default)]
+    status_code: String,
+    #[serde(default)]
+    status_message: String,
+}
+
+async fn api_cluster_status(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ClusterStatus>, StatusCode> {
+    Ok(Json(fetch_cluster_status(&state).await))
+}
+
+async fn api_cluster_control_lease(
+    State(state): State<Arc<AppState>>,
+    Path(key): Path<String>,
+) -> Result<Json<ControlLease>, StatusCode> {
+    Ok(Json(fetch_control_lease(&state, &key).await))
+}
+
 async fn api_roadmap_dashboard(
     State(state): State<Arc<AppState>>,
     Path(project_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     Ok(Json(fetch_roadmap_dashboard(&state, &project_id).await))
+}
+
+async fn fetch_cluster_status(state: &AppState) -> ClusterStatus {
+    match bridge_get(state, "/api/cluster/status").send().await {
+        Ok(r) => r.json::<ClusterStatus>().await.unwrap_or_default(),
+        Err(_) => ClusterStatus::default(),
+    }
+}
+
+async fn fetch_control_lease(state: &AppState, key: &str) -> ControlLease {
+    match bridge_get(state, &format!("/api/cluster/control/leases/{key}")).send().await {
+        Ok(r) => r.json::<ControlLease>().await.unwrap_or(ControlLease {
+            found: false,
+            key: key.to_string(),
+            ..Default::default()
+        }),
+        Err(_) => ControlLease {
+            found: false,
+            key: key.to_string(),
+            ..Default::default()
+        },
+    }
 }
 
 // ── Bridge 客户端辅助函数 ─────────────────────
@@ -1410,6 +1606,11 @@ pub fn app_with_config(
         .route("/api/skills", get(api_skill_list))
         .route("/api/skills/install", post(api_skill_install))
         .route("/api/auth/validate", post(auth_validate))
+        .route("/api/cluster/status", get(api_cluster_status))
+        .route(
+            "/api/cluster/control/leases/{key}",
+            get(api_cluster_control_lease),
+        )
         .route(
             "/api/roadmap/dashboard/{project_id}",
             get(api_roadmap_dashboard),
@@ -1724,6 +1925,105 @@ mod tests {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
         assert!(body.contains("sk1"), "body: {body}");
+    }
+
+    #[test]
+    fn test_cluster_status_deserializes_bridge_response() {
+        // GET /api/cluster/status 的真实响应形状（含 control_plane/security 嵌套）。
+        let status: ClusterStatus = serde_json::from_str(
+            r#"{
+                "enabled": true,
+                "cluster_name": "demo",
+                "config": {
+                    "node_id": "n1",
+                    "peer_ttl_secs": 30,
+                    "join_timeout_secs": 5,
+                    "strategy_sync_interval_secs": 10,
+                    "static_peers": ["n2"],
+                    "control_plane_enabled": true,
+                    "control_plane": {
+                        "enabled": true,
+                        "propose_timeout_ms": 2000,
+                        "connect_timeout_ms": 1000,
+                        "lease_ttl_min_secs": 5,
+                        "lease_ttl_max_secs": 300
+                    }
+                },
+                "control_plane": {
+                    "configured": true,
+                    "coordinator_configured": true,
+                    "security": {
+                        "tls_enabled_config": true,
+                        "tls_wired": true,
+                        "submit_auth_mode_config": "mtls_subject_allowlist",
+                        "submit_auth_enforced": true,
+                        "app_layer_submit_auth_enforced": true,
+                        "effective_armed": true,
+                        "allowed_submit_subjects_count": 3,
+                        "note": "ADR-019"
+                    },
+                    "stats": {
+                        "submit_total": 1,
+                        "accepted": 1,
+                        "rejected": 0,
+                        "uncertain": 0,
+                        "disabled": 0,
+                        "unavailable": 0
+                    }
+                },
+                "peer_manager": {
+                    "self_node_id": "n1",
+                    "leader_id": "n1",
+                    "is_leader": true,
+                    "cluster_size": 3,
+                    "state_proposal_broadcasts": 7,
+                    "experience_sync": {
+                        "broadcasts": 1,
+                        "inbound_delivered": 2,
+                        "inbound_applied": 2,
+                        "inbound_rejected": 0,
+                        "inbound_rejected_deserialize": 0,
+                        "inbound_rejected_quality": 0,
+                        "inbound_rejected_apply": 0
+                    }
+                },
+                "consensus": { "leader_id": "n1", "is_leader": true },
+                "peers": [
+                    {
+                        "node_id": "n1",
+                        "grpc_addr": "http://127.0.0.1:50051",
+                        "joined_at": 0,
+                        "last_seen_secs_ago": 0
+                    }
+                ]
+            }"#,
+        )
+        .expect("decode cluster status");
+        assert!(status.enabled);
+        assert_eq!(status.control_plane.security.effective_armed, true);
+        assert_eq!(status.peer_manager.cluster_size, 3);
+        assert_eq!(status.peers.len(), 1);
+    }
+
+    #[test]
+    fn test_control_lease_deserializes_bridge_response() {
+        // GET /api/cluster/control/leases/{key} 的真实响应形状（只读，永远 200）。
+        let lease: ControlLease = serde_json::from_str(
+            r#"{
+                "found": true,
+                "key": "lease:n3-quorum",
+                "owner": "n1",
+                "generation": 1,
+                "expires_at_unix_ms": 1794276574733,
+                "last_request_id": "req-1",
+                "status_code": "OK",
+                "status_message": ""
+            }"#,
+        )
+        .expect("decode control lease");
+        assert!(lease.found);
+        assert_eq!(lease.status_code, "OK");
+        assert_eq!(lease.generation, 1);
     }
 
     #[tokio::test]

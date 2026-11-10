@@ -32,8 +32,8 @@ Web 仪表盘（`webui/`：axum + HTMX + SSE + WebSocket）通过 REST 直连 br
 | GET | `/htmx/skills` | 本机技能列表 |
 | POST | `/htmx/skills/install` | 安装远端技能（`POST /api/skills/install`，成功 201 无响应体） |
 | GET | `/api/skills` | 本机技能列表 |
-| GET | `/api/cluster/status` | 集群/控制面只读观测 |
-| GET | `/api/cluster/control/leases/{key}` | 控制面租约只读查询 |
+| GET | `/api/cluster/status` | 集群/控制面只读观测（含 control_plane/security/stats） |
+| GET | `/api/cluster/control/leases/{key}` | 控制面租约只读查询（`found/status_code`，HTTP 200） |
 
 ## 已知修复（2026-11-10）
 
