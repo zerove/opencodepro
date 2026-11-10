@@ -66,6 +66,11 @@
   不抛异常。三端测试：Go `TestGetClusterStatus`/`TestGetControlLeaseDisabled`/`TestGetControlLeaseOK`，
   Python `TestClusterObservation`（4 项），TypeScript `clusterStatus()`/`controlLease()`（3 项）。
 
+- **ADR-019 生产准入准备清单与状态更新**（2026-11-10）：`docs/adr/019-cluster-consensus-control-plane.md`
+  新增「准入准备检查清单」，对照 §3 准入条件逐项列出就绪/阻塞状态（Proposer 生产深度集成、
+  不确定提交指引、真实证书签发/SAN、专用 runner 真实网络证据矩阵等）；Status 更新为「准入准备中」。
+  未改变任何启用开关；`cluster.control_plane.enabled` 生产默认仍为 `false`。
+
 - **集群协调状态端点**（Phase 6.1，只读）：`GET /api/cluster/status`（`operationId: getClusterStatus`）
   返回集群配置快照、peer manager 视图（self/leader/cluster_size/peers/last_seen_secs_ago、
   `state_proposal_broadcasts`、`experience_sync{broadcasts,inbound_delivered,inbound_applied,inbound_rejected}`）

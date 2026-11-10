@@ -1,6 +1,6 @@
 # ADR-019: ClusterConsensus 控制面（强一致决策）准入条件
 
-**Status**: Proposed（2026-11-08，**条件触发**；未在生产路径启用）  
+**Status**: Proposed（2026-11-08，**条件触发**；未在生产路径启用）→ **准入准备中**（2026-11-10；详见新增「准入准备检查清单」；生产启用仍须满足 §3 全部条件并留证据）  
 **Deciders**: core team  
 **Related**: ADR-009（分布式 v2）、ADR-017（StateProposal 数据面）、ADR-018（协调/聚合范围，6.5）
 
@@ -80,3 +80,26 @@ ADR-017/018 已确立：集群内**策略/经验类同步**走 `StateProposal`/`
   - 本地 in-process 证据：`crates/sisyphus-bridge/tests/control_plane_mtls_test.rs` 4 项——DNS allowlist 命中（`UNAVAILABLE` 响应而非 RPC 错误）、非 allowlist 主体 `permission_denied`（`SubmitControlLease` + `ProposeControl`）、无客户端证书握手/RPC 失败、`CN:` 命中、未知模式 fail-closed。**这是 loopback/单进程证据，不替代专用 runner 的真实跨进程 TLS/网络/混沌/重启证据。**
   - 运维工具：`make gen-control-plane-test-certs ARGS="--out DIR --node node-1 ..."`（`examples/gen_control_plane_test_certs.rs`，rcgen，仅测试用途；`scripts/gen-control-plane-test-certs.sh` 为入口）；`control_plane_harness --ca-cert/--client-cert/--client-key/--domain`。
 - 未完成（阻塞生产启用）：**不确定提交客户端指引**（超时后不得盲判成功，需以同 `request_id` 重试并结合状态查询；跨节点/进程重启后 idempotency 仅由各节点 state 保障）；`GrpcPeerProposer` 生产连接池/成员变更深度集成；**真实证书签发/SAN 与 `tls_domain_name`/peer 身份对齐、secret 挂载、共享端口 TLS 客户端迁移**；专用运行器执行证据（真实 N=3 分区/少数派不可提交/leader 变更安全/分区愈合/混沌延迟丢包重启/**TLS 长稳与证书轮换/错误证书 fail-closed**）与回滚演练记录；REST 写入+OpenAPI/webui（若 A 扩展）；调度器租约接入（B=不接入）。**默认 `cluster.control_plane.enabled=false`，未满足准入不得生产启用。**
+
+## 准入准备检查清单（2026-11-10）
+
+依据 §3 准入条件，对照「建议二」交付批次（SDK/WebUI 契约修复 + 只读观测 + N=3 证据）后的就绪情况整理**生产准入准备清单**（仅清单/状态更新，不改变任何启用开关）。
+
+| # | 准入条件 | 2026-11-10 就绪状态 | 证据 / 阻塞 |
+|---|---------|---------------------|------------|
+| 1 | 语义定义（key 空间/值编码/版本 epoch/读写语义/控制面 vs 数据面分工） | 就绪 | 控制面实现 + `StateProposal` 数据面分工 |
+| 2 | Proposer 装配（生产 proposer/生命周期/超时/重试上限；`proposer: None` 对控制面操作显式错误） | 部分就绪 | `GrpcPeerProposer` 生产连接池/成员变更深度集成未完成 |
+| 3 | 故障模型（分区/leader 变更/重启/幂等/超时/不确定/多数派边界） | 部分就绪 | fencing/幂等/uncertain 处理就绪；真实分区/混沌/重启证据待专用 runner |
+| 4 | 可观测（只读端点暴露控制面状态；不暴露敏感载荷） | 就绪 | `/api/cluster/status` + WebUI 只读面板（本批次补齐） |
+| 5 | 验证矩阵（单元/集成 N=3/混沌/回归） | 部分就绪 | loopback N=3 TLS/mTLS 证据执行 **exit 0**（JSON 于 `./control-plane-certs-n3/`；quorum `accepted=true`/`uncertain=false`，Get `OK`）；**专用 runner 真实网络矩阵待执行** |
+| 6 | 回滚（控制面开关可关、拒绝写入、只读可用） | 就绪 | `cluster.control_plane.enabled=false` 默认安全 |
+
+**未满足项（阻塞生产启用，2026-11-10）**：
+
+1. 不确定提交客户端指引落地（超时=错误，重试 + 状态查询）；
+2. `GrpcPeerProposer` 生产连接池/成员变更深度集成；
+3. 真实证书签发/SAN 与 `tls_domain_name`/peer 身份对齐、secret 挂载、共享端口 TLS 客户端迁移；
+4. 专用 runner 真实网络证据矩阵（N=3 分区/少数派不可提交/`QUORUM_NOT_REACHED`/leader 变更安全/TLS 长稳/证书轮换/fail-closed/回滚演练）与回滚演练记录；
+5. REST 写入+OpenAPI/webui（若 A 扩展）；调度器租约接入（B=不接入）。
+
+**结论**：ADR-019 当前处于「条件触发 → 准入准备中」；生产准入**未满足**（缺项 4 专用 runner 真实网络证据矩阵等），`cluster.control_plane.enabled` 生产启用**不得**进行，默认仍为 `false`。
