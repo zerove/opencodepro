@@ -58,10 +58,29 @@ if [ "${TEST_GOAL:-0}" = "1" ]; then
     echo "curl_failed=$GRC" >&2
   elif command -v python3 >/dev/null 2>&1; then
     printf '%s' "$RESP" | python3 -m json.tool 2>/dev/null || printf '%s\n' "$RESP"
+    HINT_LINE=$(printf '%s' "$RESP" | python3 - <<'PY' 2>/dev/null || true
+import json, sys
+try:
+    v = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+hint = v.get("hint") if isinstance(v, dict) else None
+err = v.get("error") if isinstance(v, dict) else None
+if hint:
+    print(f"hint: {hint}")
+elif err:
+    print(f"error: {err}")
+PY
+)
+    if [ -n "${HINT_LINE:-}" ]; then
+      echo "$HINT_LINE"
+    fi
   else
     printf '%s\n' "$RESP"
   fi
   echo "提示: execute/goal 可能依赖 LLM/审计配置；失败时应关注 error/hint 字段与与 sop run 路径差异。"
+else
+  echo "提示: 可设置 TEST_GOAL=1 探测 POST /api/execute/goal 的 error/hint 响应（L3，可能依赖 LLM/凭据）。"
 fi
 
 hr "4) 观测入口（只读）"
