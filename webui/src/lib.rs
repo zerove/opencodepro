@@ -1489,7 +1489,7 @@ async fn install_skill(state: &AppState, skill_id: &str) -> Result<(), String> {
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("HTTP {status}: {body}"));
+        return Err(format_bridge_error(status, &body));
     }
     Ok(())
 }
