@@ -38,3 +38,15 @@
 - `docs/plans/p1-p2-roadmap.md`（P2-A）
 - `docs/runbooks/single-node-sop-e2e-guide.md`
 - `docs/runbooks/single-node-typical-workflow.md`
+
+## 6. 现有示例：`verify_sop`（单机可发现）
+
+**发现与查看（2026-11-10 实测）**
+- `GET /api/sops` → `["verify_sop"]`
+- `GET /api/sops/verify_sop`（附工作区头时按需）返回示例图：
+  - nodes: `a` = `Test{command:"echo hi"}`, `b` = `Test{command:"echo ho"}`
+  - edges: `[[0,1]]`（a → b）
+
+**用途**：作为最小 DAG/SOP 模板参考（顺序执行、命令类节点）。实际执行需具备对应执行器与环境权限；执行路径见 `single-node-sop-e2e-guide.md` 与 `single-node-typical-workflow.md`。
+
+**模板化建议**：在此基础上扩展为“检查→构建→测试→汇总”等多步骤流程，并通过 trace/状态端点观测每步结果。

@@ -40,3 +40,49 @@
 
 - 建议二批次：SDK/WebUI 契约修复与只读观测对齐，三端 SDK 与 WebUI 测试通过（见 CHANGELOG 与提交记录）。
 - 单机 P1：持续以本清单为回归依据推进 P1-F。
+
+## 5. 单机契约冒烟（可执行，P1-F 落地）
+
+在具备对应工具链/环境时，按序执行以下检查（记录结果与提交号）：
+
+### 5.1 Rust / WebUI / 门禁
+```bash
+env -u RUSTUP_TOOLCHAIN cargo check-all
+env -u RUSTUP_TOOLCHAIN cargo fmt --all --check
+make audit
+env -u RUSTUP_TOOLCHAIN cargo test -p sisyphus-webui
+env -u RUSTUP_TOOLCHAIN cargo test -p sisyphus-core --lib
+```
+**预期**：全部通过（或按已知环境限制项单独标注，如 sandboxd 权限受限导致的 bridge lib 特定用例）。
+
+### 5.2 SDK（三端）
+```bash
+# Go
+(cd ide/go-sdk && go test ./...)
+
+# Python（需本地依赖环境）
+(cd ide/python-sdk && python -m pytest tests/ -q)
+
+# TypeScript（需 node_modules）
+(cd ide/typescript-sdk && npm run build && npm test)
+```
+**预期**：与契约对齐批次一致（当前基线：Go ok / Python 38 passed / TS 34 passed）。
+
+### 5.3 Bridge 运行时只读冒烟（单机）
+```bash
+# 启动 bridge（正确顶层 bridge_address/http_address）后：
+curl -sf http://127.0.0.1:8080/health
+curl -sf http://127.0.0.1:8080/api/sops
+curl -sf http://127.0.0.1:8080/api/cluster/status
+```
+**预期**：`/health` 返回 SERVING JSON；`/api/sops` 返回 `string[]`；`/api/cluster/status` 返回有效只读快照。
+
+### 5.4 CLI 本地冒烟（无 bridge）
+```bash
+sisyphus read README.md | head
+sisyphus exec 'echo ok'
+sisyphus --data-dir ./.tmp-sn session create smoke && sisyphus --data-dir ./.tmp-sn session list
+```
+**预期**：命令成功、输出符合预期（S2 已验证）。
+
+> 将本节结果纳入批次验证记录；任何失败需区分“回归/契约破坏”与“环境限制/外部依赖缺失”。

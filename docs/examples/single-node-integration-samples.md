@@ -43,3 +43,23 @@ curl -s "$BASE/api/cluster/status"
 - `docs/plans/p1-p2-roadmap.md`（P2-C）
 - `docs/runbooks/single-node-contract-guard.md`
 - `book/src/rest-api.md`、`book/src/sdk-reference.md`
+
+## 6. 轮询与状态检查脚本骨架（示例）
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+BASE="${BASE:-http://127.0.0.1:8080}"
+
+# 健康门禁
+curl -fsS "$BASE/health" >/dev/null
+
+# 只读观测快照
+curl -fsS "$BASE/api/cluster/status" | jq '.enabled, .control_plane.configured' 2>/dev/null || \
+  curl -fsS "$BASE/api/cluster/status"
+
+# SOP 发现
+curl -fsS "$BASE/api/sops"
+```
+
+> 生产/自动化集成应增加超时、重试与错误分类（连通性/契约/业务），并遵循契约守护清单。

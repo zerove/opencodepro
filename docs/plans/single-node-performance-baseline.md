@@ -35,3 +35,7 @@
 
 - `docs/plans/p1-p2-roadmap.md`（P2-B）
 - `docs/benchmarks/`（历史与后续基线）
+
+## 6. 初始采样记录
+
+- `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`：dev 构建下 bridge 就绪与只读端点延迟基线（2026-11-10）。

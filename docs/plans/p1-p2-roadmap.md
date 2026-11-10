@@ -69,9 +69,10 @@
 | P2-D | 控制面准入（条件触发，外部前提） | 后置 | 专用 runner 真实网络硬件 | ADR-019 证据矩阵 → 准入评审（不改变默认关闭策略） |
 
 **进展（2026-11-10）**：
-- P2-A：新增 `docs/plans/single-node-orchestration-templates.md`（SOP/DAG 编排模板规划与落地路径）。
-- P2-B：新增 `docs/plans/single-node-performance-baseline.md`（单机性能/资源基线口径与记录计划）。
-- P2-C：新增 `docs/examples/single-node-integration-samples.md`（REST/SDK/观测集成样例）。
+- P2-A：新增 `docs/plans/single-node-orchestration-templates.md`（含 `verify_sop` 实测示例与模板化建议）。
+- P2-B：新增 `docs/plans/single-node-performance-baseline.md` 与 `docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`（bridge 就绪/只读端点延迟实测基线）。
+- P2-C：新增 `docs/examples/single-node-integration-samples.md`（补充轮询与状态检查脚本骨架）。
+- P1-F：`docs/runbooks/single-node-contract-guard.md` 增补可执行单机契约冒烟清单（Rust/WebUI/SDK/bridge 运行时/CLI）。
 - P2-D：仍为**外部后置**（专用 runner 真实网络证据与 ADR-019 准入），不阻塞单机 P1/P2 文档与可实施部分。
 
 **P2 里程碑**：形成可对外说明的差异化能力组合（编排+观测+集成）；性能基线可回归；控制面仅在证据完备后推进。
