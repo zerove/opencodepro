@@ -75,10 +75,20 @@ EOF
 write_if_missing "$DIR/l3-goal.log" <<'EOF'
 # L3 目标驱动执行（execute/goal）
 # 记录请求、响应(error/hint/report)、trace/事件；缺依赖时标记 BLOCKED
+#
+# 建议命令（按环境调整）：
+#   TEST_GOAL=1 GOAL_TEXT="..." BASE=http://127.0.0.1:8080 SOP_ID=verify_sop ./scripts/single-node-demo-flow.sh
+#   curl -sS -X POST "$BASE/api/execute/goal" -H 'Content-Type: application/json' \
+#     -d '{"goal":"...","sop_id":"verify_sop","project_id":"default"}'
+#
+# 关注：HTTP 状态、error/hint 字段、report/output、trace/事件可关联性；与 sop run 路径差异。
 EOF
 
 write_if_missing "$DIR/l4-perf.md" <<'EOF'
 # L4 性能与稳定性
+
+> 采集建议：`./scripts/single-node-bench-sample.sh cli --json` / `bridge --json`；记录 debug/release、冷热、构建与端口配置。
+> 不中断即不伪造连续样本；分批采集需标注聚合方式与环境限制。
 
 | 场景 | n | min | avg | max | 条件/备注 |
 |---|---:|---:|---:|---:|---|

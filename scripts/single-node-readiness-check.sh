@@ -8,7 +8,11 @@ WS="${WS:-default}"
 TIMEOUT="${TIMEOUT:-5}"
 
 pass() { printf '[PASS] %s\n' "$*"; }
-fail() { printf '[FAIL] %s\n' "$*" >&2; exit 1; }
+fail() {
+  printf '[FAIL] %s\n' "$*" >&2
+  printf 'hint: 检查 bridge HTTP 是否可达、配置(http_address/bridge_address)、以及 sisyphus doctor/readiness 输出。\n' >&2
+  exit 1
+}
 
 echo "== Single-node readiness check =="
 echo "BASE=$BASE WS=$WS TIMEOUT=$TIMEOUT"
@@ -29,6 +33,9 @@ if curl -fsS --max-time "$TIMEOUT" "$BASE/api/cluster/status" >/tmp/sn-cluster.j
   # best-effort summary without jq dependency
   summary=$(tr -d '\n' </tmp/sn-cluster.json | head -c 160)
   pass "cluster status (readonly): ${summary}..."
+  if printf '%s' "$summary" | grep -q '"control_plane"'; then
+    echo "note: 控制面应保持只读/禁用生产能力（cluster.control_plane.enabled=false，ADR-020）。"
+  fi
 else
   fail "cluster status failed"
 fi
