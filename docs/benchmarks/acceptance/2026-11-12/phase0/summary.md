@@ -8,6 +8,7 @@
 | T0.1 提交与仓库同步 | DONE | `git rev-parse HEAD origin/master` 两者一致；工作区干净 | ``git rev-parse HEAD origin/master`` |
 | T0.2 性能采样口径升级 | DONE | `scripts/single-node-bench-sample.sh` 输出 n/min/p50/p95/avg/max + timestamp/build | ``N=3 ./scripts/single-node-bench-sample.sh cli --json`` |
 | T0.3 L3 环境准备清单 | DONE | `docs/runbooks/single-node-automation-acceptance.md` §7.1 清单、§8 分位数口径 | `阅读文档` |
+| T0.5 flaky 扫描器假绿修复 | DONE | `scripts/scan_flaky.py` 原本只搜 `target/debug/deps/`，而新版 cargo 把测试产物放在 `target/debug/build/<pkg>/<hash>/out/` → 新构建的二进制不可见，5 个 crate 被静默跳过却报告「全部通过」。修复后覆盖 crate 数 9→15；**16 轮 × 15 crate = 240 次运行全部通过**（未发现概率性失败）；同时排除依赖 sandboxd 守护进程的 bridge | `python3 scripts/scan_flaky.py --rounds 16 --keep-going` |
 | T0.4 验收证据自动化 | DONE | `scripts/single-node-acceptance-evidence.sh --run-l0` 生成 l0-static.log | ``./scripts/single-node-acceptance-evidence.sh --run-l0`` |
 
 ## 复现方式
