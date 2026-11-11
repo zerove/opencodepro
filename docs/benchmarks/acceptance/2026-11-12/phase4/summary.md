@@ -9,6 +9,7 @@
 | T4.2 性能回归门禁 | DONE | `scripts/perf-regression-check.sh` + `make perf-regression`；基线 `docs/benchmarks/perf-regression-baseline-2026-11-10.json`；实跑 rc=0 | ``./scripts/perf-regression-check.sh cli`` |
 | T4.3 evals 子集入 CI | DONE | eval-runner `--cases` 过滤 + `scripts/evals-ci-run.sh` + `make eval-ci`；ci.yml `evals-ci` job；实跑 2/2 PASS | ``./scripts/evals-ci-run.sh "metis/metis-001,momus/momus-plan-002"`` |
 | T4.4 统一 trace 关联 | DONE | trace id 工具 / HTTP 中间件 / gRPC 拦截器 / SSE 负载 / CLI 注入 / span 字段 / 契约文档；10 个 trace 单测；实跑透传·生成·非法替换三态 | ``cargo test -p sisyphus-bridge --lib trace_id`` |
+| T4.4b gRPC trace 端到端 | DONE | CLI → bridge → 认知循环：拦截器生成的 trace id 被 `grpc.execute_sop` 及其**全部嵌套 span**（run_cognitive_loop / cognitive_iteration / execute_phase / reflect）继承，实现「一次请求可查到全部子步骤」（`trace-grpc-e2e.txt`） | `sisyphus --bridge <addr> remote exec <sop>` |
 | T4.5 长窗口稳定性 | IN_PROGRESS | 60 分钟窗口 715 采样：探活 100%，RSS +5.8 KB/min（stable）、FD 20→11、线程 18→14。**「数小时」窗口仍需重采** | ``./scripts/long-run-stability.sh 60`` |
 
 ## 复现方式

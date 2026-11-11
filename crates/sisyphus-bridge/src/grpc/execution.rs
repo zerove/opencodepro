@@ -29,7 +29,8 @@ impl MySisyphusBridge {
         &self,
         request: Request<ExecuteSopRequest>,
     ) -> Result<Response<SopResponse>, Status> {
-        // T4.4：把入口注入的 trace id 记入 span，便于按 id 串联子步骤日志
+        // T4.4：把入口注入的 trace id 记入 span（事件字段可直接 grep，
+        // span 字段只进结构化上下文）
         let trace_id = crate::trace::trace_id_of(&request);
         tracing::Span::current().record("trace_id", trace_id.as_str());
         let project_id = request
@@ -42,6 +43,12 @@ impl MySisyphusBridge {
         let sop_id = req.sop_id.clone();
         tracing::Span::current().record("sop_id", sop_id.as_str());
         tracing::Span::current().record("project_id", project_id.as_str());
+        tracing::info!(
+            trace_id = %trace_id,
+            sop_id = %sop_id,
+            project_id = %project_id,
+            "grpc.execute_sop"
+        );
 
         self.publish_event(sisyphus_bridge_api::BridgeEvent {
             event: Some(sisyphus_bridge_api::bridge_event::Event::OpUpdate(
@@ -150,6 +157,12 @@ impl MySisyphusBridge {
         };
         tracing::Span::current().record("tool_id", tool_id.as_str());
         tracing::Span::current().record("fuel", fuel);
+        // T4.4：带 trace_id 的事件（可直接 grep 串联「入口 → 工具调用」）
+        tracing::info!(
+            trace_id = %trace_id,
+            tool_id = %tool_id,
+            "grpc.execute_tool"
+        );
 
         // ── Chaos Engineering: inject faults before execution ──────────
         if self.chaos_enabled {
