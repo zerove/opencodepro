@@ -465,6 +465,15 @@ pub(super) fn handle_skill_market_key(code: KeyCode, app: &mut App) {
     }
 }
 
+/// 工具调用审批弹窗按键处理（T2.2）：`y` 放行，`n`/`Esc` 拒绝。
+pub(super) fn handle_tool_approval_key(code: KeyCode, app: &mut App) {
+    match code {
+        KeyCode::Char('y') | KeyCode::Char('Y') => app.answer_tool_approval(true),
+        KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => app.answer_tool_approval(false),
+        _ => {},
+    }
+}
+
 pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
     let code = key.code;
     // 若报告可用，任意键关闭它（用户可按 Esc 关闭）

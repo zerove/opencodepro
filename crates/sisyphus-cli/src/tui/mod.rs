@@ -54,6 +54,9 @@ pub fn run(data_dir: PathBuf, bridge_address: String, http_address: String) -> R
     let perms = CliPermission::load(None).unwrap_or_default();
     let mut app = App::new(data_dir, bridge_address, http_address);
 
+    // 注册审批 broker（T2.2）：后台工具执行在 Ask 决策时向 TUI 请求放行。
+    crate::approval::register();
+
     // 加载会话列表（不自动创建或选择 — 从主页开始）
     let db = app.data_dir.join("sessions.json");
     app.sessions = crate::tools::session_list(&db).unwrap_or_default();

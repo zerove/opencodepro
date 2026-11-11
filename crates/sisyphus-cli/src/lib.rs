@@ -4,6 +4,7 @@
 //! 该库 crate 暴露全部 CLI 模块以便测试。
 //! `main.rs` 二进制是委托到这里的薄入口。
 
+pub mod approval;
 pub mod bridge;
 pub mod build;
 pub mod delegate;

@@ -15,15 +15,24 @@ pub(crate) enum Dialog {
     Roadmap,
     SkillMarket,
     WorkspaceList,
-    Trace { sop_id: String },
+    Trace {
+        sop_id: String,
+    },
     CognitiveTrace,
     CognitiveSummary,
     Health,
     Help,
     ConfirmDelete(ConfirmTarget),
 
-    Dev { goal: String },
-    Rename { session_id: String, name: String },
+    Dev {
+        goal: String,
+    },
+    /// 工具调用审批弹窗（T2.2）：请求内容由 `App::pending_tool_approval` 承载。
+    ToolApproval,
+    Rename {
+        session_id: String,
+        name: String,
+    },
 }
 
 /// 待确认删除的对象类型
@@ -118,6 +127,7 @@ pub fn handle_dialog_key(key: KeyEvent, app: &mut App) {
             _ => {},
         },
         Dialog::Dev { goal: _ } => handlers::handle_dev_key(key, app),
+        Dialog::ToolApproval => handlers::handle_tool_approval_key(code, app),
         Dialog::Rename {
             session_id: _,
             name: _,
@@ -144,6 +154,7 @@ pub fn render_dialog_overlay(frame: &mut ratatui::Frame, area: ratatui::layout::
         Dialog::Health => renders::render_health_dialog(frame, area, app),
         Dialog::ConfirmDelete(target) => renders::render_confirm_dialog(frame, area, app, *target),
         Dialog::Dev { goal: _goal } => renders::render_dev_dialog(frame, area, app),
+        Dialog::ToolApproval => renders::render_tool_approval_dialog(frame, area, app),
         Dialog::Rename {
             session_id: _,
             name,

@@ -701,6 +701,38 @@ pub(super) fn render_rename_dialog(frame: &mut ratatui::Frame, area: Rect, app: 
 
 // ── 开发对话框 ────────────────────────────────────────
 
+pub(super) fn render_tool_approval_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
+    let theme = app.theme();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Approval Required ")
+        .border_style(Style::default().fg(theme.warning));
+
+    let (tool, detail) = match &app.pending_tool_approval {
+        Some(request) => (request.tool.clone(), request.detail.clone()),
+        None => (String::new(), String::new()),
+    };
+
+    let mut lines = vec![Line::from(Span::styled(
+        format!("  Tool: {tool}"),
+        Style::default().fg(theme.primary),
+    ))];
+    if !detail.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!("  {detail}"),
+            Style::default().fg(theme.fg),
+        )));
+    }
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "  y = approve    n = deny    Esc = deny",
+        Style::default().fg(theme.muted),
+    )));
+
+    let para = Paragraph::new(Text::from(lines)).block(block).wrap(Wrap { trim: false });
+    frame.render_widget(para, area);
+}
+
 pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
     let theme = app.theme();
     let block = Block::default()

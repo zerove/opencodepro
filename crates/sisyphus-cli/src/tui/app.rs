@@ -448,6 +448,8 @@ pub(crate) struct App {
     pub(crate) pending_op: Option<tokio::sync::oneshot::Receiver<crate::tui::background::BgOp>>,
     /// 开发 Agent 运行句柄（T2.1 MVP）：结果接收 + 审批队列 + 应答通道。
     pub(crate) pending_dev: Option<crate::tui::background::DevRunHandle>,
+    /// 待审批的工具调用（T2.2）：来自审批 broker 的请求（含应答通道）。
+    pub(crate) pending_tool_approval: Option<crate::approval::ApprovalRequest>,
 
     // 命令面板
     pub(crate) palette_open: bool,
@@ -622,6 +624,7 @@ impl App {
             workspace_status: "idle".into(),
             pending_op: None,
             pending_dev: None,
+            pending_tool_approval: None,
             palette_open: false,
             palette_query: String::new(),
             palette_sel: 0,
@@ -883,8 +886,7 @@ impl App {
         self.dev_ask = None;
     }
 
-    /// 中断开发 Agent 运行（T2.1 MVP）。
-    ///
+    /// 中断开发 Agent 运行（T2.1 MVP）。    ///
     /// 置位中断标志（任务在步骤边界返回 `Cancelled` 并保留 checkpoint），
     /// UI 切到恢复入口（`Resume` 焦点 + `dev_resume`）。
     pub(crate) fn dev_interrupt(&mut self) {
@@ -898,6 +900,22 @@ impl App {
         self.add_log(LogEntry::Warn(
             "Dev agent interrupted (resume available)".into(),
         ));
+    }
+
+    /// 应答工具调用审批（T2.2）：放行 / 拒绝后关闭弹窗。
+    pub(crate) fn answer_tool_approval(&mut self, approve: bool) {
+        if let Some(request) = self.pending_tool_approval.take() {
+            let tool = request.tool.clone();
+            request.respond(approve);
+            if approve {
+                self.add_log(LogEntry::Success(format!("Approved tool call: {tool}")));
+            } else {
+                self.add_log(LogEntry::Warn(format!("Denied tool call: {tool}")));
+            }
+        }
+        if matches!(self.dialog, Some(Dialog::ToolApproval)) {
+            self.dialog = None;
+        }
     }
 
     pub(crate) fn add_toast(&mut self, kind: ToastKind, message: impl Into<String>) {
@@ -1105,6 +1123,13 @@ impl App {
                 ops.push(op);
             }
             self.pending_dev = Some(handle);
+        }
+        // 审批 broker（T2.2）：后台任务的工具审批请求 → 弹窗询问。
+        if self.pending_tool_approval.is_none() {
+            if let Some(request) = crate::approval::take_pending() {
+                self.pending_tool_approval = Some(request);
+                self.dialog = Some(Dialog::ToolApproval);
+            }
         }
         for op in ops {
             self.apply_bg_op(op);

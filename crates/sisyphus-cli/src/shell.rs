@@ -24,11 +24,26 @@ pub async fn exec(
             anyhow::bail!("Permission denied: shell execution is blocked by config");
         },
         crate::permission::Decision::Ask => {
-            // TUI 模式：跳过权限提示 — 用户输入命令并回车
-            // 已表明意图。同步的 stdin 读取与 crossterm 原始模式
-            // 不兼容。
+            // TUI 模式：走审批弹窗（broker）；未注册 TUI 时回退到
+            // "输入即同意"（crossterm 原始模式下无法用 stdin 提问）。
             // CLI 模式在 Commands::Exec 中有自己的权限检查。
-            perms.record_decision("exec", &decision, "asked-proceeded-tui");
+            if crate::approval::is_registered() {
+                match crate::approval::request("exec", command).await {
+                    Ok(true) => {
+                        perms.record_decision("exec", &decision, "asked-approved");
+                    },
+                    Ok(false) => {
+                        perms.record_decision("exec", &decision, "asked-denied");
+                        anyhow::bail!("Shell execution denied by user");
+                    },
+                    Err(e) => {
+                        perms.record_decision("exec", &decision, "asked-unanswered");
+                        anyhow::bail!("Approval unavailable: {e}");
+                    },
+                }
+            } else {
+                perms.record_decision("exec", &decision, "asked-proceeded-tui");
+            }
         },
     }
 

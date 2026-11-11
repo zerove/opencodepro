@@ -877,3 +877,74 @@ async fn test_dev_ask_state_set_by_bg_op() {
     });
     assert_eq!(app.dev_ask.as_deref(), Some("builtin:file_write"));
 }
+
+// ── T2.2：TUI 工具调用审批弹窗 ──────────────────────────
+
+#[tokio::test]
+async fn test_tool_approval_modal_y_approves() {
+    let mut app = App::new(
+        PathBuf::from("/tmp/opencode/t2_2_approval"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
+    let (request, mut wait) = crate::approval::ApprovalRequest::create("exec", "rm -rf /tmp/x");
+    app.pending_tool_approval = Some(request);
+    app.dialog = Some(dialog::Dialog::ToolApproval);
+
+    press(&mut app, KeyCode::Char('y'));
+
+    assert!(
+        app.pending_tool_approval.is_none(),
+        "应答后应清空待审批请求"
+    );
+    assert!(app.dialog.is_none(), "应答后应关闭弹窗");
+    assert_eq!(wait.try_recv().ok(), Some(true), "y 应放行");
+}
+
+#[tokio::test]
+async fn test_tool_approval_modal_n_denies() {
+    let mut app = App::new(
+        PathBuf::from("/tmp/opencode/t2_2_approval"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
+    let (request, mut wait) = crate::approval::ApprovalRequest::create("exec", "rm -rf /tmp/x");
+    app.pending_tool_approval = Some(request);
+    app.dialog = Some(dialog::Dialog::ToolApproval);
+
+    press(&mut app, KeyCode::Char('n'));
+
+    assert!(app.pending_tool_approval.is_none());
+    assert_eq!(wait.try_recv().ok(), Some(false), "n 应拒绝");
+}
+
+#[tokio::test]
+async fn test_tool_approval_request_reaches_app_modal() {
+    crate::approval::register();
+    let mut app = App::new(
+        PathBuf::from("/tmp/opencode/t2_2_approval"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
+
+    let handle = tokio::spawn(async { crate::approval::request("exec", "ls -la").await });
+
+    // 事件循环轮询：请求到达后应打开审批弹窗
+    let mut opened = false;
+    for _ in 0..50 {
+        app.process_events();
+        if app.pending_tool_approval.is_some() {
+            opened = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert!(opened, "broker 请求应被 TUI 接收并弹窗");
+
+    let request = app.pending_tool_approval.take().expect("待审批请求");
+    assert_eq!(request.tool, "exec");
+    assert_eq!(request.detail, "ls -la");
+    request.respond(true);
+
+    assert_eq!(handle.await.expect("任务应结束").ok(), Some(true));
+}
