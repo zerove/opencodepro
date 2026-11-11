@@ -91,7 +91,7 @@ HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 .PHONY: test-bridge-full test-bridge-dedicated test-cli-handlers
 .PHONY: test-ci
 .PHONY: perf-analyze
-.PHONY: perf-regression perf-regression-bridge perf-tui
+.PHONY: perf-regression perf-regression-bridge perf-tui long-run-stability
 .PHONY: target-gc target-gc-apply target-size
 .PHONY: dev-tui run-tui clean
 .PHONY: dev ci-quick dev-fmt dev-clippy dev-test ci-bridge
@@ -537,6 +537,21 @@ perf-regression-bridge:
 perf-tui:
 	@echo "━━━ Measuring TUI first frame (PTY) ━━━"
 	@./scripts/measure-tui-first-frame.sh $(or $(bin),./target/debug/sisyphus) $(or $(samples),3)
+
+
+# — Long-window stability monitor (T4.5) —
+#
+#   Runs the bridge for a fixed window, sampling RSS / file descriptors / threads
+#   while polling read-only endpoints. Writes
+#   docs/benchmarks/long-run/<date>-<commit>/{samples.tsv,summary.json,summary.md}
+#
+#   Usage:
+#     make long-run-stability                 # 10 minutes
+#     make long-run-stability minutes=30
+
+long-run-stability:
+	@echo "━━━ Long-window stability monitor (bridge) ━━━"
+	@./scripts/long-run-stability.sh $(or $(minutes),10)
 
 
 # — Single-node demo/readiness convenience (P1-C/P2-C) —
