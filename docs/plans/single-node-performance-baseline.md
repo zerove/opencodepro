@@ -26,15 +26,28 @@
 - 结果存入 `docs/benchmarks/`（按日期/主题命名），并在本计划中索引。
 - 回归判定：以同口径基线对比，显著退化需定位原因或记录权衡。
 
+### 3.1 桥接启动分段测量（T3.3 落地部分）
+
+桥接启动阶段计时通过 `startup_phase_*_ms` tracing 事件上报（config / bridge /
+http_listening / grpc_listening），端到端就绪时间由 `scripts/measure-bridge-startup.sh`
+与 `scripts/single-node-bench-sample.sh bridge` 同口径测量。
+
+- 实跑（`./scripts/measure-bridge-startup.sh ./target/debug/sisyphus-bridge`）：
+  - end_to_end_ready_ms ≈ 1530 ms（debug，dummy embedding，`cluster.enabled=false`）
+  - phases：bridge_init ≈ 59 ms，`grpc_listening` ≈ 67 ms，`http_listening` ≈ 68 ms
+  - `config_ms` 因 tracing 初始化先于阶段日志生效而未捕获（启动早期日志），属已知口径限制。
+
 ## 4. 当前状态
 
 - 已有部分 benchmark/基线文档（见 `docs/benchmarks/`）；单机产品路径（CLI/bridge/WebUI 启动与只读接口）的统一口径待按本计划补齐。
 - 首次采样建议作为 P2-B 初始基线，在具备稳定环境后执行并落盘。
+- T3.3：bridge 启动分段（`startup_phase_*_ms` + 测量脚本）已落地；TUI 首帧 PTY 测量与后续优化待继续。
 
 ## 5. 关联
 
 - `docs/plans/p1-p2-roadmap.md`（P2-B）
 - `docs/benchmarks/`（历史与后续基线）
+- `scripts/measure-bridge-startup.sh`、`scripts/single-node-bench-sample.sh`（T0.2/T3.3）
 
 ## 6. 初始采样记录
 

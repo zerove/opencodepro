@@ -98,6 +98,7 @@
 | T4.1 | 质量指标定义与采集 | 成功率、修复率、回归率、单任务耗时/token 成本；从执行记录汇总 | 指标文档 + 首轮数据（脚本可复跑） | M |
 | T4.2 | 性能回归门禁 | 定时/触发式采样，对比基线阈值，超阈值告警 | CI job 或 `make perf-regression`；阈值与例外记录 | M |
 | T4.2 状态（执行） | DONE | `scripts/perf-regression-check.sh <mode>` + `make perf-regression{,-bridge}`；基线 `docs/benchmarks/perf-regression-baseline-2026-11-10.json`；实跑 `perf-regression-check.sh cli` rc=0（3 CLI 指标 p50 0.0097-0.0118s < 0.05s） |
+| T3.3 启动分段归因与优化 | IN_PROGRESS | 落地部分：`startup_phase_*_ms`（config/bridge/http_listening/grpc_listening）+ `scripts/measure-bridge-startup.sh`；实跑 end_to_end_ready_ms≈1530ms、phases bridge≈59ms/http≈68ms/grpc≈67ms；TUI 首帧 PTY 测量与后续优化待继续 |
 | T4.3 | evals 子集入 CI | 选取稳定、无外部依赖的 cases（metis/momus/security 等） | CI 通过；用例清单与运行时长记录 | M |
 | T4.4 | 统一 trace 关联 | 入口生成 trace id，贯穿 SOP/工具/LLM 日志与响应头；先行设计文档 | 一次请求可查到全部子步骤；设计评审记录 | M–L |
 | T4.5 | 长窗口稳定性 | 连续执行/资源泄漏（内存、句柄、DB）监测 | 数小时运行记录与结论（不伪造连续样本） | M |

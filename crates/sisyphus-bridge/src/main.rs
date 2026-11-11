@@ -25,6 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ADR-019：依赖图可能同时启用 ring/aws-lc-rs；显式安装 rustls provider，
     // 否则启用 TLS 时握手会 panic（fail-closed 的前提下也不允许运行期崩溃）。
     sisyphus_bridge::peer::tls::ensure_rustls_crypto_provider();
+    let startup_t0 = std::time::Instant::now();
     let config_path =
         std::env::var("SISYPHUS_CONFIG").unwrap_or_else(|_| "config.toml".to_string());
 
@@ -46,6 +47,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             (store, cfg)
         },
     };
+    info!(
+        "startup_phase config_ms={}",
+        startup_t0.elapsed().as_millis()
+    );
 
     // ── OpenTelemetry initialization ─────────────────────────────────────
     let otel_endpoint = shared_config
@@ -260,6 +265,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bridge = Arc::new(
         MySisyphusBridge::new(shared_config.clone(), None, cluster_runtime.clone()).await?,
     );
+    info!(
+        "startup_phase bridge_ms={}",
+        startup_t0.elapsed().as_millis()
+    );
 
     // Spawn config hot-reload in background
     tokio::spawn(async move {
@@ -325,6 +334,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _http_handle = tokio::spawn(async move {
         match tokio::net::TcpListener::bind(http_addr).await {
             Ok(listener) => {
+                info!(
+                    "startup_phase http_listening_ms={}",
+                    startup_t0.elapsed().as_millis()
+                );
                 if let Err(e) = axum::serve(listener, http_app)
                     .with_graceful_shutdown(async move {
                         // 等待 shutdown 信号
@@ -363,7 +376,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Try IPv6 (::1) first; fall back to IPv4 (127.0.0.1) on systems without IPv6 loopback
     let grpc_listener = match tokio::net::TcpListener::bind(grpc_addr).await {
-        Ok(l) => l,
+        Ok(l) => {
+            info!(
+                "startup_phase grpc_listening_ms={}",
+                startup_t0.elapsed().as_millis()
+            );
+            l
+        },
         Err(_) => {
             let v4_addr: std::net::SocketAddr =
                 format!("127.0.0.1:{}", grpc_addr.port()).parse().map_err(|e| {
