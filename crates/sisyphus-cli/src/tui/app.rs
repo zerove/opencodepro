@@ -446,6 +446,8 @@ pub(crate) struct App {
     pub(crate) workspace_sel: usize,
     pub(crate) workspace_status: String,
     pub(crate) pending_op: Option<tokio::sync::oneshot::Receiver<crate::tui::background::BgOp>>,
+    /// 开发 Agent 运行句柄（T2.1 MVP）：结果接收 + 审批队列 + 应答通道。
+    pub(crate) pending_dev: Option<crate::tui::background::DevRunHandle>,
 
     // 命令面板
     pub(crate) palette_open: bool,
@@ -500,6 +502,9 @@ pub(crate) struct App {
     pub(crate) dev_report: Option<String>,
     pub(crate) dev_status: String,
     pub(crate) dev_focus: DevFocus,
+    /// 待审批的工具调用（T2.1 MVP）：`BgOp::DevAsk` 到达时置位，
+    /// 用户 `y`/`n` 应答后清空。
+    pub(crate) dev_ask: Option<String>,
 
     // 仪表盘状态
     pub(crate) dashboard_anomaly_count: usize,
@@ -616,6 +621,7 @@ impl App {
             workspace_sel: 0,
             workspace_status: "idle".into(),
             pending_op: None,
+            pending_dev: None,
             palette_open: false,
             palette_query: String::new(),
             palette_sel: 0,
@@ -652,6 +658,7 @@ impl App {
             dev_report: None,
             dev_status: "idle".into(),
             dev_focus: DevFocus::Goal,
+            dev_ask: None,
 
             dashboard_anomaly_count: 0,
             dashboard_anomalies: Vec::new(),
@@ -866,6 +873,33 @@ impl App {
         self.scroll = self.log.len().saturating_sub(1);
     }
 
+    /// 应答开发 Agent 的待审批工具调用（T2.1 MVP）。
+    ///
+    /// `approve = true` 放行，`false` 拒绝；应答后清除待审批状态。
+    pub(crate) fn dev_answer(&mut self, approve: bool) {
+        if let Some(handle) = self.pending_dev.as_ref() {
+            let _ = handle.answer.send(approve);
+        }
+        self.dev_ask = None;
+    }
+
+    /// 中断开发 Agent 运行（T2.1 MVP）。
+    ///
+    /// 置位中断标志（任务在步骤边界返回 `Cancelled` 并保留 checkpoint），
+    /// UI 切到恢复入口（`Resume` 焦点 + `dev_resume`）。
+    pub(crate) fn dev_interrupt(&mut self) {
+        if let Some(handle) = self.pending_dev.as_ref() {
+            handle.interrupt.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        self.dev_ask = None;
+        self.dev_status = "idle".into();
+        self.dev_focus = DevFocus::Resume;
+        self.dev_resume = true;
+        self.add_log(LogEntry::Warn(
+            "Dev agent interrupted (resume available)".into(),
+        ));
+    }
+
     pub(crate) fn add_toast(&mut self, kind: ToastKind, message: impl Into<String>) {
         self.toasts.push(Toast::new(kind, message));
         if self.toasts.len() > MAX_TOASTS {
@@ -1063,12 +1097,21 @@ impl App {
                 self.pending_dashboard_op = Some(rx);
             }
         }
+        if let Some(mut handle) = self.pending_dev.take() {
+            while let Ok(op) = handle.asks.try_recv() {
+                ops.push(op);
+            }
+            if let Ok(op) = handle.result.try_recv() {
+                ops.push(op);
+            }
+            self.pending_dev = Some(handle);
+        }
         for op in ops {
             self.apply_bg_op(op);
         }
     }
 
-    fn apply_bg_op(&mut self, op: crate::tui::background::BgOp) {
+    pub(crate) fn apply_bg_op(&mut self, op: crate::tui::background::BgOp) {
         match op {
             crate::tui::background::BgOp::SopsListed { count, sops } => {
                 self.sop_sops = sops;
@@ -1227,6 +1270,12 @@ impl App {
                 }
                 self.dev_report = Some(report);
                 self.dev_status = "done".into();
+            },
+            crate::tui::background::BgOp::DevAsk { tool_id } => {
+                self.dev_ask = Some(tool_id.clone());
+                self.add_log(LogEntry::Info(format!(
+                    "Dev agent awaiting approval: {tool_id}"
+                )));
             },
             crate::tui::background::BgOp::SessionUpdated { session_id, errors } => {
                 for entry in &errors {

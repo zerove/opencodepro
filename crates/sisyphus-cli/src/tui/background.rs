@@ -109,6 +109,10 @@ pub enum BgOp {
         report: String,
         success: bool,
     },
+    /// 开发 Agent 等待用户审批的工具调用（T2.1 MVP）。
+    DevAsk {
+        tool_id: String,
+    },
     SkillsAvailable {
         skills: Vec<RemoteSkillEntry>,
     },
@@ -311,20 +315,67 @@ pub fn spawn_session_add_message(
     rx
 }
 
+/// T2.1 MVP：开发 Agent 运行句柄。
+///
+/// - `result`：任务最终结果（`DevResult`）接收端。
+/// - `asks`：任务等待用户审批时下发的 `DevAsk` 消息队列。
+/// - `answer`：审批应答通道（TUI → 任务）。
+pub struct DevRunHandle {
+    pub result: tokio::sync::oneshot::Receiver<BgOp>,
+    pub asks: tokio::sync::mpsc::UnboundedReceiver<BgOp>,
+    pub answer: tokio::sync::mpsc::UnboundedSender<bool>,
+    /// 中断标志（T2.1 MVP）：TUI 置位后，开发循环在步骤边界返回 `Cancelled`。
+    pub interrupt: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// T2.1 MVP：开发 Agent 审批 approver。
+///
+/// 收到工具调用请求时向 TUI 下发 `DevAsk`，等待用户应答（放行/拒绝）后返回。
+/// 应答通道关闭（用户已离开）视为拒绝（fail-safe）。
+struct DevAskApprover {
+    ask: tokio::sync::mpsc::UnboundedSender<BgOp>,
+    answer: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<bool>>,
+}
+
+#[async_trait::async_trait]
+impl crate::tools::developer::DevApprover for DevAskApprover {
+    async fn approve(&self, tool_id: &str, _action: &serde_json::Value) -> Result<bool, String> {
+        let _ = self.ask.send(crate::tui::background::BgOp::DevAsk {
+            tool_id: tool_id.to_string(),
+        });
+        let mut answer = self.answer.lock().await;
+        let answered =
+            answer.recv().await.ok_or_else(|| "dev approval channel closed".to_string())?;
+        Ok(answered)
+    }
+}
+
 /// 启动运行开发代理并返回格式化报告的后台任务。
+///
+/// T2.1 MVP：同时接线 checkpoint（支持 resume）、中断标志与审批闸（`DevApprover`）。
 pub fn spawn_dev_agent(
     config: sisyphus_types::Config,
     goal: String,
     context: String,
     parallel: bool,
     resume: bool,
-) -> tokio::sync::oneshot::Receiver<BgOp> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
+) -> DevRunHandle {
+    let (tx, result) = tokio::sync::oneshot::channel();
+    let (ask_tx, asks) = tokio::sync::mpsc::unbounded_channel::<BgOp>();
+    let (answer_tx, answer_rx) = tokio::sync::mpsc::unbounded_channel::<bool>();
+    let interrupt = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let interrupt_task = interrupt.clone();
     tokio::spawn(async move {
         let config = std::sync::Arc::new(std::sync::RwLock::new(config));
         let llm: std::sync::Arc<dyn crate::tools::metis::LlmClient> =
             std::sync::Arc::new(crate::tools::llm::DynamicLlmClient::new(config));
-        let developer = crate::tools::developer::Developer::new(llm);
+        let developer = crate::tools::developer::Developer::new(llm)
+            .with_checkpoint(std::env::temp_dir().join("sisyphus_dev_agent"))
+            .with_interrupt(interrupt_task)
+            .with_approval_handler(std::sync::Arc::new(DevAskApprover {
+                ask: ask_tx,
+                answer: tokio::sync::Mutex::new(answer_rx),
+            }));
         let goal_c = goal.clone();
         match developer.develop(&goal, &context, parallel, resume).await {
             Ok(report) => {
@@ -346,7 +397,12 @@ pub fn spawn_dev_agent(
             },
         }
     });
-    rx
+    DevRunHandle {
+        result,
+        asks,
+        answer: answer_tx,
+        interrupt,
+    }
 }
 
 /// Spawn approve proposal.

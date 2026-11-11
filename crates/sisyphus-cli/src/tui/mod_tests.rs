@@ -767,3 +767,113 @@ fn self_programmed_badge_without_quality_tag() {
     let s = skill("b", "sisyphus-self-programming", &["self-programming"]);
     assert_eq!(crate::tui::widgets::self_programmed_badge(&s), " ⚙ auto ");
 }
+
+// ── T2.1 MVP：dev 审批与中断（S3 接缝）──────────────────────
+
+/// 构造一个 dev 运行句柄，并返回其审批应答接收端。
+fn dev_handle_with_answer() -> (
+    crate::tui::background::DevRunHandle,
+    tokio::sync::mpsc::UnboundedReceiver<bool>,
+) {
+    let (answer_tx, answer_rx) = tokio::sync::mpsc::unbounded_channel::<bool>();
+    let (_result_tx, result_rx) = tokio::sync::oneshot::channel::<crate::tui::background::BgOp>();
+    let (_ask_tx, asks) = tokio::sync::mpsc::unbounded_channel::<crate::tui::background::BgOp>();
+    (
+        crate::tui::background::DevRunHandle {
+            result: result_rx,
+            asks,
+            answer: answer_tx,
+            interrupt: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        },
+        answer_rx,
+    )
+}
+
+fn dev_app() -> App {
+    let mut app = App::new(
+        PathBuf::from("/tmp/opencode/t2_1_dev_app"),
+        "addr".into(),
+        "http://[::1]:8080".into(),
+    );
+    app.dialog = Some(dialog::Dialog::Dev {
+        goal: String::new(),
+    });
+    app
+}
+
+#[tokio::test]
+async fn test_dev_ask_y_approves_tool_call() {
+    let mut app = dev_app();
+    app.dev_status = "running".into();
+    app.dev_ask = Some("builtin:bash_exec".into());
+    let (handle, mut answer_rx) = dev_handle_with_answer();
+    app.pending_dev = Some(handle);
+
+    press(&mut app, KeyCode::Char('y'));
+
+    assert!(app.dev_ask.is_none(), "应答后应清除待审批状态");
+    assert_eq!(answer_rx.try_recv().ok(), Some(true), "y 应放行");
+}
+
+#[tokio::test]
+async fn test_dev_ask_n_denies_tool_call() {
+    let mut app = dev_app();
+    app.dev_status = "running".into();
+    app.dev_ask = Some("builtin:bash_exec".into());
+    let (handle, mut answer_rx) = dev_handle_with_answer();
+    app.pending_dev = Some(handle);
+
+    press(&mut app, KeyCode::Char('n'));
+
+    assert!(app.dev_ask.is_none(), "应答后应清除待审批状态");
+    assert_eq!(answer_rx.try_recv().ok(), Some(false), "n 应拒绝");
+}
+
+#[tokio::test]
+async fn test_dev_esc_denies_and_interrupts() {
+    let mut app = dev_app();
+    app.dev_status = "running".into();
+    app.dev_ask = Some("builtin:bash_exec".into());
+    let (handle, mut answer_rx) = dev_handle_with_answer();
+    app.pending_dev = Some(handle);
+
+    press(&mut app, KeyCode::Esc);
+
+    assert_eq!(answer_rx.try_recv().ok(), Some(false), "Esc 应拒绝本次审批");
+    assert_eq!(app.dev_status, "idle");
+    assert_eq!(app.dev_focus, app::DevFocus::Resume);
+    assert!(app.dev_resume, "中断后应提供恢复入口");
+}
+
+#[tokio::test]
+async fn test_dev_esc_interrupts_running_agent() {
+    let mut app = dev_app();
+    app.dev_status = "running".into();
+    let (handle, _answer_rx) = dev_handle_with_answer();
+    app.pending_dev = Some(handle);
+
+    press(&mut app, KeyCode::Esc);
+
+    assert_eq!(app.dev_status, "idle");
+    assert_eq!(app.dev_focus, app::DevFocus::Resume);
+    assert!(app.dev_resume, "中断后应提供恢复入口");
+    let interrupted = app
+        .pending_dev
+        .as_ref()
+        .map(|h| h.interrupt.load(std::sync::atomic::Ordering::SeqCst))
+        .unwrap_or(false);
+    assert!(
+        interrupted,
+        "Esc 应置位中断标志，使任务在步骤边界返回 Cancelled"
+    );
+}
+
+#[tokio::test]
+async fn test_dev_ask_state_set_by_bg_op() {
+    let mut app = dev_app();
+    app.dev_status = "running".into();
+    app.apply_bg_op(crate::tui::background::BgOp::DevAsk {
+        tool_id: "builtin:file_write".into(),
+    });
+    assert_eq!(app.dev_ask.as_deref(), Some("builtin:file_write"));
+}

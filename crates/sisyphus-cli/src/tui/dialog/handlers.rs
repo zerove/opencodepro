@@ -480,10 +480,33 @@ pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
         return;
     }
 
-    // 运行中时，仅 Esc 取消（将状态设为空闲）
+    // 待审批的工具调用：y 放行 / n 拒绝 / Esc 拒绝并中断（T2.1 MVP）
+    if app.dev_ask.is_some() {
+        match code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                app.dev_answer(true);
+                app.add_log(LogEntry::Success("Dev tool call approved".into()));
+            },
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                app.dev_answer(false);
+                app.add_log(LogEntry::Warn("Dev tool call denied".into()));
+            },
+            KeyCode::Esc => {
+                app.dev_answer(false);
+                app.dev_interrupt();
+                app.add_log(LogEntry::Warn(
+                    "Dev tool call denied and run interrupted".into(),
+                ));
+            },
+            _ => {},
+        }
+        return;
+    }
+
+    // 运行中时，Esc 中断（状态置空闲并切到恢复入口）
     if app.dev_status == "running" {
         if code == KeyCode::Esc {
-            app.dev_status = "idle".into();
+            app.dev_interrupt();
         }
         return;
     }
@@ -529,10 +552,11 @@ pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
                 let context = app.dev_context.clone();
                 let parallel = app.dev_parallel;
                 let resume = app.dev_resume;
-                if app.pending_op.is_none() {
+                if app.pending_dev.is_none() {
                     let mut config = sisyphus_types::Config::default();
                     config.apply_env_overrides();
-                    app.pending_op = Some(spawn_dev_agent(config, goal, context, parallel, resume));
+                    app.pending_dev =
+                        Some(spawn_dev_agent(config, goal, context, parallel, resume));
                 }
             }
         },

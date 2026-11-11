@@ -737,9 +737,9 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
         return;
     }
 
-    // 显示运行状态
+    // 显示运行状态（T2.1 MVP：审批卡片 + 工具调用流式卡片 + 中断/恢复提示）
     if app.dev_status == "running" {
-        let text = Text::from(vec![
+        let mut lines = vec![
             Line::from(Span::styled(
                 "  Running developer agent...",
                 Style::default().fg(theme.primary),
@@ -749,12 +749,43 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
                 Style::default().fg(theme.muted),
             )),
             Line::from(""),
-            Line::from(Span::styled(
-                "  Press Esc to cancel (agent continues in background)",
+        ];
+
+        // 待审批的工具调用（T2.1 MVP）
+        if let Some(tool_id) = &app.dev_ask {
+            lines.push(Line::from(Span::styled(
+                format!("  ⚠ Approval required: {tool_id}"),
+                Style::default().fg(theme.warning),
+            )));
+            lines.push(Line::from(Span::styled(
+                "    y = approve   n = deny   Esc = deny and interrupt",
                 Style::default().fg(theme.muted),
-            )),
-        ]);
-        let para = Paragraph::new(text).block(block);
+            )));
+            lines.push(Line::from(""));
+        }
+
+        // 工具调用流式卡片（最近若干条）
+        let recent: Vec<&crate::tui::app::StreamEvent> =
+            app.stream_events.iter().rev().take(8).collect();
+        if !recent.is_empty() {
+            lines.push(Line::from(Span::styled(
+                "  Recent events:",
+                Style::default().fg(theme.muted),
+            )));
+            for ev in recent.iter().rev() {
+                lines.push(Line::from(Span::styled(
+                    format!("    {} {}", ev.source, ev.message),
+                    Style::default().fg(theme.fg),
+                )));
+            }
+            lines.push(Line::from(""));
+        }
+
+        lines.push(Line::from(Span::styled(
+            "  Press Esc to interrupt (resume available afterwards)",
+            Style::default().fg(theme.muted),
+        )));
+        let para = Paragraph::new(Text::from(lines)).block(block);
         frame.render_widget(para, area);
         return;
     }
