@@ -61,7 +61,8 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records
 | `2026-11-11-354a9c1.json` | 首轮采集（bridge 未运行、任务级指标 `null`） |
 | `2026-11-11-ca3f870.json` | 采集链路完成后重采（记录目录为空 → 任务级比率 `null`） |
 | `2026-11-11-6f1bcbd.json` | 指标名修正后重采（bridge 在线，任务级记录目录仍为空 → `null`） |
-| `2026-11-11-d4a6ef0.json` | **首个真实仓库任务样本**：`sisyphus verify -p sisyphus-tools-build --max-warnings 0` → PASS（0 错 0 警，79s）→ 成功率 1.0、平均 79.0s |
+| `2026-11-11-d4a6ef0.json` | 首个真实仓库任务样本（`sisyphus-tools-build`）→ PASS |
+| `2026-11-11-a49b685.json` | **4 个真实仓库任务样本**（types / metrics / tools-build / tools-agent，均 `--max-warnings 0` PASS）→ 成功率 1.0、平均 58.9s |
 | `2026-11-11-6f1bcbd-fixture-samples.json` | **受控 fixture 样本**：3 个真实 `verify --fix` 运行（可自动修复 lint / 不可修复类型错误 / 干净代码）→ 成功率 0.667、修复率 0.5、回归率 0.0、平均 640ms |
 | `fixture-samples/` | 上述 3 条任务记录原文（`sisyphus verify --record` 产出） |
 | `pipeline-demo-2026-11-11.json` | 最早的流程演示样本（2 个 fixture crate），保留作对照 |
@@ -69,7 +70,7 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records
 **样本性质说明**：`fixture-samples/` 下的记录来自**受控 fixture crate** 的真实
 `sisyphus verify --fix` 运行（真实 cargo check / clippy / cargo clippy --fix 执行），
 用于验证指标口径与聚合链路；**不是**仓库真实开发任务的样本。
-仓库真实任务样本目录为 `records/`，现已含 1 条真实样本
+仓库真实任务样本目录为 `records/`，现已含 4 条真实样本
 （`repo-sisyphus-tools-build.json`：`sisyphus verify -p sisyphus-tools-build --max-warnings 0`
 的真实运行结果）。后续在具备 LLM 凭据的环境（T1.4）补齐更多真实开发任务样本。
 
