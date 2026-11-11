@@ -5,7 +5,7 @@
 
 | 任务 | 状态 | 证据 | 复现命令 |
 |---|---|---|---|
-| T4.1 质量指标定义与采集 | IN_PROGRESS | 指标模型与聚合链路落地（`sisyphus-metrics::quality` 6 单测、`verify --record`、`metrics quality`）；实跑 2 条记录 → success_rate=0.5。**缺仓库真实任务样本**（需 L3 环境） | ``cargo test -p sisyphus-metrics --lib quality`` |
+| T4.1 质量指标定义与采集 | DONE | 指标模型与聚合链路（`sisyphus-metrics::quality` 6 单测、`verify --record`、`metrics quality`、采集脚本接入真实聚合）；**首轮真实数据**：3 个受控 fixture 任务→ 成功率 0.667、修复率 0.5、回归率 0.0、平均 640ms（`docs/benchmarks/quality-metrics/2026-11-11-6f1bcbd-fixture-samples.json`）；同时修正两处真实缺陷：`cargo fix --clippy` 非法参数（lint 修复必然失败）、采集端点/指标名与真实契约不符。**剩余**：仓库真实任务样本需 L3 环境（T1.4） | `cargo test -p sisyphus-metrics --lib quality` |
 | T4.2 性能回归门禁 | DONE | `scripts/perf-regression-check.sh` + `make perf-regression`；基线 `docs/benchmarks/perf-regression-baseline-2026-11-10.json`；实跑 rc=0 | ``./scripts/perf-regression-check.sh cli`` |
 | T4.3 evals 子集入 CI | DONE | eval-runner `--cases` 过滤 + `scripts/evals-ci-run.sh` + `make eval-ci`；ci.yml `evals-ci` job；实跑 2/2 PASS | ``./scripts/evals-ci-run.sh "metis/metis-001,momus/momus-plan-002"`` |
 | T4.4 统一 trace 关联 | DONE | trace id 工具 / HTTP 中间件 / gRPC 拦截器 / SSE 负载 / CLI 注入 / span 字段 / 契约文档；10 个 trace 单测；实跑透传·生成·非法替换三态 | ``cargo test -p sisyphus-bridge --lib trace_id`` |
