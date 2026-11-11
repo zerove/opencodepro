@@ -169,3 +169,40 @@ fn todo_delete_removes_item() {
     assert!(todo_list(&path, None).unwrap().is_empty());
     let _ = std::fs::remove_file(&path);
 }
+
+/// 回归：`todo_add` 之后立刻 `todo_list` 必须能看到刚加的条目。
+///
+/// 历史缺陷：存储用 `fs::write`（截断 → 写入），并发读可能读到半截 JSON；
+/// 加载方对解析失败静默回退到空结构，于是表现为「刚添加的 todo 凭空消失」。
+/// 该缺陷在 `cargo test-all` 的高并发场景下表现为概率性失败。
+#[test]
+fn todo_add_is_visible_immediately_under_concurrent_reads() {
+    let path = tmp_path();
+    let seed = todo_add(&path, "seed", TodoPriority::Low).unwrap();
+
+    let read_path = path.clone();
+    let reader = std::thread::spawn(move || {
+        for _ in 0..500 {
+            let items = todo_list(&read_path, None).expect("读取 todo 列表");
+            // 任意时刻读到的必须是完整内容（种子 + 至多 1 条在途条目），
+            // 不能是半截 JSON 解析失败后的空结构
+            assert!(items.len() <= 2, "读到不完整内容: {} 条", items.len());
+        }
+    });
+
+    for i in 0..100 {
+        let item = todo_add(&path, &format!("item-{i}"), TodoPriority::Low).unwrap();
+        let items = todo_list(&path, None).unwrap();
+        assert!(
+            items.iter().any(|it| it.id == item.id),
+            "刚添加的 todo 不可见（写入非原子或读取到半截内容）"
+        );
+        todo_delete(&path, &item.id).unwrap();
+    }
+
+    reader.join().unwrap();
+    let remaining = todo_list(&path, None).unwrap();
+    assert_eq!(remaining.len(), 1, "只应剩下种子条目");
+    assert_eq!(remaining[0].id, seed.id);
+    let _ = std::fs::remove_file(&path);
+}

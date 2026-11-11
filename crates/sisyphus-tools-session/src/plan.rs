@@ -41,7 +41,9 @@ pub fn plan_save(plan: &Plan, path: &Path) -> ToolResult<()> {
     }
     let content = serde_json::to_string_pretty(plan)
         .map_err(|e| sisyphus_tools_core::ToolError::TodoError(format!("serialize: {e}")))?;
-    fs::write(path, content).map_err(sisyphus_tools_core::ToolError::Io)?;
+    // 原子写：读者只会看到替换前或替换后的完整内容
+    crate::atomic_write::write_atomic(path, content.as_bytes())
+        .map_err(sisyphus_tools_core::ToolError::Io)?;
     Ok(())
 }
 

@@ -97,10 +97,30 @@ impl TodoStore {
 
     fn load_or_empty(path: &Path) -> Self {
         if path.exists() {
-            fs::read_to_string(path)
-                .ok()
-                .and_then(|content| serde_json::from_str(&content).ok())
-                .unwrap_or_else(Self::empty)
+            // 读失败或解析失败不再**静默**退化为空结构：那样会把「文件损坏 /
+            // 读到半截内容」伪装成「数据被清空」，排查时毫无线索。
+            // 这里保留空结构兜底（调用方签名不返回 Result），但留下明确日志。
+            match fs::read_to_string(path) {
+                Ok(content) => match serde_json::from_str(&content) {
+                    Ok(store) => store,
+                    Err(e) => {
+                        tracing::warn!(
+                            path = %path.display(),
+                            error = %e,
+                            "todo store parse failed; falling back to empty store"
+                        );
+                        Self::empty()
+                    },
+                },
+                Err(e) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "todo store read failed; falling back to empty store"
+                    );
+                    Self::empty()
+                },
+            }
         } else {
             Self::empty()
         }
@@ -112,7 +132,8 @@ impl TodoStore {
         }
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| ToolError::TodoError(format!("serialize failed: {e}")))?;
-        fs::write(path, content).map_err(ToolError::Io)
+        // 原子写：避免并发读看到半截 JSON（解析失败会被 load_or_empty 静默当成空列表）
+        crate::atomic_write::write_atomic(path, content.as_bytes()).map_err(ToolError::Io)
     }
 }
 

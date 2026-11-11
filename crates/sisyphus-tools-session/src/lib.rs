@@ -1,3 +1,4 @@
+mod atomic_write;
 pub mod collaboration;
 pub mod custom_command;
 pub mod plan;

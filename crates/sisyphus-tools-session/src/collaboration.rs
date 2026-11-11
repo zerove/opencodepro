@@ -91,7 +91,7 @@ impl VersionHistory {
         let history_path = versions_dir.join(format!("{}.json", self.session_id));
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| ToolError::TodoError(format!("serialize version history: {e}")))?;
-        fs::write(history_path, content).map_err(ToolError::Io)
+        crate::atomic_write::write_atomic(&history_path, content.as_bytes()).map_err(ToolError::Io)
     }
 
     /// Push a new version (removes any versions after current index).
@@ -389,7 +389,7 @@ impl SharedSessionRegistry {
             .join("shared_sessions.json");
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| ToolError::TodoError(format!("serialize shared registry: {e}")))?;
-        fs::write(registry_path, content).map_err(ToolError::Io)
+        crate::atomic_write::write_atomic(&registry_path, content.as_bytes()).map_err(ToolError::Io)
     }
 
     /// Share a session and return a share token.
@@ -544,7 +544,7 @@ impl SessionBranches {
         let branches_path = branches_dir.join(format!("{}.json", self.session_id));
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| ToolError::TodoError(format!("serialize branches: {e}")))?;
-        fs::write(branches_path, content).map_err(ToolError::Io)
+        crate::atomic_write::write_atomic(&branches_path, content.as_bytes()).map_err(ToolError::Io)
     }
 
     /// Create a new branch from the current branch's tip.
@@ -746,7 +746,7 @@ impl CollaborationLog {
         let log_path = collab_dir.join(format!("{}.json", self.session_id));
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| ToolError::TodoError(format!("serialize collab log: {e}")))?;
-        fs::write(log_path, content).map_err(ToolError::Io)
+        crate::atomic_write::write_atomic(&log_path, content.as_bytes()).map_err(ToolError::Io)
     }
 
     /// Push an event.
