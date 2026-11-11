@@ -1,0 +1,13 @@
+{
+  "collected_at": "2026-11-11T03:05:41.034100+00:00",
+  "commit": "5a23f9a",
+  "cases": [
+    "metis/metis-001",
+    "momus/momus-plan-002"
+  ],
+  "final_score": 1.0,
+  "final_denominator": 1.0,
+  "passed_count": 2,
+  "total_count": 2,
+  "duration_ms": 1533
+}

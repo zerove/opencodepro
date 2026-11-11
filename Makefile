@@ -704,6 +704,9 @@ eval:
 eval-check:
 	cargo check -p eval-runner
 
+eval-ci:
+	./scripts/evals-ci-run.sh
+
 clean:
 	cargo clean
 
