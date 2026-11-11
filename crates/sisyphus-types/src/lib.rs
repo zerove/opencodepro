@@ -24,6 +24,7 @@ pub mod roadmap;
 pub mod sandbox_error;
 pub mod tool_error;
 pub mod tools;
+pub mod trace;
 
 pub mod circuit_breaker;
 pub mod config;

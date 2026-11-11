@@ -20,6 +20,7 @@ metrics = "0.24"
 imbl = { version = "2", features = ["serde"] }
 dashmap = "6.1"
 notify = "6.0"
+uuid = { version = "1.0", features = ["v4"] }
 tokio = { version = "1.0", features = ["rt", "macros", "sync", "fs", "time"] }
 
 [dev-dependencies]
