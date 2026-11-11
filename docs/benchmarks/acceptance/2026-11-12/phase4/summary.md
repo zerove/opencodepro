@@ -10,7 +10,7 @@
 | T4.3 evals 子集入 CI | DONE | eval-runner `--cases` 过滤 + `scripts/evals-ci-run.sh` + `make eval-ci`；ci.yml `evals-ci` job；实跑 2/2 PASS | ``./scripts/evals-ci-run.sh "metis/metis-001,momus/momus-plan-002"`` |
 | T4.4 统一 trace 关联 | DONE | trace id 工具 / HTTP 中间件 / gRPC 拦截器 / SSE 负载 / CLI 注入 / span 字段 / 契约文档；10 个 trace 单测；实跑透传·生成·非法替换三态 | ``cargo test -p sisyphus-bridge --lib trace_id`` |
 | T4.4b gRPC trace 端到端 | DONE | CLI → bridge → 认知循环：拦截器生成的 trace id 被 `grpc.execute_sop` 及其**全部嵌套 span**（run_cognitive_loop / cognitive_iteration / execute_phase / reflect）继承，实现「一次请求可查到全部子步骤」（`trace-grpc-e2e.txt`） | `sisyphus --bridge <addr> remote exec <sop>` |
-| T4.4c HTTP→SSE 载体 | PARTIAL | SSE 事件负载注入 `trace_id` 已由单测覆盖（`test_mapped_execution_events_carry_trace_id`）；**端到端未取证**：SSE 流仅在真实执行时才有事件，而当前环境缺 LLM 凭据（T1.4 阻塞），实跑 `/api/events` 6 秒无数据 —— 不伪造该链路证据 |（单元测试）`cargo test -p sisyphus-bridge --lib trace_id` |
+| T4.4c HTTP→SSE 载体 | DONE | 广播处理器改为从请求头取 trace id 注入事件 payload（与执行事件同构）；端到端：订阅 `/api/events` + `POST /api/events/broadcast`（带 `x-trace-id: trace-sse-e2e`）→ 事件 payload 含 `"trace_id":"trace-sse-e2e"`（`trace-sse-e2e.txt`）；单测 2 个 | `cargo test -p sisyphus-bridge --lib trace_id` |
 | T4.5 长窗口稳定性 | DONE | **4 小时窗口**（2881 采样，14398s）：探活与 /api/metrics 成功率 100%；RSS 55404→55996 KB（斜率 -0.83 KB/min，decreasing）、FD 20→11、线程 18→14 不增反降 → 无泄漏迹象（`docs/benchmarks/long-run/2026-11-11-31d14c3/`） | `./scripts/long-run-stability.sh 240` |
 
 ## 复现方式

@@ -1,0 +1,13 @@
+# T4.4c SSE 载体端到端证据（订阅 + 广播）
+
+- 场景：订阅 `GET /api/events`，随后 `POST /api/events/broadcast` 带 `x-trace-id: trace-sse-e2e`
+- 观察：广播事件的 payload 内含 `trace_id` 键，与发起请求的 trace id 一致
+  （广播处理器从请求头取 trace id 注入 payload，与执行事件同构）
+- 原始输出：`/tmp/opencode/sse-e2e-out.txt`
+
+```
+event: custom
+data: {"type":"custom","event_type":"custom","payload":{"message":"hello","sop_id":"probe","trace_id":"trace-sse-e2e"},"timestamp":"2026-11-11T23:01:03.014163429Z"}
+id: f86c835d-9dd2-4207-8f0c-e7d61b8ddc89
+
+```

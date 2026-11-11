@@ -3,7 +3,7 @@
 //! 提供 `/api/events` 端点，基于 Server-Sent Events 实现实时事件流式传输。
 
 use axum::{
-    extract::{Query, State},
+    extract::{Extension, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response, Sse},
     Json,
@@ -489,11 +489,19 @@ pub async fn sse_handler(
 /// 用于内部广播事件的 REST 端点
 pub async fn broadcast_event_handler(
     State(state): State<RestApiState>,
+    maybe_trace_id: Option<Extension<sisyphus_types::trace::TraceId>>,
     Json(payload): Json<BroadcastEventRequest>,
 ) -> impl IntoResponse {
+    // T4.4：广播事件的 trace id 来自请求头（入口中间件注入），
+    // 与执行事件同构 —— 订阅方据此把事件与发起请求串联。
+    let trace_id = maybe_trace_id.map(|ext| ext.0.as_str().to_string());
     let event = SseEvent::Custom {
         event_type: payload.event_type.clone(),
-        payload: inject_broadcast_dimensions(payload.payload.clone(), &payload),
+        payload: inject_broadcast_dimensions(
+            payload.payload.clone(),
+            &payload,
+            trace_id.as_deref(),
+        ),
         timestamp: chrono::Utc::now(),
     };
 
@@ -524,11 +532,20 @@ pub async fn broadcast_event_handler(
 fn inject_broadcast_dimensions(
     payload: serde_json::Value,
     req: &BroadcastEventRequest,
+    trace_id: Option<&str>,
 ) -> serde_json::Value {
     let mut map = match payload {
         serde_json::Value::Object(m) => m,
         other => return other,
     };
+
+    // trace id 优先取请求头（请求级归属），payload 内同名字段让位。
+    if let Some(trace_id) = trace_id.map(str::trim).filter(|s| !s.is_empty()) {
+        map.insert(
+            "trace_id".to_string(),
+            serde_json::Value::String(trace_id.to_string()),
+        );
+    }
 
     for (key, value) in [
         ("sop_id", &req.sop_id),
@@ -773,7 +790,7 @@ mod tests {
             sop_id: Some("sop-top".to_string()),
             session_id: Some("sess-top".to_string()),
         };
-        let resp = broadcast_event_handler(State(state), Json(req)).await.into_response();
+        let resp = broadcast_event_handler(State(state), None, Json(req)).await.into_response();
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
 
         let ev = rx.recv().await.expect("订阅者应收到广播事件");
@@ -802,7 +819,7 @@ mod tests {
             sop_id: Some("sop-top".to_string()),
             session_id: Some("sess-top".to_string()),
         };
-        let resp = broadcast_event_handler(State(state), Json(req)).await.into_response();
+        let resp = broadcast_event_handler(State(state), None, Json(req)).await.into_response();
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
 
         let ev = rx.recv().await.expect("订阅者应收到广播事件");
@@ -823,7 +840,7 @@ mod tests {
             sop_id: None,
             session_id: None,
         };
-        let resp = broadcast_event_handler(State(state), Json(req)).await.into_response();
+        let resp = broadcast_event_handler(State(state), None, Json(req)).await.into_response();
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
 
         let ev = rx.recv().await.expect("订阅者应收到广播事件");
@@ -848,7 +865,7 @@ mod tests {
             sop_id: Some("sop-e2e".to_string()),
             session_id: None,
         };
-        let _ = broadcast_event_handler(State(state), Json(req)).await;
+        let _ = broadcast_event_handler(State(state), None, Json(req)).await;
         let ev = rx.recv().await.expect("订阅者应收到广播事件");
 
         assert!(
@@ -892,8 +909,9 @@ mod tests {
                 sop_id: Some("sop-x".to_string()),
                 session_id: None,
             };
-            let resp =
-                broadcast_event_handler(State(state.clone()), Json(req)).await.into_response();
+            let resp = broadcast_event_handler(State(state.clone()), None, Json(req))
+                .await
+                .into_response();
             assert_eq!(resp.status(), axum::http::StatusCode::OK, "{payload}");
 
             let ev = rx.recv().await.expect("订阅者应收到广播事件");
@@ -920,7 +938,7 @@ mod tests {
             sop_id: Some("  ".to_string()),
             session_id: None,
         };
-        let resp = broadcast_event_handler(State(state), Json(req)).await.into_response();
+        let resp = broadcast_event_handler(State(state), None, Json(req)).await.into_response();
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
 
         let ev = rx.recv().await.expect("订阅者应收到广播事件");
@@ -1110,6 +1128,25 @@ mod tests {
         assert_eq!(payload["duration_ms"], 1234);
         assert_eq!(payload["sop_id"], "sop-1");
         assert_eq!(payload["output"], serde_json::json!({"rows": 3}));
+    }
+
+    #[test]
+    fn test_broadcast_payload_carries_trace_id() {
+        // T4.4：广播事件的 trace id 来自请求头（入口中间件注入），
+        // 与执行事件同构；payload 内同名字段让位于请求级归属。
+        let req = BroadcastEventRequest {
+            event_type: "custom".into(),
+            payload: serde_json::json!({"message": "hi"}),
+            project_id: None,
+            sop_id: None,
+            session_id: None,
+        };
+        let payload = inject_broadcast_dimensions(req.payload.clone(), &req, Some("trace-abc"));
+        assert_eq!(payload["trace_id"], "trace-abc");
+
+        // 无 trace id 时不注入该键（保持旧行为）
+        let payload = inject_broadcast_dimensions(req.payload.clone(), &req, None);
+        assert!(payload.get("trace_id").is_none());
     }
 
     #[test]
@@ -1423,7 +1460,7 @@ mod tests {
             sop_id: None,
             session_id: None,
         };
-        let resp = broadcast_event_handler(State(state), Json(req)).await.into_response();
+        let resp = broadcast_event_handler(State(state), None, Json(req)).await.into_response();
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
 
         let ev = rx.recv().await.expect("订阅者应收到广播事件");
