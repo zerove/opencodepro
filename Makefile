@@ -91,7 +91,7 @@ HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 .PHONY: test-bridge-full test-bridge-dedicated test-cli-handlers
 .PHONY: test-ci
 .PHONY: perf-analyze
-.PHONY: perf-regression perf-regression-bridge
+.PHONY: perf-regression perf-regression-bridge perf-tui
 .PHONY: target-gc target-gc-apply target-size
 .PHONY: dev-tui run-tui clean
 .PHONY: dev ci-quick dev-fmt dev-clippy dev-test ci-bridge
@@ -523,6 +523,20 @@ perf-regression:
 perf-regression-bridge:
 	@echo "━━━ Running performance regression check (bridge) ━━━"
 	@./scripts/perf-regression-check.sh bridge
+
+
+# — TUI first-frame measurement (T3.3) —
+#
+#   Measures TUI time-to-first-frame in a pseudo-terminal (headless).
+#   Writes docs/benchmarks/tui-first-frame/<date>-<commit>.json
+#
+#   Usage:
+#     make perf-tui
+#     make perf-tui bin=./target/release/sisyphus samples=5
+
+perf-tui:
+	@echo "━━━ Measuring TUI first frame (PTY) ━━━"
+	@./scripts/measure-tui-first-frame.sh $(or $(bin),./target/debug/sisyphus) $(or $(samples),3)
 
 
 # — Single-node demo/readiness convenience (P1-C/P2-C) —

@@ -99,7 +99,7 @@
 | T4.1 状态（执行） | IN_PROGRESS | 指标口径与采集脚本落地（`scripts/quality-metrics-collect.sh` + `docs/plans/single-node-quality-metrics.md`）；任务级成功率/修复率/回归率 置 `null`（依赖 L3 证据/T1.4）；bridge 未运行时 `llm_*` 指标记 `null` |
 | T4.2 | 性能回归门禁 | 定时/触发式采样，对比基线阈值，超阈值告警 | CI job 或 `make perf-regression`；阈值与例外记录 | M |
 | T4.2 状态（执行） | DONE | `scripts/perf-regression-check.sh <mode>` + `make perf-regression{,-bridge}`；基线 `docs/benchmarks/perf-regression-baseline-2026-11-10.json`；实跑 `perf-regression-check.sh cli` rc=0（3 CLI 指标 p50 0.0097-0.0118s < 0.05s） |
-| T3.3 启动分段归因与优化 | IN_PROGRESS | 落地部分：`startup_phase_*_ms`（config/bridge/http_listening/grpc_listening）+ `scripts/measure-bridge-startup.sh`；实跑 end_to_end_ready_ms≈1530ms、phases bridge≈59ms/http≈68ms/grpc≈67ms；TUI 首帧 PTY 测量与后续优化待继续 |
+| T3.3 启动分段归因与优化 | DONE | bridge 启动分段（`startup_phase_*_ms` + `scripts/measure-bridge-startup.sh`，实跑 end_to_end_ready_ms≈1530ms、phases bridge≈59ms/http≈68ms/grpc≈67ms）；TUI 首帧 PTY 测量（`scripts/measure-tui-first-frame.sh` + `make perf-tui`，实跑 3 采样 p50≈14.3ms，产物 `docs/benchmarks/tui-first-frame/2026-11-11-75b9959.json`）；按需懒加载未做（记入 follow-up） |
 | T4.3 | evals 子集入 CI | 选取稳定、无外部依赖的 cases（metis/momus/security 等） | CI 通过；用例清单与运行时长记录 | M |
 | T4.3 状态（执行） | DONE | `scripts/evals-ci-run.sh [cases]` + eval-runner `--cases` 过滤（`agent/id`，支持 `--cases X`/`--cases=X`）；实跑子集 `metis/metis-001,momus/momus-plan-002` rc=0（2/2 PASS, final=1.0, dur≈1.5s）；证据 `docs/benchmarks/evals-ci/2026-11-11-5a23f9a.json`；默认子集为 criteria 全 keyword/regex 的稳定 case（mock 语义断言失败属预期） |
 | T4.4 | 统一 trace 关联 | 入口生成 trace id，贯穿 SOP/工具/LLM 日志与响应头；先行设计文档 | 一次请求可查到全部子步骤；设计评审记录 | M–L |

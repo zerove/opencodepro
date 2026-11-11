@@ -37,6 +37,18 @@ http_listening / grpc_listening），端到端就绪时间由 `scripts/measure-b
   - phases：bridge_init ≈ 59 ms，`grpc_listening` ≈ 67 ms，`http_listening` ≈ 68 ms
   - `config_ms` 因 tracing 初始化先于阶段日志生效而未捕获（启动早期日志），属已知口径限制。
 
+### 3.2 TUI 首帧测量（T3.3 收尾）
+
+TUI 首帧（time-to-first-frame）用伪终端测量：脚本在 `pty.fork()` 的子进程里启动 TUI
+二进制，读取 PTY 输出，命中首个制表符（面板绘制完成）即记为首帧可见。
+
+- 脚本：`scripts/measure-tui-first-frame.sh [bin] [samples]`（`make perf-tui`）
+- 产物：`docs/benchmarks/tui-first-frame/<YYYY-MM-DD>-<commit>.json`
+- 实跑（debug 构建，bridge 未运行，120×40 伪终端，3 次采样）：
+  - samples ≈ 16.3 / 14.3 / 11.3 ms，p50 ≈ 14.3 ms，avg ≈ 13.9 ms
+- 口径说明：测量的是「进程启动 → 首帧内容写出」，不含 bridge 连接与数据加载；
+  同一 commit 的回归对比请使用同口径（同一 bin 类型、同样本数）重跑。
+
 ## 4. 当前状态
 
 - 已有部分 benchmark/基线文档（见 `docs/benchmarks/`）；单机产品路径（CLI/bridge/WebUI 启动与只读接口）的统一口径待按本计划补齐。

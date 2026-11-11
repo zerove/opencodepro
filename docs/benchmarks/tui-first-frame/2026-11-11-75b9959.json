@@ -1,0 +1,20 @@
+{
+  "collected_at": "2026-11-11T06:12:40.154138+00:00",
+  "commit": "75b9959",
+  "binary": "./target/debug/sisyphus",
+  "metric": "tui_first_frame_ms",
+  "first_frame_ms": {
+    "samples": [
+      16.3,
+      14.3,
+      11.3
+    ],
+    "measured": 3,
+    "requested": 3,
+    "p50": 14.3,
+    "min": 11.3,
+    "max": 16.3,
+    "avg": 13.9
+  },
+  "status": "ok"
+}
