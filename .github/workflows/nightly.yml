@@ -183,6 +183,43 @@ jobs:
           path: .sisyphus/eval-history/
           retention-days: 90
 
+  # ── T4.5: 长窗口稳定性监测（bridge 资源泄漏 / 句柄 / 线程）─────
+  # 固定窗口采样 RSS / FD / 线程数，并周期性打只读端点；
+  # 结论与原始采样一并归档为 artifact（不把未测时长外推成结论）。
+  long-run-stability:
+    timeout-minutes: 45
+    name: Long-window Stability Monitor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust
+      # bridge 依赖 sisyphus-bridge-api，其 build script 需要 protoc
+      - uses: ./.github/actions/setup-protoc
+      - uses: Swatinem/rust-cache@v2
+      - name: Build bridge
+        run: cargo build -p sisyphus-bridge
+      - name: Monitor (10 minute window)
+        run: ./scripts/long-run-stability.sh 10
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: long-run-stability-report
+          path: docs/benchmarks/long-run/
+          retention-days: 30
+
+  # ── T4.2: 性能回归门禁（定时采样对比基线阈值）────────────────
+  perf-regression:
+    timeout-minutes: 30
+    name: Performance Regression Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust
+      - uses: ./.github/actions/setup-protoc
+      - uses: Swatinem/rust-cache@v2
+      - name: Check CLI metrics against baseline
+        run: ./scripts/perf-regression-check.sh cli
+
   # ── ADR-007 §1 panic 检查 (Rust 实现, 纯 workspace 工具) ─────────
   # 跑 no-panic-check binary 对比 baseline, 新增 panic 即 fail。
   panic-check:
