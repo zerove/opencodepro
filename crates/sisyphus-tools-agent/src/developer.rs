@@ -19,12 +19,26 @@ use std::sync::Arc;
 use tokio::task::JoinSet;
 use types::EditRequest;
 
+use async_trait::async_trait;
+use serde_json::Value;
+
+/// 审批闸点（T2.1 MVP）：工具执行前询问用户是否放行。
+///
+/// MVP 阶段由 TUI 侧注入（审批待确认态 → `approve` 放行/拒绝）；
+/// `approve` 内部应 fail-safe（异常/未接待视为拒绝）。
+#[async_trait]
+pub trait DevApprover: Send + Sync {
+    /// 返回 `true` = 放行 / `false` = 拒绝。
+    async fn approve(&self, tool_id: &str, _action: &Value) -> Result<bool, String>;
+}
+
 /// Developer.
 pub struct Developer {
     llm: Arc<dyn LlmClient>,
     checkpoint_dir: Option<PathBuf>,
     enable_wisdom: bool,
     interrupt: Arc<AtomicBool>,
+    approver: Option<Arc<dyn DevApprover>>,
 }
 
 impl Developer {
@@ -35,6 +49,7 @@ impl Developer {
             checkpoint_dir: None,
             enable_wisdom: false,
             interrupt: Arc::new(AtomicBool::new(false)),
+            approver: None,
         }
     }
 
@@ -57,6 +72,28 @@ impl Developer {
     pub fn with_interrupt(mut self, flag: Arc<AtomicBool>) -> Self {
         self.interrupt = flag;
         self
+    }
+
+    /// Enable the approval gate: tool execution asks the approver before running.
+    pub fn with_approval_handler(mut self, approver: Arc<dyn DevApprover>) -> Self {
+        self.approver = Some(approver);
+        self
+    }
+
+    /// Approval gate for a step action (T2.1 MVP).
+    ///
+    /// Returns `Ok(true)` to execute, `Ok(false)` to deny. LLM-internal
+    /// actions (`ComplexChange`) bypass the gate in MVP.
+    async fn approve_step(&self, step: &DevStep) -> Result<bool, String> {
+        let Some(approver) = self.approver.as_ref() else {
+            return Ok(true);
+        };
+        let Some(tool_id) = dev_tool_id(&step.action) else {
+            return Ok(true);
+        };
+        let action_json = serde_json::to_value(&step.action).map_err(|e| e.to_string())?;
+        let allowed = approver.approve(tool_id, &action_json).await.map_err(|e| e.to_string())?;
+        Ok(allowed)
     }
 
     /// Plan.
@@ -423,6 +460,22 @@ Return ONLY the JSON object."#;
                     cancelled = true;
                     break;
                 }
+                if !self.approve_step(step).await? {
+                    step_results.push(StepResult {
+                        step_id: step.id,
+                        status: StepStatus::Failed(dev_denied_message(&step.action)),
+                        output: String::new(),
+                        verification_output: None,
+                    });
+                    self.save_checkpoint(
+                        goal,
+                        project_context,
+                        &step_results.iter().map(|r| r.step_id).collect::<Vec<_>>(),
+                        &step_results,
+                        &artifacts,
+                    );
+                    continue;
+                }
                 let step = (*step).clone();
                 let llm = llm.clone();
                 let checkpoint_dir = checkpoint_dir.clone();
@@ -466,6 +519,22 @@ Return ONLY the JSON object."#;
                 if self.interrupt.load(Ordering::SeqCst) {
                     cancelled = true;
                     break;
+                }
+                if !self.approve_step(step).await? {
+                    step_results.push(StepResult {
+                        step_id: step.id,
+                        status: StepStatus::Failed(dev_denied_message(&step.action)),
+                        output: String::new(),
+                        verification_output: None,
+                    });
+                    self.save_checkpoint(
+                        goal,
+                        project_context,
+                        &step_results.iter().map(|r| r.step_id).collect::<Vec<_>>(),
+                        &step_results,
+                        &artifacts,
+                    );
+                    continue;
                 }
                 let result = self.run_step_with_fix(step).await;
                 track_artifact(step, &mut artifacts);
@@ -513,6 +582,27 @@ Return ONLY the JSON object."#;
 }
 
 // --- Helpers ---
+
+/// Map a dev step action to the external tool id it corresponds to (MVP).
+///
+/// Returns `None` for LLM-internal actions (`ComplexChange`) that bypass the
+/// approval gate in MVP.
+fn dev_tool_id(action: &DevAction) -> Option<&'static str> {
+    match action {
+        DevAction::RunCommand { .. } => Some("builtin:bash_exec"),
+        DevAction::CreateFile { .. } => Some("builtin:file_write"),
+        DevAction::EditFile { .. } => Some("builtin:file_edit"),
+        DevAction::ReadFile { .. } => Some("builtin:file_read"),
+        DevAction::ComplexChange { .. } => None,
+    }
+}
+
+/// Human-readable denial message for an action denied by the user (T2.1 MVP).
+fn dev_denied_message(action: &DevAction) -> String {
+    dev_tool_id(action)
+        .map(|tool_id| format!("denied by user: {tool_id}"))
+        .unwrap_or_else(|| "denied by user: unknown action".to_string())
+}
 
 fn track_artifact(step: &DevStep, artifacts: &mut Vec<String>) {
     if let DevAction::CreateFile { path, .. } = &step.action {

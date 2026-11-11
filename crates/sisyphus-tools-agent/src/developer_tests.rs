@@ -269,3 +269,41 @@ async fn test_develop_resume_skips_completed_steps() {
     assert_eq!(resumed.overall_status, DevOverallStatus::Success);
     assert_eq!(resumed.steps.len(), 2);
 }
+
+struct DenyApprover;
+
+#[async_trait::async_trait]
+impl DevApprover for DenyApprover {
+    async fn approve(&self, _tool_id: &str, _action: &serde_json::Value) -> Result<bool, String> {
+        Ok(false)
+    }
+}
+
+struct AllowApprover;
+
+#[async_trait::async_trait]
+impl DevApprover for AllowApprover {
+    async fn approve(&self, _tool_id: &str, _action: &serde_json::Value) -> Result<bool, String> {
+        Ok(true)
+    }
+}
+
+#[tokio::test]
+async fn test_develop_approval_denies_step() {
+    let llm = Arc::new(FixedResponseClient(T2_1_SLICE1_PLAN.to_string()));
+    let dev = Developer::new(llm).with_approval_handler(Arc::new(DenyApprover));
+    let report = dev.develop("T2.1 Slice1 Goal", "ctx", false, false).await.unwrap();
+    assert_eq!(report.steps.len(), 2);
+    assert!(report.steps.iter().all(|r| !matches!(r.status, StepStatus::Success)));
+    assert!(format!("{:?}", report.steps[0].status).contains("denied by user"));
+}
+
+#[tokio::test]
+async fn test_develop_approval_allows_step() {
+    let llm = Arc::new(FixedResponseClient(T2_1_SLICE1_PLAN.to_string()));
+    let dev = Developer::new(llm).with_approval_handler(Arc::new(AllowApprover));
+    let report = dev.develop("T2.1 Slice1 Goal", "ctx", false, false).await.unwrap();
+    assert_eq!(report.overall_status, DevOverallStatus::Success);
+    assert_eq!(report.steps.len(), 2);
+    assert!(report.steps.iter().all(|r| matches!(r.status, StepStatus::Success)));
+}
