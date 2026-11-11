@@ -1,0 +1,36 @@
+{
+  "collected_at": "2026-11-11",
+  "commit": "31d14c3",
+  "binary": "/home/zeron/dev/opencodepro/target/debug/sisyphus-bridge",
+  "elapsed_seconds": 14398,
+  "sample_count": 2881,
+  "sample_interval_seconds": 5,
+  "health_ok_ratio": 1.0,
+  "metrics_ok_ratio": 1.0,
+  "rss_kb": {
+    "first": 55404,
+    "last": 55996,
+    "min": 55404,
+    "max": 56188,
+    "slope_per_min": -0.83
+  },
+  "fds": {
+    "first": 20,
+    "last": 11,
+    "min": 11,
+    "max": 20,
+    "slope_per_min": -0.02
+  },
+  "threads": {
+    "first": 18,
+    "last": 14,
+    "min": 14,
+    "max": 18,
+    "slope_per_min": -0.01
+  },
+  "verdict": {
+    "rss": "decreasing",
+    "fds": "decreasing",
+    "threads": "decreasing"
+  }
+}

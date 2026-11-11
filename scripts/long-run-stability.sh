@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # T4.5：长窗口稳定性监测（内存 / 句柄 / 线程 / DB 增长 + 周期性只读负载）。
 #
+# 注意：脚本运行期间**不要修改本文件**。bash 按字节偏移增量读取脚本，
+# 改动会让后续解析错位（实测：240 分钟窗口在末尾阶段报
+# "syntax error near unexpected token `)'"，采样数据完好但汇总丢失）。
+#
 # 用法: ./scripts/long-run-stability.sh [minutes]
 #   minutes  监测窗口分钟数（默认 10；CI/本地可调）
 #
