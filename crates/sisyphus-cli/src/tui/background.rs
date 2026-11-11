@@ -350,6 +350,31 @@ impl crate::tools::developer::DevApprover for DevAskApprover {
     }
 }
 
+/// 派生 dev 运行的 checkpoint 目录（按目标区分）。
+///
+/// 同一目标的中断与恢复必须落在同一目录（resume 才能读到 checkpoint）；
+/// 不同目标必须隔离 —— 否则 A 的 checkpoint 会被 B 覆盖，恢复 A 时按 B 的
+/// 已完成步骤跳过，造成「跳过了没做过的步骤」。
+fn dev_checkpoint_dir(goal: &str) -> std::path::PathBuf {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    goal.hash(&mut hasher);
+    let digest = hasher.finish();
+    let slug: String = goal
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(32)
+        .collect();
+    let slug = if slug.is_empty() {
+        "goal".to_string()
+    } else {
+        slug
+    };
+    std::env::temp_dir().join("sisyphus_dev_agent").join(format!("{slug}-{digest:016x}"))
+}
+
 /// 启动运行开发代理并返回格式化报告的后台任务。
 ///
 /// T2.1 MVP：同时接线 checkpoint（支持 resume）、中断标志与审批闸（`DevApprover`）。
@@ -370,7 +395,7 @@ pub fn spawn_dev_agent(
         let llm: std::sync::Arc<dyn crate::tools::metis::LlmClient> =
             std::sync::Arc::new(crate::tools::llm::DynamicLlmClient::new(config));
         let developer = crate::tools::developer::Developer::new(llm)
-            .with_checkpoint(std::env::temp_dir().join("sisyphus_dev_agent"))
+            .with_checkpoint(dev_checkpoint_dir(&goal))
             .with_interrupt(interrupt_task)
             .with_approval_handler(std::sync::Arc::new(DevAskApprover {
                 ask: ask_tx,
@@ -996,5 +1021,31 @@ mod health_deep_parse_tests {
     fn missing_components_returns_none() {
         let raw = serde_json::json!({"status": "ok"});
         assert!(parse_health_deep_response(&raw).is_none());
+    }
+}
+
+#[cfg(test)]
+mod dev_checkpoint_tests {
+    use super::dev_checkpoint_dir;
+
+    #[test]
+    fn same_goal_maps_to_same_dir() {
+        assert_eq!(
+            dev_checkpoint_dir("修复登录"),
+            dev_checkpoint_dir("修复登录")
+        );
+    }
+
+    #[test]
+    fn different_goals_map_to_different_dirs() {
+        assert_ne!(dev_checkpoint_dir("目标 A"), dev_checkpoint_dir("目标 B"));
+    }
+
+    #[test]
+    fn goal_with_path_separators_is_sanitized() {
+        let dir = dev_checkpoint_dir("../../etc/passwd");
+        let name = dir.file_name().expect("文件名").to_string_lossy().to_string();
+        assert!(!name.contains('/'), "目录名不应含路径分隔符: {name}");
+        assert!(!name.contains(".."), "目录名不应含 ..: {name}");
     }
 }
