@@ -125,6 +125,25 @@ BASE=http://127.0.0.1:8080 BRIDGE_GRPC=http://127.0.0.1:50051 SOP_ID=verify_sop 
 
 ## 7. L3 目标驱动自动化（LLM 依赖）
 
+### 7.1 环境准备清单（执行前逐项确认）
+
+| 项 | 检查方式 | 期望 |
+|---|---|---|
+| LLM 端点 | `SISYPHUS_LLM_ENDPOINT` 或 `[llm].endpoint` | 可从本机访问 |
+| API Key | `SISYPHUS_LLM_API_KEY` 或 `[llm].api_key`（支持 `env:VAR`） | 非空且有效 |
+| 模型 | `SISYPHUS_LLM_MODEL` 或 `[llm].model` | 与端点匹配 |
+| 连通性 | `sisyphus provider test <name>` | 返回模型响应 |
+| 嵌入 | `SISYPHUS_LLM_EMBEDDING_PROVIDER` / `_ALLOW_DUMMY` | 明确是否使用 dummy |
+| 超时/预算 | `SISYPHUS_LLM_REQUEST_TIMEOUT_SECS`、`budget_mode` | 与任务规模匹配 |
+| 工具/MCP | `sisyphus tool list`、`sisyphus mcp --help` | 任务所需工具可用 |
+| 凭据脱敏 | 证据仅记录 provider/model/endpoint 主机名 | 不落盘 key |
+
+```bash
+# 连通性探测（先于任何 L3 执行）
+sisyphus provider list
+sisyphus provider test <provider-name>
+```
+
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/api/execute/goal \
   -H 'Content-Type: application/json' \
@@ -152,7 +171,7 @@ N=10 BRIDGE_BIN=./target/debug/sisyphus-bridge ./scripts/single-node-bench-sampl
 ./scripts/single-node-bench-sample.sh bridge --json
 ```
 
-**通过标准**：记录 `n/min/avg/max`、环境与二进制类型（debug/release）、冷热条件；不将中断/分批样本当作连续回归结论；对显著波动给出定位项而非掩盖。
+**通过标准**：记录 `n/min/p50/p95/avg/max`、环境与二进制类型（debug/release）、冷热条件；不将中断/分批样本当作连续回归结论；对显著波动给出定位项而非掩盖。`--json` 输出含 `timestamp/build`，可直接归档用于回归对比。
 
 ## 9. 错误与恢复验收（横切）
 

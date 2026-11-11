@@ -11,11 +11,11 @@ usage() {
 Usage: scripts/single-node-bench-sample.sh <cli|bridge> [--json]
 
 Modes:
-  cli     对 debug/release CLI 常用命令做 N 次采样并输出 min/avg/max
-  bridge  对 bridge 启动就绪与只读端点延迟做 N 次采样并输出 min/avg/max
+  cli     对 debug/release CLI 常用命令做 N 次采样并输出 min/p50/p95/avg/max
+  bridge  对 bridge 启动就绪与只读端点延迟做 N 次采样并输出 min/p50/p95/avg/max
 
 Options:
-  --json  输出机器可读 JSON（便于后续对比/归档）
+  --json  输出机器可读 JSON（含 timestamp/build 与分位数，便于对比/归档）
 
 Env:
   N=5
@@ -48,24 +48,63 @@ N="${N:-5}"
 CLI_BIN="${CLI_BIN:-./target/debug/sisyphus}"
 BRIDGE_BIN="${BRIDGE_BIN:-./target/debug/sisyphus-bridge}"
 
+# 采样统计：排序后计算 nearest-rank p50/p95（n 较小时 p95 可能等于 max，属预期）。
 stats() {
-  # read numbers from stdin, one per line
+  local tmp
+  tmp=$(mktemp)
+  sort -n > "$tmp"
   awk '
-    NF { v=$1+0; n++; sum+=v; if(n==1||v<min)min=v; if(n==1||v>max)max=v; }
+    function pct(v, n, q,   r) {
+      r = int(q * n);
+      if (q * n > r) r++;
+      if (r < 1) r = 1;
+      if (r > n) r = n;
+      return v[r];
+    }
+    { v[NR] = $1 + 0; sum += v[NR] }
     END {
-      if(n==0){ print "n=0"; exit }
-      printf "n=%d min=%.6f avg=%.6f max=%.6f\n", n, min, sum/n, max
-    }'
+      n = NR;
+      if (n == 0) { print "n=0"; exit }
+      printf "n=%d min=%.6f p50=%.6f p95=%.6f avg=%.6f max=%.6f\n",
+        n, v[1], pct(v, n, 0.50), pct(v, n, 0.95), sum / n, v[n];
+    }' "$tmp"
+  rm -f "$tmp"
 }
 
 stats_json() {
+  local tmp
+  tmp=$(mktemp)
+  sort -n > "$tmp"
   awk '
-    NF { v=$1+0; n++; sum+=v; if(n==1||v<min)min=v; if(n==1||v>max)max=v; }
+    function pct(v, n, q,   r) {
+      r = int(q * n);
+      if (q * n > r) r++;
+      if (r < 1) r = 1;
+      if (r > n) r = n;
+      return v[r];
+    }
+    { v[NR] = $1 + 0; sum += v[NR] }
     END {
-      if(n==0){ print "{\"n\":0,\"min\":null,\"avg\":null,\"max\":null}"; exit }
-      printf "{\"n\":%d,\"min\":%.6f,\"avg\":%.6f,\"max\":%.6f}", n, min, sum/n, max
-    }'
+      n = NR;
+      if (n == 0) {
+        print "{\"n\":0,\"min\":null,\"p50\":null,\"p95\":null,\"avg\":null,\"max\":null}";
+        exit;
+      }
+      printf "{\"n\":%d,\"min\":%.6f,\"p50\":%.6f,\"p95\":%.6f,\"avg\":%.6f,\"max\":%.6f}",
+        n, v[1], pct(v, n, 0.50), pct(v, n, 0.95), sum / n, v[n];
+    }' "$tmp"
+  rm -f "$tmp"
 }
+
+build_kind() {
+  case "$1" in
+    */release/*) echo "release" ;;
+    */debug/*) echo "debug" ;;
+    *) echo "unknown" ;;
+  esac
+}
+
+TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 case "$MODE" in
   cli)
@@ -77,9 +116,12 @@ case "$MODE" in
       echo "[WARN] CLI_BIN not executable: $CLI_BIN" >&2
     fi
     mkdir -p /tmp/opencode/bench-sn
+    CLI_BUILD="$(build_kind "$CLI_BIN")"
     if [ "$JSON_OUT" = true ]; then
       echo "{"
       echo "  \"mode\": \"cli\","
+      echo "  \"timestamp\": \"${TIMESTAMP}\","
+      echo "  \"build\": \"${CLI_BUILD}\","
       echo "  \"cli_bin\": \"${CLI_BIN}\","
       echo "  \"n\": ${N},"
       echo "  \"commands\": ["
@@ -110,16 +152,18 @@ PY
         statsj=$(cat /tmp/sn-cli-samples.txt | stats_json)
         # escape cmd for JSON
         cmd_esc=$(printf '%s' "$cmd" | sed 's/\\/\\\\/g; s/"/\\"/g')
-        if [ $first_cmd -eq 0 ]; then echo "    ,"; fi
-        printf '    {"cmd": "sisyphus %s", "stats": %s}\n' "$cmd_esc" "$statsj"
+        if [ $first_cmd -eq 1 ]; then
+          printf '    {"cmd": "sisyphus %s", "stats": %s}' "$cmd_esc" "$statsj"
+        else
+          printf ',\n    {"cmd": "sisyphus %s", "stats": %s}' "$cmd_esc" "$statsj"
+        fi
         first_cmd=0
       else
         cat /tmp/sn-cli-samples.txt | stats
       fi
     done
     if [ "$JSON_OUT" = true ]; then
-      echo "  ]"
-      echo "}"
+      printf '\n  ]\n}\n'
     fi
     ;;
   bridge)
@@ -169,11 +213,12 @@ TOML
       pkill -f "$BRIDGE_BIN" 2>/dev/null || true
     done
     if [ "$JSON_OUT" = true ]; then
+      BRIDGE_BUILD="$(build_kind "$BRIDGE_BIN")"
       readyj=$(cat /tmp/sn-ready.txt | stats_json)
-      healthj=$(cat /tmp/sn-health.txt 2>/dev/null | stats_json || echo '{"n":0,"min":null,"avg":null,"max":null}')
-      sopsj=$(cat /tmp/sn-sops.txt 2>/dev/null | stats_json || echo '{"n":0,"min":null,"avg":null,"max":null}')
-      printf '{"mode":"bridge","bridge_bin":"%s","n":%s,"http":"%s","grpc":"%s","ready_ms":%s,"health_s":%s,"sops_s":%s}\n' \
-        "$BRIDGE_BIN" "$N" "$HTTP" "$GRPC" "$readyj" "$healthj" "$sopsj"
+      healthj=$(cat /tmp/sn-health.txt 2>/dev/null | stats_json || echo '{"n":0,"min":null,"p50":null,"p95":null,"avg":null,"max":null}')
+      sopsj=$(cat /tmp/sn-sops.txt 2>/dev/null | stats_json || echo '{"n":0,"min":null,"p50":null,"p95":null,"avg":null,"max":null}')
+      printf '{"mode":"bridge","timestamp":"%s","build":"%s","bridge_bin":"%s","n":%s,"http":"%s","grpc":"%s","ready_ms":%s,"health_s":%s,"sops_s":%s}\n' \
+        "$TIMESTAMP" "$BRIDGE_BUILD" "$BRIDGE_BIN" "$N" "$HTTP" "$GRPC" "$readyj" "$healthj" "$sopsj"
     else
       cat /tmp/sn-ready.txt | stats
       echo "-- /health latency (s) --"; cat /tmp/sn-health.txt 2>/dev/null | stats || true

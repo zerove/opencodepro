@@ -4,24 +4,29 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/single-node-acceptance-evidence.sh [tag] [--base DIR]
+Usage: scripts/single-node-acceptance-evidence.sh [tag] [--base DIR] [--run-l0]
 
 Creates docs/benchmarks/acceptance/<YYYY-MM-DD>-<tag>/ with evidence templates.
   tag       short label (default: manual)
   --base    override base dir (default: docs/benchmarks/acceptance)
+  --run-l0  运行 L0 快速检查（模板校验/脚本语法）并写入 l0-static.log
+            （设置 L0_FULL_SMOKE=1 追加 contract-smoke --quick，耗时较长）
 
 Examples:
   ./scripts/single-node-acceptance-evidence.sh nightly
+  ./scripts/single-node-acceptance-evidence.sh nightly --run-l0
   ./scripts/single-node-acceptance-evidence.sh l2-check --base /tmp/acceptance
 EOF
 }
 
 BASE_ROOT="docs/benchmarks/acceptance"
 TAG="manual"
+RUN_L0=false
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --base) BASE_ROOT="$2"; shift 2 ;;
+    --run-l0) RUN_L0=true; shift ;;
     *) TAG="$1"; shift ;;
   esac
 done
@@ -115,5 +120,57 @@ write_if_missing "$DIR/summary.md" <<'EOF'
 
 ## 后续动作
 EOF
+
+if [ "$RUN_L0" = true ]; then
+  LOG="$DIR/l0-static.log"
+  {
+    echo ""
+    echo "## $(date -u +%Y-%m-%dT%H:%M:%SZ) L0 quick run"
+    echo "commit: $(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    echo "rustc: $(rustc -V 2>/dev/null || echo unavailable)"
+    echo "cargo: $(cargo -V 2>/dev/null || echo unavailable)"
+  } >> "$LOG"
+
+  run_step() {
+    local name="$1"
+    shift
+    local out rc
+    out="$(timeout 300 "$@" 2>&1)"
+    rc=$?
+    {
+      echo ""
+      echo "### $name"
+      echo "cmd: $*"
+      echo "exit: $rc"
+      echo '```text'
+      printf '%s\n' "$out" | tail -40
+      echo '```'
+    } >> "$LOG"
+    if [ "$rc" -ne 0 ]; then
+      echo "[WARN] L0 step failed: $name (exit=$rc)" >&2
+    fi
+  }
+
+  set +e
+  run_step "validate-sop-templates" ./scripts/validate-sop-templates.sh
+  run_step "bash syntax (scripts)" bash -n \
+    scripts/single-node-readiness-check.sh \
+    scripts/single-node-demo-flow.sh \
+    scripts/single-node-apply-sop-template.sh \
+    scripts/single-node-bench-sample.sh \
+    scripts/single-node-contract-smoke.sh \
+    scripts/single-node-acceptance-evidence.sh
+  if [ "${L0_FULL_SMOKE:-0}" = "1" ]; then
+    run_step "contract-smoke --quick" ./scripts/single-node-contract-smoke.sh --quick
+  else
+    {
+      echo ""
+      echo "### contract-smoke --quick"
+      echo "skipped (set L0_FULL_SMOKE=1 to enable)"
+    } >> "$LOG"
+  fi
+  set -e
+  echo "l0_log=$LOG"
+fi
 
 echo "evidence_dir=$DIR"
