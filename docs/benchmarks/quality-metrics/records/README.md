@@ -38,3 +38,12 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records --jso
 
 无记录时各比率为 `null`（不伪造 0 值）。仓库真实任务样本需在具备 LLM 凭据的环境
 （T1.4）执行后写入本目录。
+
+## 目录内容
+
+| 文件 | 来源 | 说明 |
+|---|---|---|
+| `repo-sisyphus-tools-build.json` | 真实仓库任务 | `sisyphus verify -p sisyphus-tools-build --max-warnings 0` 的真实运行（PASS，0 错 0 警，78.977s） |
+
+受控 fixture 样本（用于验证口径与链路，非仓库任务）单独放在
+`../fixture-samples/`，不混入本目录。
