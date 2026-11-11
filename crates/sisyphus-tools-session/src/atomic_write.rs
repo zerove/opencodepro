@@ -33,6 +33,11 @@ pub fn write_atomic(path: &Path, content: &[u8]) -> io::Result<()> {
     if let Err(err) = fs::rename(&tmp_path, path) {
         // 覆盖失败时清理临时文件，避免留下垃圾文件
         let _ = fs::remove_file(&tmp_path);
+        // Windows 上目标文件被其它进程占用时 rename 会失败（共享冲突）。
+        // 此时降级为直接写：牺牲原子性但保住功能（否则整次保存直接报错）。
+        if cfg!(windows) {
+            return fs::write(path, content);
+        }
         return Err(err);
     }
     Ok(())
