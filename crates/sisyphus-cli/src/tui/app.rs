@@ -893,6 +893,9 @@ impl App {
         if let Some(handle) = self.pending_dev.as_ref() {
             handle.interrupt.store(true, std::sync::atomic::Ordering::SeqCst);
         }
+        // 释放句柄：被中断的那一轮会在下一个步骤边界自行返回 Cancelled，
+        // 其结果通道随后无人接收；提前释放可让用户立即启动恢复运行。
+        self.pending_dev = None;
         self.dev_ask = None;
         self.dev_status = "idle".into();
         self.dev_focus = DevFocus::Resume;
@@ -1119,10 +1122,16 @@ impl App {
             while let Ok(op) = handle.asks.try_recv() {
                 ops.push(op);
             }
-            if let Ok(op) = handle.result.try_recv() {
-                ops.push(op);
+            match handle.result.try_recv() {
+                Ok(op) => {
+                    // 该轮已结束：释放句柄。否则 dev 对话框再也无法启动下一次运行
+                    // ——启动分支要求 `pending_dev` 为空。
+                    ops.push(op);
+                },
+                Err(_) => {
+                    self.pending_dev = Some(handle);
+                },
             }
-            self.pending_dev = Some(handle);
         }
         // 审批 broker（T2.2）：后台任务的工具审批请求 → 弹窗询问。
         if self.pending_tool_approval.is_none() {

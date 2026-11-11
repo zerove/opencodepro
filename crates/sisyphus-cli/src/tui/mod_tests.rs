@@ -857,14 +857,11 @@ async fn test_dev_esc_interrupts_running_agent() {
     assert_eq!(app.dev_status, "idle");
     assert_eq!(app.dev_focus, app::DevFocus::Resume);
     assert!(app.dev_resume, "中断后应提供恢复入口");
-    let interrupted = app
-        .pending_dev
-        .as_ref()
-        .map(|h| h.interrupt.load(std::sync::atomic::Ordering::SeqCst))
-        .unwrap_or(false);
+    // 中断流程先置位中断标志、再释放句柄（见 dev_interrupt）：
+    // 句柄释放后用户才能立即启动恢复运行。
     assert!(
-        interrupted,
-        "Esc 应置位中断标志，使任务在步骤边界返回 Cancelled"
+        app.pending_dev.is_none(),
+        "中断后应释放句柄，用户才能立即启动恢复运行"
     );
 }
 
@@ -947,4 +944,61 @@ async fn test_tool_approval_request_reaches_app_modal() {
     request.respond(true);
 
     assert_eq!(handle.await.expect("任务应结束").ok(), Some(true));
+}
+
+#[tokio::test]
+async fn test_dev_run_handle_is_released_after_result() {
+    // 回归：句柄若不释放，dev 对话框的启动分支（要求 pending_dev 为空）
+    // 会被永久挡住 —— 一次运行之后再也启动不了第二次。
+    let mut app = dev_app();
+    let (handle, _answer_rx) = dev_handle_with_answer();
+    app.pending_dev = Some(handle);
+
+    // 结果通道就绪：把 DevResult 放进去
+    let (tx, rx) = tokio::sync::oneshot::channel::<crate::tui::background::BgOp>();
+    tx.send(crate::tui::background::BgOp::DevResult {
+        goal: "g".into(),
+        report: "r".into(),
+        success: true,
+    })
+    .ok();
+
+    let mut app2 = dev_app();
+    app2.pending_dev = Some(crate::tui::background::DevRunHandle {
+        result: rx,
+        asks: {
+            let (atx, arx) = tokio::sync::mpsc::unbounded_channel();
+            let _ = atx;
+            arx
+        },
+        answer: {
+            let (atx, _arx) = tokio::sync::mpsc::unbounded_channel();
+            atx
+        },
+        interrupt: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    });
+    app2.process_events();
+    assert!(
+        app2.pending_dev.is_none(),
+        "运行结束后应释放句柄，否则无法再次启动 dev 运行"
+    );
+    assert_eq!(app2.dev_status, "done");
+    let _ = app;
+}
+
+#[tokio::test]
+async fn test_dev_interrupt_releases_handle_for_resume() {
+    let mut app = dev_app();
+    app.dev_status = "running".into();
+    let (handle, _answer_rx) = dev_handle_with_answer();
+    app.pending_dev = Some(handle);
+
+    press(&mut app, KeyCode::Esc);
+
+    assert!(
+        app.pending_dev.is_none(),
+        "中断后应释放句柄，用户才能立即启动恢复运行"
+    );
+    assert_eq!(app.dev_status, "idle");
+    assert!(app.dev_resume);
 }
