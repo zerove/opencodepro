@@ -20,6 +20,7 @@ pub fn handle_read_lines(path: &Path, offset: usize, limit: usize) -> Result<()>
 pub fn handle_write(path: &Path, content: &str) -> Result<()> {
     sisyphus_cli::tools::file::write(path, content)?;
     println!("Written {} bytes to {}", content.len(), path.display());
+    verify_after_write(&[path.to_path_buf()])?;
     Ok(())
 }
 
@@ -32,6 +33,13 @@ pub fn handle_edit(path: &Path, old: &str, new: &str, all: bool) -> Result<()> {
         sisyphus_cli::tools::file::edit(path, old, new)?;
         println!("Replaced first occurrence in {}", path.display());
     }
+    verify_after_write(&[path.to_path_buf()])?;
+    Ok(())
+}
+
+/// 按配置执行编辑后验证；未启用时无副作用。
+fn verify_after_write(paths: &[std::path::PathBuf]) -> Result<()> {
+    sisyphus_cli::post_edit::verify_after_edit(paths)?;
     Ok(())
 }
 

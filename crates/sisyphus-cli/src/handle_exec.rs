@@ -69,5 +69,9 @@ pub fn handle_apply_patch(file: &Path, input: &Path) -> Result<()> {
     for f in &modified {
         println!("Patched: {f}");
     }
+    let paths: Vec<PathBuf> = modified.iter().map(PathBuf::from).collect();
+    if !paths.is_empty() {
+        sisyphus_cli::post_edit::verify_after_edit(&paths)?;
+    }
     Ok(())
 }

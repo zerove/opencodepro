@@ -164,3 +164,16 @@
 - 性能基线：`docs/plans/single-node-performance-baseline.md`、`docs/benchmarks/single-node-runtime-baseline-2026-11-10.md`
 - 对标分析：`docs/comparison/opencode-jcode-sisyphus-comparison-2026-11.md`
 - 场景手册：`docs/runbooks/single-node-dev-scenarios.md`
+
+## 11. 执行进展（滚动更新）
+
+| 任务 | 状态 | 证据 |
+|---|---|---|
+| T0.1 提交与仓库同步 | DONE | `git rev-parse HEAD origin/master` 一致；工作区干净 |
+| T0.2 性能采样口径升级 | DONE | `scripts/single-node-bench-sample.sh` 输出 `n/min/p50/p95/avg/max` + `timestamp/build`；`N=3 ... cli --json` 经 `python3 -m json.tool` 校验 |
+| T0.3 L3 环境准备清单 | DONE | `docs/runbooks/single-node-automation-acceptance.md` §7.1 清单；§8 更新为分位数口径 |
+| T0.4 验收证据自动化 | DONE | `scripts/single-node-acceptance-evidence.sh --run-l0` 生成 `l0-static.log`（模板校验 + 脚本语法）；`L0_FULL_SMOKE=1` 追加契约冒烟 |
+| T1.1 编辑后自动验证 | DONE | 新增 `crates/sisyphus-cli/src/post_edit.rs`；11 个单测；实跑：`auto` 模式捕获 `E0308` 类型错误、计时/超时/严格模式行为符合预期；文档见 `book/src/crates/cli.md` |
+
+> 状态取值：DONE / IN_PROGRESS / BLOCKED / TODO。`BLOCKED` 必须写明缺失的环境或依赖。
+

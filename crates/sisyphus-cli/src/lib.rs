@@ -16,6 +16,7 @@ pub mod permission;
 pub mod platform;
 pub mod platform_command;
 pub mod plugin;
+pub mod post_edit;
 pub mod precommit;
 pub mod remote;
 pub mod run;

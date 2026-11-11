@@ -42,6 +42,34 @@ sisyphus exec "cargo test" --dir /path/to/project
 sisyphus search "Rust async/await" -n 10
 ```
 
+### 编辑后自动验证（post-edit verify）
+
+`write`、`edit`、`apply_patch` 落盘后可按配置执行一次短验证，避免“文件写坏了但命令仍报成功”。
+该能力通过环境变量开启，不改变 `Config` schema：
+
+| 变量 | 说明 |
+|------|------|
+| `SISYPHUS_POST_EDIT_VERIFY` | 验证命令模板。含 `{files}` 时替换为改动文件列表（shell 安全引用）；`auto` 表示按类型推断：`.rs` → 在最近的 Cargo 包根目录执行 `cargo check --quiet`；未设置或空串表示关闭 |
+| `SISYPHUS_POST_EDIT_VERIFY_TIMEOUT_SECS` | 超时秒数，默认 `120`；非法值或 `0` 回落默认 |
+| `SISYPHUS_POST_EDIT_VERIFY_STRICT` | `1`/`true`/`yes`/`on` 时验证失败返回非零退出（阻断“成功”）；默认仅告警 |
+
+```bash
+# 对改动的 Rust 文件执行 cargo check（按文件定位包根目录）
+SISYPHUS_POST_EDIT_VERIFY=auto sisyphus edit src/lib.rs "old" "new"
+
+# 自定义模板 + 严格模式：验证失败即命令失败
+SISYPHUS_POST_EDIT_VERIFY='rustfmt --check {files}' \
+SISYPHUS_POST_EDIT_VERIFY_STRICT=1 \
+  sisyphus write src/main.rs "$(cat src/main.rs)"
+
+# 限制超时
+SISYPHUS_POST_EDIT_VERIFY='cargo clippy --quiet' \
+SISYPHUS_POST_EDIT_VERIFY_TIMEOUT_SECS=60 \
+  sisyphus apply-patch src/lib.rs -i fix.patch
+```
+
+输出为单行摘要（`✓/✗/-` + 耗时 + 命令）；失败时附带输出尾部 20 行。
+
 ## 代理子命令
 
 ### librarian — 外部调研代理
