@@ -376,3 +376,177 @@ fn test_session_continue_not_found() {
     let result = session_continue(&path, "ghost");
     assert!(result.is_err());
 }
+
+// ── 会话回放页渲染（T2.3）────────────────────────────────────
+
+fn msg(role: &str, content: &str) -> Message {
+    Message {
+        role: role.to_string(),
+        content: content.to_string(),
+        created_at: "2026-11-11T00:00:00Z".to_string(),
+        estimated_tokens: 10,
+        is_compressed: false,
+    }
+}
+
+fn session_with(messages: Vec<Message>, metadata: &[(&str, &str)]) -> Session {
+    Session {
+        id: "sess-1".to_string(),
+        name: "replay".to_string(),
+        created_at: "2026-11-11T00:00:00Z".to_string(),
+        updated_at: "2026-11-11T01:00:00Z".to_string(),
+        message_count: messages.len() as u64,
+        messages,
+        metadata: metadata.iter().map(|(k, v)| ((*k).to_string(), (*v).to_string())).collect(),
+        parent_session_id: None,
+        child_session_ids: Vec::new(),
+    }
+}
+
+#[test]
+fn test_render_session_html_is_offline_and_escapes_metadata() {
+    let html = render_session_html(&session_with(
+        vec![msg("user", "hello")],
+        &[("trace_id", "abc<&>")],
+    ));
+    assert!(html.starts_with("<!DOCTYPE html>"));
+    // 离线：不引用任何外部资源或脚本
+    for forbidden in ["http://", "https://", "<script", "<link "] {
+        assert!(!html.contains(forbidden), "回放页不应包含 {forbidden}");
+    }
+    assert!(html.contains("abc&lt;&amp;&gt;"), "metadata 必须转义");
+    assert!(html.contains("1 messages"), "统计信息应包含消息数");
+}
+
+#[test]
+fn test_render_session_html_timeline_indexes_and_roles() {
+    let html = render_session_html(&session_with(
+        vec![msg("user", "q"), msg("assistant", "a"), msg("tool", "t")],
+        &[],
+    ));
+    assert!(html.contains("#1/3"));
+    assert!(html.contains("#2/3"));
+    assert!(html.contains("#3/3"));
+    assert!(html.contains("class=\"message user\""));
+    assert!(html.contains("class=\"message assistant\""));
+    assert!(
+        html.contains("class=\"message other\""),
+        "未知角色归入 other 样式"
+    );
+}
+
+#[test]
+fn test_render_session_html_folds_tool_call_tags() {
+    let html = render_session_html(&session_with(
+        vec![msg(
+            "assistant",
+            "before <tool_call>{\"tool\":\"exec\"}</tool_call> after",
+        )],
+        &[],
+    ));
+    assert!(html.contains("<details class=\"tool\">"), "工具调用应折叠");
+    assert!(html.contains("🔧 tool call"));
+    assert!(
+        html.contains("{&quot;tool&quot;:&quot;exec&quot;}"),
+        "工具参数需转义后保留"
+    );
+    assert!(!html.contains("<tool_call>"), "原始标签不应出现在输出中");
+    assert!(html.contains("before "));
+    assert!(html.contains(" after"));
+}
+
+#[test]
+fn test_render_session_html_folds_fenced_tool_block() {
+    let html = render_session_html(&session_with(
+        vec![msg("assistant", "```tool\n{\"cmd\":\"ls\"}\n```")],
+        &[],
+    ));
+    assert!(html.contains("<details class=\"tool\">"));
+    assert!(html.contains("{&quot;cmd&quot;:&quot;ls&quot;}"));
+    assert!(!html.contains("```"), "fence 标记不应泄漏到输出");
+}
+
+#[test]
+fn test_render_session_html_colors_diff() {
+    let diff = "```diff\n@@ -1 +1 @@\n-old\n+new\n context\n```";
+    let html = render_session_html(&session_with(vec![msg("assistant", diff)], &[]));
+    assert!(html.contains("<pre class=\"code diff\">"));
+    assert!(html.contains("<span class=\"hunk\">@@ -1 +1 @@</span>"));
+    assert!(html.contains("<span class=\"del\">-old</span>"));
+    assert!(html.contains("<span class=\"add\">+new</span>"));
+    assert!(html.contains("<span class=\"ctx\"> context</span>"));
+}
+
+#[test]
+fn test_render_session_html_keeps_plain_code_block() {
+    let html = render_session_html(&session_with(
+        vec![msg("assistant", "```rust\nfn main() {}\n```")],
+        &[],
+    ));
+    assert!(html.contains("<pre class=\"code lang-rust\">fn main() {}"));
+    assert!(
+        !html.contains("<details class=\"tool\">"),
+        "普通代码块不应折叠为工具块"
+    );
+}
+
+#[test]
+fn test_render_session_html_escapes_code_block_content() {
+    let html = render_session_html(&session_with(
+        vec![msg("assistant", "```rust\nlet s = \"<b>\";\n```")],
+        &[],
+    ));
+    assert!(html.contains("&lt;b&gt;"), "代码块内容必须转义");
+    assert!(!html.contains("<b>"));
+}
+
+#[test]
+fn test_render_session_html_handles_unclosed_fence() {
+    let html = render_session_html(&session_with(
+        vec![msg("assistant", "```diff\n+added\n")],
+        &[],
+    ));
+    assert!(html.contains("<pre class=\"code diff\">"));
+    assert!(html.contains("<span class=\"add\">+added</span>"));
+}
+
+#[test]
+fn test_render_session_html_folds_long_messages() {
+    let long = "x".repeat(LONG_MESSAGE_CHARS + 1);
+    let html = render_session_html(&session_with(vec![msg("user", &long)], &[]));
+    assert!(html.contains("<details class=\"long\">"), "超长消息应折叠");
+    assert!(html.contains(&format!("展开全文（{} 字符）", LONG_MESSAGE_CHARS + 1)));
+}
+
+#[test]
+fn test_render_session_html_does_not_fold_short_messages() {
+    let short = "x".repeat(LONG_MESSAGE_CHARS);
+    let html = render_session_html(&session_with(vec![msg("user", &short)], &[]));
+    assert!(!html.contains("<details class=\"long\">"));
+}
+
+#[test]
+fn test_render_session_html_trace_badges_sorted_and_filtered() {
+    let html = render_session_html(&session_with(
+        vec![msg("user", "hi")],
+        &[
+            ("sop_id", "sop-42"),
+            ("trace_id", "trace-7"),
+            ("unrelated", "ignored"),
+        ],
+    ));
+    assert!(html.contains("sop_id: sop-42"));
+    assert!(html.contains("trace_id: trace-7"));
+    assert!(!html.contains("ignored"), "仅 trace/sop 相关键进入徽标");
+    let sop_pos = html.find("sop_id: sop-42").expect("sop chip");
+    let trace_pos = html.find("trace_id: trace-7").expect("trace chip");
+    assert!(sop_pos < trace_pos, "徽标按 key 排序，输出稳定");
+}
+
+#[test]
+fn test_render_session_html_marks_compressed_messages() {
+    let mut message = msg("assistant", "summary");
+    message.is_compressed = true;
+    let html = render_session_html(&session_with(vec![message], &[]));
+    assert!(html.contains("<span class=\"badge\">compressed</span>"));
+}

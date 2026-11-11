@@ -25,6 +25,20 @@ sisyphus --data-dir ./.sisyphus-data session import ./session.json
 
 **验收（已验证）**：`create/list` 在本地数据目录下可用（S2 基线）。
 
+### 2.1 会话回放页（HTML）
+
+`session export <id> <out.html> --format html` 产出**离线单文件**回放页，用于事后复盘与分享：
+
+```bash
+sisyphus --data-dir ./.sisyphus-data session export <id> ./replay.html --format html
+```
+
+页面能力：时间轴序号 + 角色着色、`<tool_call>`/```tool 折叠、```diff 着色、超长消息折叠、
+`metadata` 中 `trace*`/`sop*` 键渲染为关联徽标；所有内容 HTML 转义（离线、无脚本）。
+
+**断言方式**（无需浏览器）：`python3` 检查导出文件包含 `<title>Session: <name></title>`、
+`#1/N`、`&lt;script&gt;`（转义），且不含 `http://`/`https://`/`<script`/`<link `。
+
 ## 3. Bridge 服务端会话（需 bridge）
 
 REST 典型流程（契约以实现/OpenAPI 为准）：

@@ -177,6 +177,7 @@
 | T1.2 验证-修复循环 | DONE | `verify_fix_loop_with`（`sisyphus-tools-llm-tools/src/diagnose.rs`）+ `sisyphus verify` 命令；5 个循环单测 + 3 个输出格式单测；实跑证据：临时 crate 第 1 轮 2 warning（`--max-warnings 0` 未通过）→ fix → 第 2 轮 0 warning（PASS，188ms）；不可修复错误在 2 轮后退出非零 |
 | T1.3 执行进度事件 | DONE | `ExecutionEvent` 新增 `ToolCall`/`TokenUsage`（共 10 变体）；`/api/tools/execute` 成对广播 `tool_call`（started → completed/failed，含 duration/success/error/project_id）；SSE 映射、TUI 渲染、OpenAPI 与 `book/src/sse-events.md` 已同步；bridge 侧 2 个广播单测 + 变体映射守卫 + TUI 3 个格式单测 |
 | T2.2 权限规则与审批审计 | PARTIAL | glob 规则 + 危险工具默认 `ask` + JSONL 审计 + `permission check/audit` 已落地（10 个单测；实跑：glob deny 阻断 exec 并落审计；ask 下 `n` 拒绝 / `y` 批准均正确记录）。**未完成**：TUI 内弹窗审批（当前沿用"输入即同意"并记录 `asked-proceeded-tui`） |
+| T2.3 会话回放页 | DONE | `render_session_html` + 渲染 helper（时间轴/工具折叠/diff 着色/长消息折叠/trace 徽标/CSS）；13 个渲染单测；实跑 `session export --format html` 后校验：`#1/2` 序号、`&lt;b&gt;` 转义、`<details class="tool">` 折叠、`+`/`-`/`@@` 着色、无外部资源；文档见 `book/src/crates/cli.md` 与 `docs/runbooks/single-node-sessions-and-tasks.md` §2.1 |
 
 > 状态取值：DONE / IN_PROGRESS / BLOCKED / TODO。`BLOCKED` 必须写明缺失的环境或依赖。
 

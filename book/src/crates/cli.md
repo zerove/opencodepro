@@ -220,6 +220,22 @@ sisyphus session create "Refactoring session"
 sisyphus session list
 ```
 
+### 会话回放页（HTML 导出）
+
+```bash
+sisyphus --data-dir ./.sisyphus-data session export <id> replay.html --format html
+```
+
+导出的页面是**离线单文件**（不引用外部 CSS/JS/字体），可直接发给他人或用浏览器打开回看：
+
+- **时间轴**：每条消息带 `#序号/总数` 与时间戳，按角色着色（user/assistant/system/other）；
+- **工具调用折叠**：正文里的 `<tool_call>…</tool_call>` 与 ```` ```tool ```` 代码块折叠为 `🔧 tool call` 详情块；
+- **diff 着色**：```` ```diff ```` 代码块按 `+`/`-`/`@@` 分别着色，便于审阅改动；
+- **长消息折叠**：超过 1500 字符的消息折叠为“展开全文”，避免淹没时间轴；
+- **trace 关联**：会话 `metadata` 中键名含 `trace` 或 `sop` 的条目渲染为徽标（按 key 排序，输出稳定）。
+
+所有正文与元数据都会做 HTML 转义（`& < > "`），因此消息内容里的标签不会被执行。
+
 ## Bridge 命令
 
 ```bash
