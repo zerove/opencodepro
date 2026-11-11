@@ -1,0 +1,12 @@
+{
+  "collected_at": "2026-11-11T02:52:20.291847+00:00",
+  "commit": "354a9c1",
+  "bridge_http": "http://127.0.0.1:15291",
+  "bridge_metrics_available": false,
+  "llm_requests_total": null,
+  "llm_tokens_total": null,
+  "task_success_rate": null,
+  "task_fix_rate": null,
+  "task_regression_rate": null,
+  "task_cost_duration_ms_per_task": null
+}

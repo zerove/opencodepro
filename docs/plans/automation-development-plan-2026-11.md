@@ -96,6 +96,7 @@
 | ID | 任务 | 说明 | 验收/证据 | 工作量 |
 |---|---|---|---|---|
 | T4.1 | 质量指标定义与采集 | 成功率、修复率、回归率、单任务耗时/token 成本；从执行记录汇总 | 指标文档 + 首轮数据（脚本可复跑） | M |
+| T4.1 状态（执行） | IN_PROGRESS | 指标口径与采集脚本落地（`scripts/quality-metrics-collect.sh` + `docs/plans/single-node-quality-metrics.md`）；任务级成功率/修复率/回归率 置 `null`（依赖 L3 证据/T1.4）；bridge 未运行时 `llm_*` 指标记 `null` |
 | T4.2 | 性能回归门禁 | 定时/触发式采样，对比基线阈值，超阈值告警 | CI job 或 `make perf-regression`；阈值与例外记录 | M |
 | T4.2 状态（执行） | DONE | `scripts/perf-regression-check.sh <mode>` + `make perf-regression{,-bridge}`；基线 `docs/benchmarks/perf-regression-baseline-2026-11-10.json`；实跑 `perf-regression-check.sh cli` rc=0（3 CLI 指标 p50 0.0097-0.0118s < 0.05s） |
 | T3.3 启动分段归因与优化 | IN_PROGRESS | 落地部分：`startup_phase_*_ms`（config/bridge/http_listening/grpc_listening）+ `scripts/measure-bridge-startup.sh`；实跑 end_to_end_ready_ms≈1530ms、phases bridge≈59ms/http≈68ms/grpc≈67ms；TUI 首帧 PTY 测量与后续优化待继续 |
