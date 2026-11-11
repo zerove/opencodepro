@@ -40,17 +40,24 @@ OUT_DIR="docs/benchmarks/quality-metrics"
 OUT="${OUT_DIR}/${STAMP}-${COMMIT}.json"
 
 bridge_up="false"
-requests_total="null"
-tokens_total="null"
+token_budget_usage="null"
+token_budget_capped="null"
+token_budget_exhausted="null"
+http_requests_total="null"
 METRICS_JSON=""
 if curl -sf --max-time 2 "${BRIDGE_HTTP}/health" >/dev/null 2>&1; then
   bridge_up="true"
-  METRICS_JSON="$(curl -sf --max-time 5 ${BRIDGE_HTTP}/metrics)"
+  # 端点是 /api/metrics（不是 /metrics）；失败时不能中断脚本（set -e）
+  METRICS_JSON="$(curl -sf --max-time 5 "${BRIDGE_HTTP}/api/metrics" || true)"
   if [ -n "$METRICS_JSON" ]; then
-    requests_raw="$(printf '%s\n' "$METRICS_JSON" | grep -E '^sisyphus_llm_requests_total' | tail -n 1 | awk '{print $NF}')"
-    tokens_raw="$(printf '%s\n' "$METRICS_JSON" | grep -E '^sisyphus_llm_tokens_total' | tail -n 1 | awk '{print $NF}')"
-    requests_total="${requests_raw:-null}"
-    tokens_total="${tokens_raw:-null}"
+    token_budget_usage="$(printf '%s\n' "$METRICS_JSON" | awk '/^sisyphus_token_budget_usage /{print $NF; exit}')"
+    token_budget_capped="$(printf '%s\n' "$METRICS_JSON" | awk '/^sisyphus_token_budget_capped /{print $NF; exit}')"
+    token_budget_exhausted="$(printf '%s\n' "$METRICS_JSON" | awk '/^sisyphus_token_budget_exhausted /{print $NF; exit}')"
+    http_requests_total="$(printf '%s\n' "$METRICS_JSON" | awk '/^sisyphus_http_requests_total /{print $NF; exit}')"
+    token_budget_usage="${token_budget_usage:-null}"
+    token_budget_capped="${token_budget_capped:-null}"
+    token_budget_exhausted="${token_budget_exhausted:-null}"
+    http_requests_total="${http_requests_total:-null}"
   fi
 fi
 
@@ -66,7 +73,8 @@ else
   echo "note: ${SISYPHUS_BIN} 不可用，任务级指标记为 null" >&2
 fi
 
-python3 - "$BRIDGE_HTTP" "$COMMIT" "$STAMP" "$bridge_up" "$requests_total" "$tokens_total" \
+python3 - "$BRIDGE_HTTP" "$COMMIT" "$STAMP" "$bridge_up" "$token_budget_usage" \
+  "$token_budget_capped" "$token_budget_exhausted" "$http_requests_total" \
   "$TASK_METRICS_JSON" "$RECORDS_DIR" <<'PY'
 import datetime
 import json
@@ -78,11 +86,22 @@ import sys
     commit,
     stamp,
     bridge_up,
-    requests_total,
-    tokens_total,
+    token_budget_usage,
+    token_budget_capped,
+    token_budget_exhausted,
+    http_requests_total,
     task_metrics_json,
     records_dir,
-) = sys.argv[1:9]
+) = sys.argv[1:11]
+
+def as_int(value):
+    if value in (None, "", "null"):
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
 
 try:
     task_metrics = json.loads(task_metrics_json)
@@ -94,8 +113,13 @@ metrics = {
     "commit": commit,
     "bridge_http": bridge_http,
     "bridge_metrics_available": bridge_up == "true",
-    "llm_requests_total": int(requests_total) if requests_total not in (None, "null") else None,
-    "llm_tokens_total": int(tokens_total) if tokens_total not in (None, "null") else None,
+    # 指标名取自 bridge /api/metrics 的真实契约（此前脚本里的
+    # sisyphus_llm_requests_total / sisyphus_llm_tokens_total 并不存在，
+    # 会导致 bridge 在线时仍恒为 null）。
+    "token_budget_usage": as_int(token_budget_usage),
+    "token_budget_capped": as_int(token_budget_capped),
+    "token_budget_exhausted": as_int(token_budget_exhausted),
+    "http_requests_total": as_int(http_requests_total),
     "records_dir": records_dir,
 }
 # 任务级指标：无记录时保持 null（不伪造 0 值）

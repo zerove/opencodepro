@@ -406,6 +406,28 @@ edition = "2021"
     }
 
     #[test]
+    fn test_lint_fix_path_applies_clippy_suggestions() {
+        // 回归：`cargo fix --clippy` 不是合法参数，lint 修复必须走
+        // `cargo clippy --fix`。旧实现让 `--lint-fixes` 的修复步骤必然失败
+        // （cargo 报 "unexpected argument '--clippy'"）。
+        let (_d, path) = create_simple_project();
+        fs::write(
+            path.join("src/lib.rs"),
+            "pub fn value() -> i32 {\n    return 42;\n}\n",
+        )
+        .unwrap();
+
+        let report = fix_and_diagnose(None, true, false, Some(&path)).unwrap();
+        assert!(report.check_output.success, "修复后 check 应成功");
+
+        let after = fs::read_to_string(path.join("src/lib.rs")).unwrap();
+        assert!(
+            !after.contains("return 42"),
+            "clippy 的 needless_return 应被自动修复，实际内容: {after}"
+        );
+    }
+
+    #[test]
     fn test_diagnose_groups_by_file() {
         let (_d, path) = create_simple_project();
         fs::write(

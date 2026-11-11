@@ -1,0 +1,11 @@
+{
+  "task_id": "clean",
+  "scenario": "diagnose-fix",
+  "status": "pass",
+  "initial_verify_passed": true,
+  "final_verify_passed": true,
+  "fix_attempts": 0,
+  "regressed": false,
+  "duration_ms": 205,
+  "recorded_at": "2026-11-11T20:18:23.713849021+00:00"
+}

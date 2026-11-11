@@ -1,0 +1,11 @@
+{
+  "task_id": "unfixable",
+  "scenario": "diagnose-fix",
+  "status": "fail",
+  "initial_verify_passed": false,
+  "final_verify_passed": false,
+  "fix_attempts": 2,
+  "regressed": false,
+  "duration_ms": 1104,
+  "recorded_at": "2026-11-11T20:18:23.497300390+00:00"
+}

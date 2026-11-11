@@ -116,7 +116,16 @@ impl LanguageBackend for RustBackend {
         apply_lint_fixes: bool,
         cwd: Option<&Path>,
     ) -> ToolResult<BuildOutput> {
-        let mut args = vec!["fix"];
+        // `cargo fix --clippy` **不是合法参数**（cargo 1.99.1 与本仓库 pin 的
+        // nightly-2026-08-08 均报 "unexpected argument '--clippy'"），
+        // 因此 lint 修复必须走 `cargo clippy --fix` 这一独立入口 ——
+        // 否则 `--lint-fixes` 的修复步骤必然失败（活体证据：verify 3 轮均
+        // "fix ❌"，cargo 输出为上述参数错误）。
+        let mut args: Vec<&str> = if apply_lint_fixes {
+            vec!["clippy", "--fix"]
+        } else {
+            vec!["fix"]
+        };
         // `cargo fix` 是唯一会做 VCS 探测的常用子命令：它要确认改动可回滚，
         // 找不到 VCS 就报错，而探测会**向上**逐级查找父目录。当目标项目位于
         // 某个 git 仓库内部时，它会一路查到那个仓库并逐个打开其 pack 文件。
@@ -140,9 +149,6 @@ impl LanguageBackend for RustBackend {
         // 报 "has been running for over 60 seconds"（150s 仍未结束）；
         // 恢复后同一条测试 0.87s 通过。flag 在 cargo 1.99.0 上确认存在。
         args.push("--allow-no-vcs");
-        if apply_lint_fixes {
-            args.push("--clippy");
-        }
         if let Some(p) = pkg {
             args.push("--package");
             args.push(p);
