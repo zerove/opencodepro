@@ -105,6 +105,7 @@
 | T4.4 | 统一 trace 关联 | 入口生成 trace id，贯穿 SOP/工具/LLM 日志与响应头；先行设计文档 | 一次请求可查到全部子步骤；设计评审记录 | M–L |
 | T4.4 状态（执行） | IN_PROGRESS | 先行设计完成：`docs/plans/t4-4-trace-correlation-design.md`（入口生成/透传；HTTP 头 + gRPC metadata + SSE 负载 + tracing span 四处承载；兼容性/风险/回退/验收口径）；实施步骤 1-7 待继续 |
 | T4.5 | 长窗口稳定性 | 连续执行/资源泄漏（内存、句柄、DB）监测 | 数小时运行记录与结论（不伪造连续样本） | M |
+| T4.5 状态（执行） | IN_PROGRESS | 监测脚本落地：`scripts/long-run-stability.sh` + `make long-run-stability`（bridge 周期只读负载 + RSS/FD/线程采样 → summary.json/summary.md）；实跑 10 分钟窗口（119 采样，探活与 metrics 100%）：RSS 57788→58564 KB（斜率 +35.6 KB/min，判定 stable）、FD 21→21、线程 18→18 均 stable；证据 `docs/benchmarks/long-run/2026-11-11-5b10b04/`。"数小时"结论需加长窗口重采（脚本已支持分钟参数），当前不外推 |
 
 ## 5. 质量与性能指标（初始目标，待基线校准）
 
