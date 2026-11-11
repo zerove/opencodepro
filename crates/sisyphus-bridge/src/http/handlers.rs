@@ -315,7 +315,8 @@ fn wire_execution_events(
 pub(super) async fn execute_goal_handler(
     State(state): State<RestApiState>,
     workspace: WorkspaceContext,
-    Extension(trace_id): Extension<sisyphus_types::trace::TraceId>,
+    // 可选提取：缺少 trace 中间件时优雅降级（不注入 trace_id），而不是 500
+    maybe_trace_id: Option<Extension<sisyphus_types::trace::TraceId>>,
     Json(req): Json<GoalExecuteRequest>,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
@@ -328,7 +329,7 @@ pub(super) async fn execute_goal_handler(
         state.sse_broadcaster.clone(),
         req.event_tx,
         sop_id.clone(),
-        Some(trace_id.0.clone()),
+        maybe_trace_id.as_ref().map(|ext| ext.0 .0.clone()),
     );
 
     let project_id =
@@ -549,7 +550,7 @@ pub(super) async fn goal_stream_handler(
 pub(super) async fn execute_composite_handler(
     State(state): State<RestApiState>,
     workspace: WorkspaceContext,
-    Extension(trace_id): Extension<sisyphus_types::trace::TraceId>,
+    maybe_trace_id: Option<Extension<sisyphus_types::trace::TraceId>>,
     Json(req): Json<CompositeExecuteRequest>,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
@@ -566,7 +567,7 @@ pub(super) async fn execute_composite_handler(
         state.sse_broadcaster.clone(),
         req.event_tx,
         composite_sop_id.clone(),
-        Some(trace_id.0.clone()),
+        maybe_trace_id.as_ref().map(|ext| ext.0 .0.clone()),
     );
 
     let project_id = workspace.project_id.or(req.project_id);
