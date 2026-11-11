@@ -102,10 +102,31 @@ sisyphus verify --lang node -p web -C ./frontend
 | `--attempts N` | 最大验证轮数（默认 3，仅 `--fix` 时生效；上限保证终止） |
 | `--max-warnings N` | 允许的最大警告数，`0` 表示零警告门禁；省略表示不限制 |
 | `--json` | 输出结构化结果（轮次、耗时、修复记录、最终计数） |
+| `--record <path>` | 把本次执行落成一条任务级质量记录（JSON），供 `sisyphus metrics quality` 聚合 |
 | `-C` | 工作目录 |
 
 门禁判定：`errors == 0` 且 `warnings <= max_warnings`（未设置时不限制）。未通过时命令以非零退出，
 可直接用于 CI 或编排节点的判定条件。
+
+### metrics — 任务级质量指标聚合
+
+从任务记录目录汇总成功率 / 修复率 / 回归率 / 平均单任务耗时。记录由
+`sisyphus verify --record <path>` 产生；无记录时各比率为 `null`（不伪造 0 值）。
+
+```bash
+# 聚合查看（人类可读）
+sisyphus metrics quality --records docs/benchmarks/quality-metrics/records
+
+# 机器可读
+sisyphus metrics quality --records docs/benchmarks/quality-metrics/records --json
+```
+
+| 选项 | 说明 |
+|---|---|
+| `--records <dir>` | 任务记录目录（每个 `.json` 一条记录）；默认 `docs/benchmarks/quality-metrics/records` |
+| `--json` | 输出结构化指标 |
+
+指标口径与记录格式见 `docs/plans/single-node-quality-metrics.md`。
 
 ## 权限与审计
 
