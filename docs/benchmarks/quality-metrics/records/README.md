@@ -43,7 +43,10 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records --jso
 
 | 文件 | 来源 | 说明 |
 |---|---|---|
-| `repo-sisyphus-tools-build.json` | 真实仓库任务 | `sisyphus verify -p sisyphus-tools-build --max-warnings 0` 的真实运行（PASS，0 错 0 警，78.977s） |
+| `repo-sisyphus-tools-build.json` | 真实仓库任务 | `sisyphus verify -p sisyphus-tools-build --max-warnings 0`（PASS，0 错 0 警，78.977s） |
+| `repo-sisyphus-types.json` | 真实仓库任务 | 同上（`sisyphus-types`，PASS，19.782s） |
+| `repo-sisyphus-metrics.json` | 真实仓库任务 | 同上（`sisyphus-metrics`，PASS，46.028s） |
+| `repo-sisyphus-tools-agent.json` | 真实仓库任务 | 同上（`sisyphus-tools-agent`，PASS，90.770s） |
 
 受控 fixture 样本（用于验证口径与链路，非仓库任务）单独放在
 `../fixture-samples/`，不混入本目录。
