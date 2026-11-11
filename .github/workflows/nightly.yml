@@ -183,6 +183,29 @@ jobs:
           path: .sisyphus/eval-history/
           retention-days: 90
 
+  # ── T3.3: TUI 首帧测量（伪终端，headless）────────────────────
+  # 在 pty 中启动 TUI，命中首个面板绘制即记为首帧可见；
+  # 与基线对比用同一口径（同一 bin 类型、同样本数）。
+  tui-first-frame:
+    timeout-minutes: 30
+    name: TUI First-frame Measurement
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust
+      - uses: ./.github/actions/setup-protoc
+      - uses: Swatinem/rust-cache@v2
+      - name: Build CLI (debug)
+        run: cargo build -p sisyphus-cli
+      - name: Measure first frame (3 samples)
+        run: ./scripts/measure-tui-first-frame.sh ./target/debug/sisyphus 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tui-first-frame-report
+          path: docs/benchmarks/tui-first-frame/
+          retention-days: 30
+
   # ── T4.5: 长窗口稳定性监测（bridge 资源泄漏 / 句柄 / 线程）─────
   # 固定窗口采样 RSS / FD / 线程数，并周期性打只读端点；
   # 结论与原始采样一并归档为 artifact（不把未测时长外推成结论）。

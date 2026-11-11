@@ -31,7 +31,13 @@ jobs:
                  scripts/single-node-demo-flow.sh \
                  scripts/single-node-apply-sop-template.sh \
                  scripts/single-node-bench-sample.sh \
-                 scripts/single-node-contract-smoke.sh
+                 scripts/single-node-contract-smoke.sh \
+                 scripts/evals-ci-run.sh \
+                 scripts/long-run-stability.sh \
+                 scripts/measure-tui-first-frame.sh \
+                 scripts/measure-bridge-startup.sh \
+                 scripts/perf-regression-check.sh \
+                 scripts/quality-metrics-collect.sh
 
       - name: Smoke script help
         run: ./scripts/single-node-contract-smoke.sh --help
