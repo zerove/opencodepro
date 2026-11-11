@@ -40,6 +40,31 @@
 
 payload 中缺失该键、值为 `null`、或值不是字符串时，视为**无该维度**，不会被任何维度过滤匹配。
 
+## 请求关联：`trace_id`（T4.4）
+
+每个 REST 响应都带 `x-trace-id` 头：
+
+- 请求带了合法的 `x-trace-id` → 原样回写（字符集 `[A-Za-z0-9_-]`，长度上限 64）；
+- 未带或非法 → 服务端生成 `trace-<32 位十六进制>`。
+
+同一个 id 会出现在：
+
+| 位置 | 形式 |
+|---|---|
+| HTTP 响应头 | `x-trace-id: trace-...` |
+| gRPC metadata | `x-trace-id`（CLI 侧每次调用注入一个） |
+| SSE 事件 payload | `trace_id` 键（由执行端点的请求 trace id 注入） |
+| 结构化日志 | span 字段 `trace_id`（`http_request` / `grpc.execute_sop` / `grpc.execute_tool`） |
+
+用法：发起执行请求时带上自己的 trace id，即可用同一 id 把「响应头 → 工具/LLM 日志 → 事件流」串起来。
+
+```bash
+curl -i -H 'x-trace-id: trace-my-run' \
+  -H 'content-type: application/json' \
+  -d '{"goal":"...","sop_id":"sop-1","event_tx":true}' \
+  http://127.0.0.1:8080/api/execute/goal
+```
+
 ## 当前生产中实际广播的事件
 
 这一节与枚举定义有出入，实现补齐前请以本节为准。

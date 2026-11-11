@@ -20,11 +20,18 @@ use tonic::{Request, Response, Status};
 use tracing::instrument;
 
 impl MySisyphusBridge {
-    #[instrument(name = "grpc.execute_sop", skip_all, fields(sop_id, project_id))]
+    #[instrument(
+        name = "grpc.execute_sop",
+        skip_all,
+        fields(sop_id, project_id, trace_id)
+    )]
     pub(crate) async fn execute_sop_impl(
         &self,
         request: Request<ExecuteSopRequest>,
     ) -> Result<Response<SopResponse>, Status> {
+        // T4.4：把入口注入的 trace id 记入 span，便于按 id 串联子步骤日志
+        let trace_id = crate::trace::trace_id_of(&request);
+        tracing::Span::current().record("trace_id", trace_id.as_str());
         let project_id = request
             .metadata()
             .get("x-sisyphus-workspace-id")
@@ -124,12 +131,15 @@ impl MySisyphusBridge {
     #[instrument(
         name = "grpc.execute_tool",
         skip_all,
-        fields(tool_id, fuel, chaos = self.chaos_enabled)
+        fields(tool_id, fuel, chaos = self.chaos_enabled, trace_id)
     )]
     pub(crate) async fn execute_tool_impl(
         &self,
         request: Request<ExecuteToolRequest>,
     ) -> Result<Response<ExecuteToolResponse>, Status> {
+        // T4.4：把入口注入的 trace id 记入 span
+        let trace_id = crate::trace::trace_id_of(&request);
+        tracing::Span::current().record("trace_id", trace_id.as_str());
         let req = request.into_inner();
         let tool_id = req.tool_id.clone();
         let args_json = req.args_json;

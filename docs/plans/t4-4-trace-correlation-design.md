@@ -71,8 +71,8 @@
 | 3 gRPC 入口 | DONE | `crates/sisyphus-bridge/src/trace.rs`：`TraceInterceptor` + `AuthTraceInterceptor`（组合），3 个单测 |
 | 4 SSE 负载 | DONE | `SseEvent::from_execution_event_with_trace` 注入 `trace_id` 维度键；`execute_goal_handler` / `execute_composite_handler` 从 request extensions 取 trace id，1 个单测 |
 | 5 CLI 注入 | DONE | `BridgeClient::with_auth` 为每次 gRPC 调用注入 `x-trace-id` metadata |
-| 6 工具/LLM 日志 | TODO | 既有 `tracing::info!` 补 `trace_id` span 字段（子步骤继承入口 span） |
-| 7 文档与契约 | TODO | `book/src/sse-events.md` 增补 `trace_id`；OpenAPI 增补响应头声明 |
+| 6 工具/LLM 日志 | DONE | HTTP 入口 span（`http_request`）带 `trace_id`，子 span 继承；gRPC 侧 `grpc.execute_sop` / `grpc.execute_tool` 的 span 增加 `trace_id` 字段（从 metadata 读取并 record） |
+| 7 文档与契约 | DONE | `book/src/sse-events.md` 新增「请求关联：`trace_id`」小节；OpenAPI `info.description` 说明所有响应带 `x-trace-id` |
 
 **实跑证据**（bridge debug 构建，`cluster.enabled=false`）：
 

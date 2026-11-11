@@ -60,6 +60,18 @@ impl Interceptor for AuthTraceInterceptor {
     }
 }
 
+/// 从 gRPC 请求 metadata 中读取 trace id（缺失时返回空串）。
+///
+/// 供服务实现把 trace id 记录进当前 span 的 `trace_id` 字段。
+pub fn trace_id_of<T>(request: &tonic::Request<T>) -> String {
+    request
+        .metadata()
+        .get(TRACE_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

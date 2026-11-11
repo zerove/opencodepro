@@ -2036,7 +2036,7 @@ fn build_document() -> Result<serde_json::Value, String> {
         "info": {
             "title": "Sisyphus Bridge REST API",
             "version": env!("CARGO_PKG_VERSION"),
-            "description": "REST API for the Sisyphus Cognitive Engine"
+            "description": "REST API for the Sisyphus Cognitive Engine. Every response carries an `x-trace-id` header: the value is echoed from the request when present and valid, otherwise generated. Use it to correlate the request with its tool/LLM log lines and SSE events (event payload key `trace_id`)."
         },
         "servers": [{"url": "http://localhost:8080", "description": "Local dev"}],
         "paths": serde_json::Value::Object(all_paths),
