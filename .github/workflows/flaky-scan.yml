@@ -50,9 +50,13 @@ jobs:
       - uses: ./.github/actions/setup-protoc
 
       # 脚本用 `cargo metadata` 取权威 crate 列表、并按 crate 名正则匹配
-      # target/debug/deps 下的产物，所以必须先真正编译出测试二进制，
-      # 否则 workspace_lib_binaries() 返回空、脚本以退出码 2 失败
+      # 测试产物，所以必须先真正编译出测试二进制，否则
+      # workspace_lib_binaries() 返回空、脚本以退出码 2 失败
       #（它把「一个都没扫到」显式判为失败，正是为了避免假绿灯）。
+      #
+      # 产物位置：新版 cargo 放在 target/debug/build/<pkg>/<hash>/out/，
+      # 旧产物留在 target/debug/deps/ —— 脚本两处都搜（只搜 deps/ 会漏掉
+      # 新构建的二进制，让一部分 crate 被静默跳过却报告「全部通过」）。
       #
       # 排除项对齐 ci.yml 的 test-light：bridge / sandboxd 在本仓库会 OOM
       # （19.5 GiB 实测 -j 2 都不安全），既编不出来也跑不动。注意脚本的
