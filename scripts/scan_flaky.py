@@ -49,6 +49,10 @@ SLOW_CRATES = {
     "sisyphus_tools_session",
     "bridge_integration",
     "cluster_integration",
+    # bridge 的 lib 测试含 sandboxd 守护进程用例：本机没有 `sisyphus-sandboxd`
+    # 二进制时**确定性**失败（spawn: Permission denied），会被本脚本误报成
+    # 「概率性失败」。仓库约定 bridge 测试不进常规 CI（OOM），故整体排除。
+    "sisyphus_bridge",
 }
 
 # 单个测试二进制的超时（秒）。留足余量：慢 crate 已被排除。
@@ -78,7 +82,27 @@ def workspace_lib_binaries(target_dir: str):
     if not os.path.isdir(target_dir):
         target_dir = parsed["target_directory"]
     deps_dir = os.path.join(target_dir, "debug", "deps")
-    if not os.path.isdir(deps_dir):
+    # 新版 cargo 把测试二进制放到 `target/<profile>/build/<pkg>/<hash>/out/`，
+    # 旧产物仍留在 `target/<profile>/deps/`。只搜 deps/ 会漏掉**新构建**的二进制：
+    # 本机实测 types/metrics/tools-agent/bridge 的新产物都在 build/*/out 下，
+    # deps/ 里只剩更早的旧产物 → 这些 crate 被判为「产物早于源码」而**静默跳过**，
+    # 扫描却报告「全部通过」——正是本脚本注释里警告的最危险假绿灯。
+    # 因此两处都要搜，并按 mtime 取最新。
+    search_dirs = []
+    if os.path.isdir(deps_dir):
+        search_dirs.append(deps_dir)
+    build_root = os.path.join(target_dir, "debug", "build")
+    if os.path.isdir(build_root):
+        # 层级是 build/<pkg>/<hash>/out/（两层），不是 build/<pkg>/out/
+        for pkg_dir in sorted(os.listdir(build_root)):
+            pkg_path = os.path.join(build_root, pkg_dir)
+            if not os.path.isdir(pkg_path):
+                continue
+            for hash_dir in sorted(os.listdir(pkg_path)):
+                out_dir = os.path.join(pkg_path, hash_dir, "out")
+                if os.path.isdir(out_dir):
+                    search_dirs.append(out_dir)
+    if not search_dirs:
         print("找不到测试产物目录: %s" % deps_dir, file=sys.stderr)
         return []
     out = []
@@ -88,14 +112,18 @@ def workspace_lib_binaries(target_dir: str):
         if crate in SLOW_CRATES:
             continue
         pattern = re.compile(re.escape(crate) + r"-[0-9a-f]{16}$")
-        try:
-            found = [f for f in os.listdir(deps_dir) if pattern.fullmatch(f)]
-        except FileNotFoundError:
+        candidates = []
+        for search_dir in search_dirs:
+            try:
+                found = [f for f in os.listdir(search_dir) if pattern.fullmatch(f)]
+            except FileNotFoundError:
+                continue
+            for f in found:
+                candidates.append((os.path.getmtime(os.path.join(search_dir, f)), search_dir, f))
+        if not candidates:
             continue
-        if not found:
-            continue
-        newest = max(found, key=lambda f: os.path.getmtime(os.path.join(deps_dir, f)))
-        binary = os.path.join(deps_dir, newest)
+        _, newest_dir, newest = max(candidates, key=lambda item: item[0])
+        binary = os.path.join(newest_dir, newest)
         # 确认它真的是测试二进制（含 `#[test]` 用例）
         probe = subprocess.run(
             [binary, "--list"], capture_output=True, text=True, timeout=60
