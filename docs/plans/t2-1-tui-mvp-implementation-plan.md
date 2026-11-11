@@ -33,8 +33,8 @@
 |---|---|---|---|---|
 | S1 引擎中断 | `Developer` interrupt flag + `Cancelled` 状态 + checkpoint 保存 | `crates/sisyphus-tools-agent/src/developer.rs`、`developer/types.rs` | 中断返回 `Cancelled`；resume 跳过已完成 step | DONE |
 | S2 引擎审批 | `DevApprover` trait + 动作门控（allow/deny） | 同上 | deny → step 标记 denied-by-user；allow → 放行 | DONE |
-| S3 TUI 接缝 | `BgOp::DevAsk` + `DevRunHandle` + App 审批态 + `y/n/Esc` 键位 + 工具卡片渲染 | `crates/sisyphus-cli/src/tui/{background,app}.rs`、`tui/dialog/{handlers,renders}.rs` | 单测覆盖：ask 到达 → y/n 应答；Esc 中断；恢复入口 | TODO |
-| S4 闭环与证据 | `spawn_dev_agent` 接线 checkpoint/审批/中断 + 一次会话验收（≥2 工具调用 + 1 审批 + 1 中断恢复） | `tui/background.rs`、证据脚本 | 可复跑证据落 `docs/benchmarks/acceptance/<date>-t2.1/` | TODO |
+| S3 TUI 接缝 | `BgOp::DevAsk` + `DevRunHandle` + App 审批态 + `y/n/Esc` 键位 + 工具卡片渲染 | `crates/sisyphus-cli/src/tui/{background,app}.rs`、`tui/dialog/{handlers,renders}.rs` | 单测覆盖：ask 到达 → y/n 应答；Esc 中断；恢复入口 | DONE |
+| S4 闭环与证据 | `spawn_dev_agent` 接线 checkpoint/审批/中断 + 一次会话验收（≥2 工具调用 + 1 审批 + 1 中断恢复） | `tui/background.rs`、证据脚本 | 可复跑证据落 `docs/benchmarks/acceptance/<date>-t2.1/` | DONE（脚本化验收测试 `crates/sisyphus-tools-agent/tests/t2_1_mvp_acceptance.rs`） |
 
 切片顺序固定 **S1 → S2 → S3 → S4**：S1/S2 可独立验收与回退，S3 是 UI 接缝，S4 才做端到端闭环。
 
@@ -43,7 +43,10 @@
 - 引擎级：`cargo test -p sisyphus-tools-agent --lib`（S1/S2 单测已覆盖）。
 - TUI 级：`cargo test -p sisyphus-cli --lib`（S3 状态机单测：审批应答、中断、恢复入口）。
 - 端到端（S4）：脚本化 mock 驱动的一次会话，落盘工具调用计数、审批决策、中断与恢复记录。
+  - 已落地：`crates/sisyphus-tools-agent/tests/t2_1_mvp_acceptance.rs`（2 步确定性计划 → 第 1 步审批通过后中断 → `Cancelled` + checkpoint → resume 跳过已完成步 → `Success`；断言 2 次工具调用 / 2 次审批 / 1 次中断恢复）。
 - 录屏不作为自动化验收依据（不可复跑）；以「权限审计 JSONL + checkpoint JSON + 事件流日志」作为等效证据，并在证据目录 `summary.md` 说明替代关系。
+  - 当前等价证据：TUI 日志（`Dev agent awaiting approval` / `Dev tool call approved` / `Dev agent interrupted`）+ `dev_checkpoint.json`。
+  - 真实 LLM 会话录制仍受 T1.4 环境阻塞（缺凭据），补齐后追加到 `docs/benchmarks/acceptance/<date>-t2.1/`。
 
 ## 5. 风险与回退
 
