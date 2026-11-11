@@ -1,0 +1,18 @@
+{
+  "collected_at": "2026-11-11T13:00:47.576956+00:00",
+  "commit": "ca3f870",
+  "bridge_http": "http://127.0.0.1:15291",
+  "bridge_metrics_available": false,
+  "llm_requests_total": null,
+  "llm_tokens_total": null,
+  "records_dir": "/tmp/opencode/t4_1_records",
+  "task_total": 2,
+  "task_passed": 1,
+  "task_failed": 1,
+  "task_blocked": 0,
+  "task_success_rate": 0.5,
+  "task_fix_rate": 0.0,
+  "task_regression_rate": null,
+  "task_cost_duration_ms_per_task": 7857.5,
+  "note": "\u6d41\u7a0b\u6f14\u793a\u6837\u672c\uff1a\u8bb0\u5f55\u6765\u81ea /tmp \u4e0b\u7684\u4e24\u4e2a fixture crate\uff08\u4e00\u4e2a check \u901a\u8fc7\u3001\u4e00\u4e2a\u7c7b\u578b\u9519\u8bef\uff09\uff0c\u7528\u4e8e\u9a8c\u8bc1 `verify --record` \u2192 `metrics quality` \u2192 \u91c7\u96c6\u811a\u672c\u7684\u805a\u5408\u94fe\u8def\uff1b\u4e0d\u4ee3\u8868\u4ed3\u5e93\u771f\u5b9e\u4efb\u52a1\u7684\u6307\u6807\u3002\u4ed3\u5e93\u771f\u5b9e\u4efb\u52a1\u6837\u672c\u5f85 L3 \u8bc1\u636e\u8865\u9f50\u540e\u5199\u5165 records/ \u76ee\u5f55\u3002"
+}

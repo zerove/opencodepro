@@ -44,6 +44,8 @@ mod handle_lsp;
 mod handle_mcp;
 #[path = "handle_metis.rs"]
 mod handle_metis;
+#[path = "handle_metrics.rs"]
+mod handle_metrics;
 #[path = "handle_momus.rs"]
 mod handle_momus;
 #[path = "handle_oracle.rs"]
@@ -232,6 +234,7 @@ pub async fn dispatch(
             attempts,
             max_warnings,
             json,
+            record,
             cwd,
         } => handle_verify::handle_verify(
             lang.clone(),
@@ -243,8 +246,12 @@ pub async fn dispatch(
             *attempts,
             *max_warnings,
             *json,
+            record.clone(),
             cwd.clone(),
         )?,
+
+        // ── 质量指标聚合（T4.1）────────────────────────────
+        Commands::Metrics(sub) => handle_metrics::handle_metrics(sub)?,
 
         // ── GitHub ─────────────────────────────────────────
         Commands::Github(sub) => handle_github::handle_github(sub)?,

@@ -1,0 +1,17 @@
+{
+  "collected_at": "2026-11-11T13:01:06.778368+00:00",
+  "commit": "ca3f870",
+  "bridge_http": "http://127.0.0.1:15291",
+  "bridge_metrics_available": false,
+  "llm_requests_total": null,
+  "llm_tokens_total": null,
+  "records_dir": "docs/benchmarks/quality-metrics/records",
+  "task_total": 0,
+  "task_passed": 0,
+  "task_failed": 0,
+  "task_blocked": 0,
+  "task_success_rate": null,
+  "task_fix_rate": null,
+  "task_regression_rate": null,
+  "task_cost_duration_ms_per_task": null
+}

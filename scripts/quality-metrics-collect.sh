@@ -1,21 +1,28 @@
 #!/usr/bin/env bash
-# T4.1：质量指标首轮采集脚本。
+# T4.1：质量指标采集脚本。
+#
 # 输出 JSON 到 docs/benchmarks/quality-metrics/<YYYY-MM-DD>-<commit>.json
 # 来源：
 #   - bridge /api/metrics（sisyphus_llm_requests_total / sisyphus_llm_tokens_total），
 #     未运行时记 null（不伪造）
-#   - 任务级成功率/修复率/回归率：依赖 L3 执行证据，当前为 null（T1.4 BLOCKED）
+#   - 任务级指标（成功率/修复率/回归率/单任务耗时）：由 `sisyphus metrics quality`
+#     从任务记录目录聚合（记录由 `sisyphus verify --record <path>` 产生）；
+#     无记录时各比率为 null（不伪造 0）
 set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: scripts/quality-metrics-collect.sh
+Usage: scripts/quality-metrics-collect.sh [records_dir]
 
-Collects first-round single-node quality metrics into
+Collects single-node quality metrics into
 docs/benchmarks/quality-metrics/<YYYY-MM-DD>-<commit>.json
+
+Args:
+  records_dir  任务记录目录（默认 docs/benchmarks/quality-metrics/records）
 
 Env:
   BRIDGE_HTTP=http://127.0.0.1:15291   # bridge 未运行时采集为 unavailable
+  SISYPHUS_BIN=./target/debug/sisyphus  # 用于聚合任务记录的 CLI
 EOF
 }
 
@@ -24,7 +31,9 @@ if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
   exit 0
 fi
 
+RECORDS_DIR="${1:-docs/benchmarks/quality-metrics/records}"
 BRIDGE_HTTP="${BRIDGE_HTTP:-http://127.0.0.1:15291}"
+SISYPHUS_BIN="${SISYPHUS_BIN:-./target/debug/sisyphus}"
 COMMIT="$(git rev-parse --short HEAD)"
 STAMP="$(date -u +%Y-%m-%d)"
 OUT_DIR="docs/benchmarks/quality-metrics"
@@ -45,14 +54,41 @@ if curl -sf --max-time 2 "${BRIDGE_HTTP}/health" >/dev/null 2>&1; then
   fi
 fi
 
-python3 - "$BRIDGE_HTTP" "$COMMIT" "$STAMP" "$bridge_up" "$requests_total" "$tokens_total" <<'PY'
+# 任务级指标：调用 CLI 聚合（未构建 CLI 或无记录时回退为 null）
+TASK_METRICS_JSON="null"
+if [ -x "$SISYPHUS_BIN" ]; then
+  if TASK_METRICS_JSON="$("$SISYPHUS_BIN" metrics quality --records "$RECORDS_DIR" --json 2>/dev/null)"; then
+    :
+  else
+    TASK_METRICS_JSON="null"
+  fi
+else
+  echo "note: ${SISYPHUS_BIN} 不可用，任务级指标记为 null" >&2
+fi
+
+python3 - "$BRIDGE_HTTP" "$COMMIT" "$STAMP" "$bridge_up" "$requests_total" "$tokens_total" \
+  "$TASK_METRICS_JSON" "$RECORDS_DIR" <<'PY'
 import datetime
 import json
 import os
+import sys
 
-bridge_http, commit, stamp, bridge_up, requests_total, tokens_total = (
-    __import__("sys").argv[1:7]
-)
+(
+    bridge_http,
+    commit,
+    stamp,
+    bridge_up,
+    requests_total,
+    tokens_total,
+    task_metrics_json,
+    records_dir,
+) = sys.argv[1:9]
+
+try:
+    task_metrics = json.loads(task_metrics_json)
+except (TypeError, ValueError):
+    task_metrics = None
+
 metrics = {
     "collected_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     "commit": commit,
@@ -60,12 +96,28 @@ metrics = {
     "bridge_metrics_available": bridge_up == "true",
     "llm_requests_total": int(requests_total) if requests_total not in (None, "null") else None,
     "llm_tokens_total": int(tokens_total) if tokens_total not in (None, "null") else None,
-    # 任务级指标（成功率/修复率/回归率）：依赖 L3 执行证据，当前阶段按口径记为 null。
-    "task_success_rate": None,
-    "task_fix_rate": None,
-    "task_regression_rate": None,
-    "task_cost_duration_ms_per_task": None,
+    "records_dir": records_dir,
 }
+# 任务级指标：无记录时保持 null（不伪造 0 值）
+if task_metrics:
+    metrics["task_total"] = task_metrics.get("total")
+    metrics["task_passed"] = task_metrics.get("passed")
+    metrics["task_failed"] = task_metrics.get("failed")
+    metrics["task_blocked"] = task_metrics.get("blocked")
+    metrics["task_success_rate"] = task_metrics.get("success_rate")
+    metrics["task_fix_rate"] = task_metrics.get("fix_rate")
+    metrics["task_regression_rate"] = task_metrics.get("regression_rate")
+    metrics["task_cost_duration_ms_per_task"] = task_metrics.get("mean_duration_ms")
+else:
+    metrics["task_total"] = None
+    metrics["task_passed"] = None
+    metrics["task_failed"] = None
+    metrics["task_blocked"] = None
+    metrics["task_success_rate"] = None
+    metrics["task_fix_rate"] = None
+    metrics["task_regression_rate"] = None
+    metrics["task_cost_duration_ms_per_task"] = None
+
 out_dir = "docs/benchmarks/quality-metrics"
 os.makedirs(out_dir, exist_ok=True)
 out_path = f"{out_dir}/{stamp}-{commit}.json"

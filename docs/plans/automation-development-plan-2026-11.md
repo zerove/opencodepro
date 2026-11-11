@@ -97,7 +97,7 @@
 | ID | 任务 | 说明 | 验收/证据 | 工作量 |
 |---|---|---|---|---|
 | T4.1 | 质量指标定义与采集 | 成功率、修复率、回归率、单任务耗时/token 成本；从执行记录汇总 | 指标文档 + 首轮数据（脚本可复跑） | M |
-| T4.1 状态（执行） | IN_PROGRESS | 指标口径与采集脚本落地（`scripts/quality-metrics-collect.sh` + `docs/plans/single-node-quality-metrics.md`）；任务级成功率/修复率/回归率 置 `null`（依赖 L3 证据/T1.4）；bridge 未运行时 `llm_*` 指标记 `null` |
+| T4.1 状态（执行） | IN_PROGRESS | 指标口径与**聚合链路**已落地：`sisyphus-metrics::quality`（`TaskRecord` + 成功率/修复率/回归率聚合，6 个单测）、`sisyphus verify --record <path>` 落任务记录、`sisyphus metrics quality --records <dir> [--json]` 聚合、`scripts/quality-metrics-collect.sh` 接入真实聚合（无记录记 `null`）。实跑：两个 fixture crate（通过/类型错误）→ 2 条记录 → 聚合 `success_rate=0.5`、`fix_rate=0.0`、`regression_rate=null`（证据 `docs/benchmarks/quality-metrics/pipeline-demo-2026-11-11.json`）。**未完成**：仓库真实任务样本需 L3 环境（T1.4）执行后写入 `docs/benchmarks/quality-metrics/records/` |
 | T4.2 | 性能回归门禁 | 定时/触发式采样，对比基线阈值，超阈值告警 | CI job 或 `make perf-regression`；阈值与例外记录 | M |
 | T4.2 状态（执行） | DONE | `scripts/perf-regression-check.sh <mode>` + `make perf-regression{,-bridge}`；基线 `docs/benchmarks/perf-regression-baseline-2026-11-10.json`；实跑 `perf-regression-check.sh cli` rc=0（3 CLI 指标 p50 0.0097-0.0118s < 0.05s） |
 | T3.3 启动分段归因与优化 | DONE | bridge 启动分段（`startup_phase_*_ms` + `scripts/measure-bridge-startup.sh`，实跑 end_to_end_ready_ms≈1530ms、phases bridge≈59ms/http≈68ms/grpc≈67ms）；TUI 首帧 PTY 测量（`scripts/measure-tui-first-frame.sh` + `make perf-tui`，实跑 3 采样 p50≈14.3ms，产物 `docs/benchmarks/tui-first-frame/2026-11-11-75b9959.json`）；按需懒加载未做（记入 follow-up） |

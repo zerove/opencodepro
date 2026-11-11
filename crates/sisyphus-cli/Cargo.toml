@@ -28,6 +28,7 @@ sisyphus-tools-scm = { version = "0.4.0", path = "../sisyphus-tools-scm" }
 sisyphus-tools-mcp = { version = "0.4.0", path = "../sisyphus-tools-mcp" }
 sisyphus-tools-session = { version = "0.4.0", path = "../sisyphus-tools-session" }
 sisyphus-tools-executor = { version = "0.4.0", path = "../sisyphus-tools-executor" }
+sisyphus-metrics = { version = "0.4.0", path = "../sisyphus-metrics" }
 clap = { version = "4.5", features = ["derive", "env"] }
 ratatui = "0.28"
 crossterm = { version = "0.28", features = ["event-stream"] }

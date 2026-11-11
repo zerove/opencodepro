@@ -5,6 +5,7 @@ use thiserror::Error;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 pub mod observability;
+pub mod quality;
 
 /// Initialize metrics and tracing for the Sisyphus system.
 ///

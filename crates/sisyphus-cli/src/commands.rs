@@ -258,10 +258,17 @@ pub enum Commands {
         ///输出机器可读 JSON
         #[arg(long = "json")]
         json: bool,
+        ///把本次执行落成一条任务级质量记录（T4.1，供 `sisyphus metrics quality` 聚合）
+        #[arg(long = "record")]
+        record: Option<PathBuf>,
         ///工作目录（默认：当前目录）
         #[arg(short = 'C')]
         cwd: Option<PathBuf>,
     },
+
+    ///质量指标（任务级成功率 / 修复率 / 回归率聚合）
+    #[command(subcommand)]
+    Metrics(MetricsCommands),
 
     ///GitHub Actions 集成（工作流模板、CI 模式）
     #[command(subcommand)]
@@ -350,4 +357,21 @@ pub fn print_table(header: &[&str], rows: &[Vec<String>]) {
             .collect();
         println!("  {}", line.join("  "));
     }
+}
+
+/// 质量指标子命令（T4.1）。
+#[derive(Subcommand)]
+pub enum MetricsCommands {
+    ///从任务记录聚合质量指标（成功率 / 修复率 / 回归率）
+    Quality {
+        ///任务记录目录（每个 .json 文件一条记录）
+        #[arg(
+            long = "records",
+            default_value = "docs/benchmarks/quality-metrics/records"
+        )]
+        records: PathBuf,
+        ///输出机器可读 JSON
+        #[arg(long = "json")]
+        json: bool,
+    },
 }

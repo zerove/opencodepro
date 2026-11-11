@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use sisyphus_cli::build::resolve_backend;
 use sisyphus_cli::tools::diagnose::{VerifyFixOptions, VerifyFixReport, VerifyRound};
@@ -23,6 +23,7 @@ pub fn handle_verify(
     attempts: usize,
     max_warnings: Option<usize>,
     json: bool,
+    record: Option<PathBuf>,
     cwd: Option<PathBuf>,
 ) -> Result<()> {
     let dir = cwd.as_deref();
@@ -43,6 +44,11 @@ pub fn handle_verify(
         print_json(backend.name(), &report, max_warnings)?;
     } else {
         print_human(backend.name(), &report, max_warnings);
+    }
+
+    // T4.1：可选落一条任务级质量记录，供 `sisyphus metrics quality` 聚合
+    if let Some(path) = &record {
+        write_task_record(path, &report)?;
     }
 
     if !report.passed {
@@ -161,6 +167,54 @@ fn print_json(backend: &str, report: &VerifyFixReport, max_warnings: Option<usiz
         "final_warnings": report.last_report.as_ref().map(|r| r.total_warnings),
     });
     println!("{}", serde_json::to_string_pretty(&payload)?);
+    Ok(())
+}
+
+/// 把一次 verify 执行落成任务级质量记录（T4.1）。
+///
+/// 记录口径与 `docs/plans/single-node-quality-metrics.md` 一致：
+/// 首轮是否通过、最终是否通过、修复轮数、是否回归、耗时。
+fn write_task_record(path: &PathBuf, report: &VerifyFixReport) -> Result<()> {
+    use sisyphus_metrics::quality::{TaskRecord, TaskStatus};
+
+    let first_round_passed = report
+        .rounds
+        .first()
+        .map(|round| round.errors == 0 && round.fix.is_none())
+        .unwrap_or(false);
+    let status = if report.passed {
+        TaskStatus::Pass
+    } else {
+        TaskStatus::Fail
+    };
+
+    let task_id = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "verify".to_string());
+
+    let record = TaskRecord {
+        task_id,
+        scenario: "diagnose-fix".to_string(),
+        status,
+        initial_verify_passed: first_round_passed,
+        final_verify_passed: report.passed,
+        fix_attempts: report.fix_attempts() as u32,
+        // verify 循环不检测「修好目标但破坏其它检查」，因此恒为 false；
+        // 回归判定需要跨任务对比，由聚合阶段负责。
+        regressed: false,
+        duration_ms: report.total_duration_ms as u64,
+        recorded_at: chrono::Utc::now().to_rfc3339(),
+    };
+
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("创建记录目录失败: {}", parent.display()))?;
+        }
+    }
+    let json = serde_json::to_string_pretty(&record).context("序列化任务记录失败")?;
+    std::fs::write(path, json).with_context(|| format!("写入任务记录失败: {}", path.display()))?;
     Ok(())
 }
 
