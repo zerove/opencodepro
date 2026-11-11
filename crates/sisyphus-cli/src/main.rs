@@ -97,7 +97,9 @@ async fn main() -> Result<()> {
     // 确保数据目录存在
     std::fs::create_dir_all(&data_dir)?;
 
-    let cli_perms = sisyphus_cli::permission::CliPermission::load(None).unwrap_or_default();
+    let cli_perms = sisyphus_cli::permission::CliPermission::load(None)
+        .unwrap_or_default()
+        .with_audit_path(data_dir.join("audit").join("permissions.jsonl"));
 
     let todo_db = data_dir.join("todos.json");
     let session_db = data_dir.join("sessions.json");

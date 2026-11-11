@@ -107,6 +107,42 @@ sisyphus verify --lang node -p web -C ./frontend
 门禁判定：`errors == 0` 且 `warnings <= max_warnings`（未设置时不限制）。未通过时命令以非零退出，
 可直接用于 CI 或编排节点的判定条件。
 
+## 权限与审计
+
+### 规则文件
+
+默认读取工作目录下的 `./.sisyphus-permissions.json`：
+
+```json
+[
+  { "pattern": "exec", "permission": "ask" },
+  { "pattern": "builtin:*", "permission": "allow" },
+  { "pattern": "jcode/*", "permission": "deny" }
+]
+```
+
+- `pattern` 支持 glob（`*`、`?`、`[...]`），按声明顺序匹配，**首条命中生效**；语法非法的 pattern 退化为精确比较。
+- 未命中任何规则时：危险工具（`exec`/`bash`/`bash_exec`/`builtin:bash_exec`/`shell`）→ `ask`，其余 → `allow`。
+
+### 检查与审计
+
+```bash
+# 查看某个工具此刻的判定与来源
+sisyphus permission check exec
+# exec: ask (source: dangerous-default)
+
+sisyphus permission check builtin:file_read --json
+
+# 查看最近的审批/判定记录（JSONL 追加写入 <data-dir>/audit/permissions.jsonl）
+sisyphus permission audit -n 20
+sisyphus permission audit --json
+```
+
+审计覆盖 `allowed` / `denied` / `asked-approved` / `asked-denied` / `asked-proceeded-tui`
+（TUI 内执行不弹窗，按既有约定记录为 `asked-proceeded-tui`）。
+审计路径优先级：`SISYPHUS_PERMISSION_AUDIT` > `<data-dir>/audit/permissions.jsonl`。
+写入失败只告警，不阻断主命令。
+
 ## 代理子命令
 
 ### librarian — 外部调研代理

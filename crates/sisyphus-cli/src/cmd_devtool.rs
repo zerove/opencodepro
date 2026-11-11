@@ -207,6 +207,28 @@ pub enum FixCommands {
 }
 
 #[derive(Subcommand)]
+/// Permission Commands.
+pub enum PermissionCommands {
+    /// 检查某个工具当前的权限判定（规则 → 危险默认 → 默认允许）
+    Check {
+        /// 工具 ID（如 exec、builtin:file_read）
+        tool: String,
+        /// 输出 JSON
+        #[arg(long = "json")]
+        json: bool,
+    },
+    /// 查看权限审计日志（最近 N 条）
+    Audit {
+        /// 返回最近多少条
+        #[arg(short = 'n', long = "limit", default_value_t = 20)]
+        limit: usize,
+        /// 输出 JSON
+        #[arg(long = "json")]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 /// Init Commands.
 pub enum InitCommands {
     /// 列出可用项目模板

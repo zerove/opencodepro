@@ -14,16 +14,21 @@ pub async fn exec(
     perms: &CliPermission,
 ) -> Result<crate::tools::BashOutput> {
     // 权限检查
-    match perms.check("exec") {
-        Some(true) => {}, // allowed
-        Some(false) => {
+    let decision = perms.evaluate("exec");
+    match decision.decision {
+        crate::permission::Decision::Allow => {
+            perms.record_decision("exec", &decision, "allowed");
+        },
+        crate::permission::Decision::Deny => {
+            perms.record_decision("exec", &decision, "denied");
             anyhow::bail!("Permission denied: shell execution is blocked by config");
         },
-        None => {
+        crate::permission::Decision::Ask => {
             // TUI 模式：跳过权限提示 — 用户输入命令并回车
             // 已表明意图。同步的 stdin 读取与 crossterm 原始模式
             // 不兼容。
             // CLI 模式在 Commands::Exec 中有自己的权限检查。
+            perms.record_decision("exec", &decision, "asked-proceeded-tui");
         },
     }
 

@@ -46,6 +46,8 @@ mod handle_metis;
 mod handle_momus;
 #[path = "handle_oracle.rs"]
 mod handle_oracle;
+#[path = "handle_permission.rs"]
+mod handle_permission;
 #[path = "handle_plan.rs"]
 mod handle_plan;
 #[path = "handle_plugin.rs"]
@@ -210,6 +212,9 @@ pub async fn dispatch(
 
         // ── 修复 ────────────────────────────────────────────
         Commands::Fix(sub) => handle_fix::handle_fix(sub)?,
+
+        // ── 权限 ────────────────────────────────────────────
+        Commands::Permission(sub) => handle_permission::handle_permission(sub, cli_perms)?,
 
         // ── 验证-修复循环 ────────────────────────────────────
         Commands::Verify {

@@ -10,20 +10,26 @@ pub async fn handle_exec(
     cli_perms: &sisyphus_cli::permission::CliPermission,
 ) -> Result<()> {
     // 权限检查
-    match cli_perms.check("exec") {
-        Some(true) => {},
-        Some(false) => {
+    let decision = cli_perms.evaluate("exec");
+    match decision.decision {
+        sisyphus_cli::permission::Decision::Allow => {
+            cli_perms.record_decision("exec", &decision, "allowed");
+        },
+        sisyphus_cli::permission::Decision::Deny => {
+            cli_perms.record_decision("exec", &decision, "denied");
             anyhow::bail!("Permission denied: shell execution is blocked by config");
         },
-        None => {
+        sisyphus_cli::permission::Decision::Ask => {
             eprint!("⚠  Allow shell execution? [Y/n] ");
             std::io::stderr().flush().ok();
             let mut buf = String::new();
             std::io::stdin().read_line(&mut buf).ok();
             let answer = buf.trim().to_lowercase();
             if !answer.is_empty() && answer != "y" && answer != "yes" {
+                cli_perms.record_decision("exec", &decision, "asked-denied");
                 anyhow::bail!("Shell execution denied by user");
             }
+            cli_perms.record_decision("exec", &decision, "asked-approved");
         },
     }
     let dir_ref = dir.as_deref();

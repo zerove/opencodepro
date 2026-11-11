@@ -176,6 +176,7 @@
 | T1.1 编辑后自动验证 | DONE | 新增 `crates/sisyphus-cli/src/post_edit.rs`；11 个单测；实跑：`auto` 模式捕获 `E0308` 类型错误、计时/超时/严格模式行为符合预期；文档见 `book/src/crates/cli.md` |
 | T1.2 验证-修复循环 | DONE | `verify_fix_loop_with`（`sisyphus-tools-llm-tools/src/diagnose.rs`）+ `sisyphus verify` 命令；5 个循环单测 + 3 个输出格式单测；实跑证据：临时 crate 第 1 轮 2 warning（`--max-warnings 0` 未通过）→ fix → 第 2 轮 0 warning（PASS，188ms）；不可修复错误在 2 轮后退出非零 |
 | T1.3 执行进度事件 | DONE | `ExecutionEvent` 新增 `ToolCall`/`TokenUsage`（共 10 变体）；`/api/tools/execute` 成对广播 `tool_call`（started → completed/failed，含 duration/success/error/project_id）；SSE 映射、TUI 渲染、OpenAPI 与 `book/src/sse-events.md` 已同步；bridge 侧 2 个广播单测 + 变体映射守卫 + TUI 3 个格式单测 |
+| T2.2 权限规则与审批审计 | PARTIAL | glob 规则 + 危险工具默认 `ask` + JSONL 审计 + `permission check/audit` 已落地（10 个单测；实跑：glob deny 阻断 exec 并落审计；ask 下 `n` 拒绝 / `y` 批准均正确记录）。**未完成**：TUI 内弹窗审批（当前沿用"输入即同意"并记录 `asked-proceeded-tui`） |
 
 > 状态取值：DONE / IN_PROGRESS / BLOCKED / TODO。`BLOCKED` 必须写明缺失的环境或依赖。
 

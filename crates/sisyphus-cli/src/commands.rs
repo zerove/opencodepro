@@ -221,6 +221,10 @@ pub enum Commands {
     #[command(subcommand)]
     Fix(FixCommands),
 
+    ///权限规则与审计（检查判定、查看审计日志）
+    #[command(subcommand)]
+    Permission(PermissionCommands),
+
     ///验证（check + lint），可选有界自动修复（verify → fix → verify）
     Verify {
         ///语言后端（rust/node/python/go/java/gradle/fe）。省略时自动检测。
