@@ -5,9 +5,14 @@
 //! `asked-denied`），保持与 CLI 模式同一口径。
 //!
 //! 未注册 TUI（纯 CLI 场景）时提交失败，调用方回退到既有的 stdin 审批路径。
+//!
+//! broker 拆成两端：`Requester`（提交请求，可移动到后台任务）与 `Broker`
+//! （消费待审批项，由 TUI 事件循环轮询）。全局实例由 [`register`] 安装，
+//! 测试可创建独立实例，避免并行测试之间共享状态。
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
+use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot::Sender;
 
@@ -45,53 +50,91 @@ impl ApprovalRequest {
     }
 }
 
-struct Broker {
+/// 审批请求端：后台任务用它提交请求并等待用户决策。
+#[derive(Clone)]
+pub struct Requester {
     tx: UnboundedSender<ApprovalRequest>,
-    pending: tokio::sync::mpsc::UnboundedReceiver<ApprovalRequest>,
 }
 
-static BROKER: OnceLock<Mutex<Option<Broker>>> = OnceLock::new();
+impl Requester {
+    /// 提交审批请求并等待用户决策。
+    ///
+    /// 通道关闭（消费端已释放）时返回 `Err`。
+    pub async fn request(&self, tool: &str, detail: &str) -> Result<bool, String> {
+        let (request, wait) = ApprovalRequest::create(tool, detail);
+        self.tx.send(request).map_err(|_| "tui approval channel closed".to_string())?;
+        wait.await.map_err(|_| "tui approval request dropped".to_string())
+    }
 
-fn broker() -> &'static Mutex<Option<Broker>> {
-    BROKER.get_or_init(|| Mutex::new(None))
+    /// 请求端是否仍然可用（消费端未关闭）。
+    pub fn is_open(&self) -> bool {
+        !self.tx.is_closed()
+    }
+}
+
+/// 审批消费端：TUI 事件循环用它取出待审批项。
+pub struct Broker {
+    pending_rx: UnboundedReceiver<ApprovalRequest>,
+}
+
+impl Broker {
+    /// 创建 broker 两端。
+    pub fn new() -> (Broker, Requester) {
+        let (tx, pending_rx) = tokio::sync::mpsc::unbounded_channel();
+        (Broker { pending_rx }, Requester { tx })
+    }
+
+    /// 取出下一个待审批请求。
+    pub fn take_pending(&mut self) -> Option<ApprovalRequest> {
+        self.pending_rx.try_recv().ok()
+    }
+}
+
+struct GlobalState {
+    broker: Broker,
+    requester: Requester,
+}
+
+static GLOBAL: OnceLock<Mutex<GlobalState>> = OnceLock::new();
+
+fn global() -> &'static Mutex<GlobalState> {
+    GLOBAL.get_or_init(|| {
+        let (broker, requester) = Broker::new();
+        Mutex::new(GlobalState { broker, requester })
+    })
 }
 
 /// 取锁（毒化时取内部值，避免 panic）。
-fn lock_broker() -> std::sync::MutexGuard<'static, Option<Broker>> {
-    broker().lock().unwrap_or_else(|e| e.into_inner())
+fn lock_global() -> MutexGuard<'static, GlobalState> {
+    global().lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// 注册 TUI 审批通道（TUI 启动时调用一次；重复注册会替换旧通道）。
 pub fn register() {
-    let (tx, pending) = tokio::sync::mpsc::unbounded_channel();
-    let mut guard = lock_broker();
-    *guard = Some(Broker { tx, pending });
+    let (broker, requester) = Broker::new();
+    let mut guard = lock_global();
+    *guard = GlobalState { broker, requester };
 }
 
 /// 是否已注册 TUI 审批通道。
 pub fn is_registered() -> bool {
-    lock_broker().is_some()
+    lock_global().requester.is_open()
 }
 
-/// 提交审批请求并等待用户决策。
+/// 提交审批请求并等待用户决策（走全局实例）。
 ///
 /// 未注册 TUI 时返回 `Err`，调用方应回退到 CLI 的 stdin 审批路径。
 pub async fn request(tool: &str, detail: &str) -> Result<bool, String> {
-    let (request, wait) = ApprovalRequest::create(tool, detail);
-    {
-        let guard = lock_broker();
-        let Some(broker) = guard.as_ref() else {
-            return Err("tui approval channel not registered".to_string());
-        };
-        broker.tx.send(request).map_err(|_| "tui approval channel closed".to_string())?;
-    }
-    wait.await.map_err(|_| "tui approval request dropped".to_string())
+    let requester = {
+        let guard = lock_global();
+        guard.requester.clone()
+    };
+    requester.request(tool, detail).await
 }
 
 /// 取出下一个待审批请求（TUI 事件循环轮询）。
 pub fn take_pending() -> Option<ApprovalRequest> {
-    let mut guard = lock_broker();
-    guard.as_mut().and_then(|broker| broker.pending.try_recv().ok())
+    lock_global().broker.take_pending()
 }
 
 #[cfg(test)]
@@ -99,25 +142,16 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn request_without_register_returns_error() {
-        // 未注册时提交失败（调用方回退 CLI 审批）
-        let err = request("exec", "echo hi").await;
-        assert!(err.is_err(), "未注册 TUI 时应返回错误");
-    }
-
-    #[tokio::test]
-    async fn registered_channel_delivers_request_and_response() {
-        register();
-        assert!(is_registered());
-
-        let handle = tokio::spawn(async {
-            request("exec", "echo hi").await.expect("审批请求应被受理")
+    async fn broker_delivers_request_and_response() {
+        // 使用独立实例，避免与其它测试共享全局状态
+        let (mut broker, requester) = Broker::new();
+        let handle = tokio::spawn(async move {
+            requester.request("exec", "echo hi").await.expect("审批请求应被受理")
         });
 
-        // 轮询取出待审批请求
         let mut pending = None;
         for _ in 0..50 {
-            if let Some(req) = take_pending() {
+            if let Some(req) = broker.take_pending() {
                 pending = Some(req);
                 break;
             }
@@ -130,5 +164,13 @@ mod tests {
 
         let approved = handle.await.expect("任务应结束");
         assert!(approved, "用户放行应返回 true");
+    }
+
+    #[tokio::test]
+    async fn requester_fails_when_consumer_dropped() {
+        let (broker, requester) = Broker::new();
+        drop(broker);
+        let err = requester.request("exec", "echo hi").await;
+        assert!(err.is_err(), "消费端释放后应返回错误");
     }
 }
