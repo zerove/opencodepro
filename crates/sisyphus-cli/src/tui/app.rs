@@ -1087,19 +1087,13 @@ impl App {
                 self.sop_status = format!("executed {sop_id}");
             },
             crate::tui::background::BgOp::SopExecuteFailed { sop_id, error } => {
-                let hint = if error.contains("without any real execution result")
-                    || error.contains("StrategicPivot")
-                {
-                    " 提示: 检查节点显式成功状态/阈值与反思配置；可先用 sop show/确定性模板验证。"
-                } else if error.contains("LLM") || error.contains("model") || error.contains("审计")
-                {
-                    " 提示: 可能依赖 LLM/审计能力；请检查配置与凭据。"
-                } else {
-                    ""
-                };
+                // 错误提示抽样（T2.4）：统一走 hints 目录，未命中时不附加提示。
+                let hint = crate::hints::suggest_hint(&error);
+                let hint_line = hint.map(|h| format!(" 提示: {}", h.message)).unwrap_or_default();
                 self.sop_result = None;
-                self.sop_status = format!("execute {sop_id} failed: {error}{hint}");
+                self.sop_status = format!("execute {sop_id} failed: {error}{hint_line}");
             },
+
             crate::tui::background::BgOp::SopTraceFetched { sop_id, trace } => {
                 self.sop_trace = trace
                     .into_iter()

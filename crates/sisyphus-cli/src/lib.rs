@@ -9,6 +9,7 @@ pub mod build;
 pub mod delegate;
 pub mod diagnose;
 pub mod git;
+pub mod hints;
 pub mod init;
 pub mod lsp;
 pub mod mcp;
