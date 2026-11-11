@@ -163,6 +163,20 @@
 
 每阶段结束产出：`docs/benchmarks/acceptance/<date>-<phase>/` 证据目录 + 本计划状态更新。
 
+## 9.1 阶段验收证据目录
+
+每阶段的验收证据（实际执行命令 + 观察值 + 复现方式）汇总在：
+
+| 阶段 | 证据目录 |
+|---|---|
+| 阶段 0：基线与验收自动化 | `docs/benchmarks/acceptance/2026-11-12/phase0/summary.md` |
+| 阶段 1：编辑后验证与闭环 | `docs/benchmarks/acceptance/2026-11-12/phase1/summary.md` |
+| 阶段 2：交互与治理 | `docs/benchmarks/acceptance/2026-11-12/phase2/summary.md` |
+| 阶段 3：生态与性能 | `docs/benchmarks/acceptance/2026-11-12/phase3/summary.md` |
+| 阶段 4：质量指标与回归 | `docs/benchmarks/acceptance/2026-11-12/phase4/summary.md` |
+
+细粒度产物（采样 JSON / 报告 / 快照）仍在 `docs/benchmarks/` 下的对应目录。
+
 ## 10. 关联文档
 
 - 路线：`docs/plans/p1-p2-roadmap.md`
