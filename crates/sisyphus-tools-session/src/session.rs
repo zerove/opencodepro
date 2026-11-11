@@ -109,7 +109,9 @@ pub fn session_save_checkpoint(
 
     let content = serde_json::to_string_pretty(&checkpoint)
         .map_err(|e| ToolError::TodoError(format!("serialize checkpoint failed: {e}")))?;
-    fs::write(checkpoint_path, content).map_err(ToolError::Io)
+    // 原子写：并发读（会话检查点会被 TUI 与后台任务同时读）看到半截 JSON 时
+    // 会表现为「检查点丢失」。
+    crate::atomic_write::write_atomic(&checkpoint_path, content.as_bytes()).map_err(ToolError::Io)
 }
 
 /// Loads a session checkpoint by ID.
