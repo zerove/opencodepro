@@ -334,6 +334,33 @@ async fn main() -> Result<()> {
     let runner = EvalRunner::new();
     let evals_dir = Path::new("evals");
 
+    // `--cases <a/id1,a/id2,...>`：只运行命中集合的 case（T4.3 evals 子集入 CI 用）。
+    // 支持 `--cases=<v>` 与 `--cases <v>` 两种形式；未指定时运行全部 agent 的 cases（既有行为）。
+    let cases_filter: Option<std::collections::HashSet<String>> = {
+        let mut set = std::collections::HashSet::new();
+        let mut args = std::env::args().skip(1).peekable();
+        while let Some(arg) = args.next() {
+            let value = if arg == "--cases" {
+                args.next()
+            } else {
+                arg.strip_prefix("--cases=").map(|rest| rest.to_string())
+            };
+            if let Some(v) = value {
+                for part in v.split(',') {
+                    let part = part.trim();
+                    if !part.is_empty() {
+                        set.insert(part.to_string());
+                    }
+                }
+            }
+        }
+        if set.is_empty() {
+            None
+        } else {
+            Some(set)
+        }
+    };
+
     // 加载并编译 schema，用于校验所有用例文件
     let schema_content = fs::read_to_string(evals_dir.join("schema.json"))
         .context("Failed to read evals/schema.json")?;
@@ -360,6 +387,12 @@ async fn main() -> Result<()> {
         validate_cases(&schema, &cases_path, &cases)?;
 
         for case in cases {
+            let case_key = format!("{}/{}", agent, case.id);
+            if let Some(filter) = &cases_filter {
+                if !filter.contains(&case_key) {
+                    continue;
+                }
+            }
             println!("Running case {}...", case.id);
             let res = runner.run_case(&case).await;
             total_score += res.score;
