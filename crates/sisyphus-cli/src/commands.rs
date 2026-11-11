@@ -221,6 +221,40 @@ pub enum Commands {
     #[command(subcommand)]
     Fix(FixCommands),
 
+    ///验证（check + lint），可选有界自动修复（verify → fix → verify）
+    Verify {
+        ///语言后端（rust/node/python/go/java/gradle/fe）。省略时自动检测。
+        #[arg(long = "lang")]
+        lang: Option<String>,
+        ///要验证的包
+        #[arg(short = 'p', long = "package")]
+        package: Option<String>,
+        ///验证全部工作区成员
+        #[arg(long = "all")]
+        all: bool,
+        ///跳过 lint（仅运行 check）
+        #[arg(long = "no-lint", alias = "no-clippy")]
+        no_lint: bool,
+        ///未通过时自动修复并重试
+        #[arg(long = "fix")]
+        fix: bool,
+        ///修复时同时应用 lint 修复
+        #[arg(long = "lint-fixes", alias = "clippy")]
+        lint_fixes: bool,
+        ///最大验证轮数（默认 3，仅在 --fix 时生效）
+        #[arg(long = "attempts", default_value_t = 3)]
+        attempts: usize,
+        ///允许的最大警告数（0 = 零警告门禁；省略表示不限制）
+        #[arg(long = "max-warnings")]
+        max_warnings: Option<usize>,
+        ///输出机器可读 JSON
+        #[arg(long = "json")]
+        json: bool,
+        ///工作目录（默认：当前目录）
+        #[arg(short = 'C')]
+        cwd: Option<PathBuf>,
+    },
+
     ///GitHub Actions 集成（工作流模板、CI 模式）
     #[command(subcommand)]
     Github(GithubCommands),

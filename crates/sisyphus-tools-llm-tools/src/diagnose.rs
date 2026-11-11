@@ -143,6 +143,169 @@ pub fn fix_and_diagnose_auto(
     fix_and_diagnose_with(backend.as_ref(), pkg, fix_lint, all, cwd)
 }
 
+// ── 验证-修复循环（有界）────────────────────────────────────────
+
+/// 验证-修复循环的参数。
+#[derive(Debug, Clone, Default)]
+pub struct VerifyFixOptions<'a> {
+    /// 目标包。
+    pub pkg: Option<&'a str>,
+    /// 诊断全部工作区成员。
+    pub all: bool,
+    /// 跳过 lint（仅 check）。
+    pub no_lint: bool,
+    /// fix 阶段同时应用 lint 修复。
+    pub fix_lint: bool,
+    /// 允许的最大警告数；`Some(0)` 等价于"零警告"门禁，`None` 不限制。
+    pub max_warnings: Option<usize>,
+    /// 最大验证轮数；`0` 视为 `1`。
+    pub max_rounds: usize,
+}
+
+impl VerifyFixOptions<'_> {
+    /// 生效的轮数上限（至少 1）。
+    pub fn rounds(&self) -> usize {
+        self.max_rounds.max(1)
+    }
+
+    /// 判断一次诊断是否通过门禁。
+    pub fn is_clean(&self, report: &DiagnoseReport) -> bool {
+        if report.total_errors > 0 {
+            return false;
+        }
+        match self.max_warnings {
+            Some(limit) => report.total_warnings <= limit,
+            None => true,
+        }
+    }
+}
+
+/// 单次修复动作的记录。
+#[derive(Debug, Clone)]
+pub struct FixAttempt {
+    /// `fix` 是否成功退出。
+    pub success: bool,
+    /// `fix` 自身报告的错误数。
+    pub errors: usize,
+    /// 耗时（毫秒）。
+    pub duration_ms: u128,
+    /// 失败信息（成功时为 `None`）。
+    pub message: Option<String>,
+}
+
+/// 单轮验证的记录。
+#[derive(Debug, Clone)]
+pub struct VerifyRound {
+    /// 轮次（1-based）。
+    pub round: usize,
+    /// 本轮错误数。
+    pub errors: usize,
+    /// 本轮警告数。
+    pub warnings: usize,
+    /// 本轮验证耗时（毫秒）。
+    pub duration_ms: u128,
+    /// 本轮之后触发的修复动作（最后一轮或已通过时为 `None`）。
+    pub fix: Option<FixAttempt>,
+}
+
+/// 验证-修复循环的汇总。
+#[derive(Debug, Clone)]
+pub struct VerifyFixReport {
+    /// 每轮记录。
+    pub rounds: Vec<VerifyRound>,
+    /// 是否达到门禁。
+    pub passed: bool,
+    /// 实际使用的轮数上限。
+    pub max_rounds: usize,
+    /// 总耗时（毫秒）。
+    pub total_duration_ms: u128,
+    /// 最后一轮的诊断报告（无轮次时为 `None`，正常不会发生）。
+    pub last_report: Option<DiagnoseReport>,
+}
+
+impl VerifyFixReport {
+    /// 实际执行的轮数。
+    pub fn rounds_used(&self) -> usize {
+        self.rounds.len()
+    }
+
+    /// 是否执行过修复动作。
+    pub fn fix_attempts(&self) -> usize {
+        self.rounds.iter().filter(|r| r.fix.is_some()).count()
+    }
+}
+
+/// 有界验证-修复循环：`verify → fix → verify ...`。
+///
+/// - 每轮先诊断（check，check 通过时含 lint）；达到门禁即结束。
+/// - 未通过且仍有剩余轮次时执行一次 `backend.fix()`，再进入下一轮。
+/// - 修复失败不会被吞掉：记录在 `FixAttempt.message`，循环继续到上限。
+/// - 轮数上限保证终止；不会无限重试。
+pub fn verify_fix_loop_with(
+    backend: &dyn LanguageBackend,
+    options: &VerifyFixOptions<'_>,
+    cwd: Option<&Path>,
+) -> ToolResult<VerifyFixReport> {
+    let limit = options.rounds();
+    let started = std::time::Instant::now();
+    let mut rounds = Vec::new();
+    let mut last_report: Option<DiagnoseReport> = None;
+    let mut passed = false;
+
+    for round in 1..=limit {
+        let round_started = std::time::Instant::now();
+        let report = diagnose_with(backend, options.pkg, options.all, options.no_lint, cwd)?;
+        let errors = report.total_errors;
+        let warnings = report.total_warnings;
+        let clean = options.is_clean(&report);
+        last_report = Some(report);
+
+        let mut record = VerifyRound {
+            round,
+            errors,
+            warnings,
+            duration_ms: round_started.elapsed().as_millis(),
+            fix: None,
+        };
+
+        if clean {
+            passed = true;
+            rounds.push(record);
+            break;
+        }
+        if round == limit {
+            rounds.push(record);
+            break;
+        }
+
+        let fix_started = std::time::Instant::now();
+        let fix = match backend.fix(options.pkg, options.fix_lint, cwd) {
+            Ok(output) => FixAttempt {
+                success: output.success,
+                errors: output.errors.len(),
+                duration_ms: fix_started.elapsed().as_millis(),
+                message: None,
+            },
+            Err(err) => FixAttempt {
+                success: false,
+                errors: 0,
+                duration_ms: fix_started.elapsed().as_millis(),
+                message: Some(err.to_string()),
+            },
+        };
+        record.fix = Some(fix);
+        rounds.push(record);
+    }
+
+    Ok(VerifyFixReport {
+        rounds,
+        passed,
+        max_rounds: limit,
+        total_duration_ms: started.elapsed().as_millis(),
+        last_report,
+    })
+}
+
 /// Backward-compatible: runs fix+diagnose with RustBackend.
 pub fn fix_and_diagnose(
     pkg: Option<&str>,
@@ -291,5 +454,213 @@ edition = "2021"
         fs::write(path.join("src/lib.rs"), "pub fn ok() -> u8 { 42 }\n").unwrap();
         let report = diagnose_auto(None, false, true, Some(&path)).unwrap();
         assert!(report.check_output.success);
+    }
+
+    // ── 验证-修复循环 ────────────────────────────────────────
+
+    use sisyphus_tools_build::build::TestResults;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    /// 可编排的假后端：按脚本返回 (errors, warnings)，并统计 fix 调用次数。
+    #[derive(Debug)]
+    struct ScriptedBackend {
+        script: Mutex<VecDeque<(usize, usize)>>,
+        fix_calls: Mutex<usize>,
+        fix_output_errors: usize,
+    }
+
+    impl ScriptedBackend {
+        fn new(script: Vec<(usize, usize)>, fix_output_errors: usize) -> Self {
+            Self {
+                script: Mutex::new(script.into()),
+                fix_calls: Mutex::new(0),
+                fix_output_errors,
+            }
+        }
+
+        fn fix_calls(&self) -> usize {
+            *self.fix_calls.lock().expect("lock")
+        }
+    }
+
+    fn diags(level: &str, count: usize) -> Vec<Diag> {
+        (0..count)
+            .map(|i| Diag {
+                file: Some("src/lib.rs".to_string()),
+                line: Some(i + 1),
+                col: Some(1),
+                level: level.to_string(),
+                code: None,
+                message: format!("{level} #{i}"),
+            })
+            .collect()
+    }
+
+    impl LanguageBackend for ScriptedBackend {
+        fn name(&self) -> &str {
+            "scripted"
+        }
+
+        fn check(
+            &self,
+            _pkg: Option<&str>,
+            _all: bool,
+            _cwd: Option<&Path>,
+        ) -> ToolResult<BuildOutput> {
+            let (errors, warnings) =
+                self.script.lock().expect("lock").pop_front().unwrap_or((0, 0));
+            Ok(BuildOutput {
+                errors: diags("error", errors),
+                warnings: diags("warning", warnings),
+                raw_stdout: String::new(),
+                raw_stderr: String::new(),
+                success: errors == 0,
+            })
+        }
+
+        fn build(
+            &self,
+            _pkg: Option<&str>,
+            _release: bool,
+            _cwd: Option<&Path>,
+        ) -> ToolResult<BuildOutput> {
+            Ok(BuildOutput {
+                errors: Vec::new(),
+                warnings: Vec::new(),
+                raw_stdout: String::new(),
+                raw_stderr: String::new(),
+                success: true,
+            })
+        }
+
+        fn test(
+            &self,
+            _pkg: Option<&str>,
+            _name: Option<&str>,
+            _all: bool,
+            _cwd: Option<&Path>,
+        ) -> ToolResult<TestResults> {
+            Ok(TestResults {
+                passed: 0,
+                failed: 0,
+                ignored: 0,
+                measured: 0,
+                filtered_out: 0,
+                failures: Vec::new(),
+                raw_stdout: String::new(),
+                raw_stderr: String::new(),
+            })
+        }
+
+        fn lint(&self, _pkg: Option<&str>, _cwd: Option<&Path>) -> ToolResult<BuildOutput> {
+            Ok(BuildOutput {
+                errors: Vec::new(),
+                warnings: Vec::new(),
+                raw_stdout: String::new(),
+                raw_stderr: String::new(),
+                success: true,
+            })
+        }
+
+        fn fix(
+            &self,
+            _pkg: Option<&str>,
+            _apply_lint_fixes: bool,
+            _cwd: Option<&Path>,
+        ) -> ToolResult<BuildOutput> {
+            *self.fix_calls.lock().expect("lock") += 1;
+            Ok(BuildOutput {
+                errors: diags("error", self.fix_output_errors),
+                warnings: Vec::new(),
+                raw_stdout: String::new(),
+                raw_stderr: String::new(),
+                success: true,
+            })
+        }
+
+        fn fmt_check(&self, _cwd: Option<&Path>) -> ToolResult<bool> {
+            Ok(true)
+        }
+
+        fn fmt_write(&self, _cwd: Option<&Path>) -> ToolResult<()> {
+            Ok(())
+        }
+
+        fn doc(&self, _pkg: Option<&str>, _cwd: Option<&Path>) -> ToolResult<String> {
+            Ok(String::new())
+        }
+    }
+
+    fn opts(max_rounds: usize, max_warnings: Option<usize>) -> VerifyFixOptions<'static> {
+        VerifyFixOptions {
+            pkg: None,
+            all: false,
+            no_lint: true,
+            fix_lint: false,
+            max_warnings,
+            max_rounds,
+        }
+    }
+
+    #[test]
+    fn test_verify_loop_clean_first_round_skips_fix() {
+        let backend = ScriptedBackend::new(vec![(0, 0)], 0);
+        let report = verify_fix_loop_with(&backend, &opts(3, None), None).unwrap();
+        assert!(report.passed);
+        assert_eq!(report.rounds_used(), 1);
+        assert_eq!(report.fix_attempts(), 0);
+        assert_eq!(backend.fix_calls(), 0);
+    }
+
+    #[test]
+    fn test_verify_loop_fixes_then_passes() {
+        let backend = ScriptedBackend::new(vec![(2, 0), (0, 0)], 0);
+        let report = verify_fix_loop_with(&backend, &opts(3, None), None).unwrap();
+        assert!(report.passed);
+        assert_eq!(report.rounds_used(), 2);
+        assert_eq!(report.fix_attempts(), 1);
+        assert_eq!(backend.fix_calls(), 1);
+        assert_eq!(report.rounds[0].errors, 2);
+        assert!(report.rounds[0].fix.as_ref().expect("fix").success);
+        assert_eq!(report.rounds[1].errors, 0);
+        assert!(report.rounds[1].fix.is_none());
+    }
+
+    #[test]
+    fn test_verify_loop_is_bounded_on_unfixable_errors() {
+        let backend = ScriptedBackend::new(vec![(1, 0), (1, 0), (1, 0), (1, 0)], 1);
+        let report = verify_fix_loop_with(&backend, &opts(3, None), None).unwrap();
+        assert!(!report.passed);
+        assert_eq!(report.rounds_used(), 3);
+        assert_eq!(report.fix_attempts(), 2, "最后一轮不再尝试修复");
+        assert_eq!(backend.fix_calls(), 2);
+        assert_eq!(report.max_rounds, 3);
+    }
+
+    #[test]
+    fn test_verify_loop_zero_rounds_means_one() {
+        let backend = ScriptedBackend::new(vec![(1, 0)], 0);
+        let report = verify_fix_loop_with(&backend, &opts(0, None), None).unwrap();
+        assert_eq!(report.max_rounds, 1);
+        assert_eq!(report.rounds_used(), 1);
+        assert!(!report.passed);
+    }
+
+    #[test]
+    fn test_verify_loop_max_warnings_gate() {
+        // 第 1 轮：无错误但有 1 个警告（零警告门禁下未通过）→ fix → 第 2 轮 0 警告
+        let backend = ScriptedBackend::new(vec![(0, 1), (0, 0)], 0);
+        let strict = verify_fix_loop_with(&backend, &opts(3, Some(0)), None).unwrap();
+        assert!(strict.passed);
+        assert_eq!(strict.rounds_used(), 2);
+        assert_eq!(strict.fix_attempts(), 1);
+
+        // 未设置警告门禁时，第 1 轮即通过，不触发 fix
+        let backend2 = ScriptedBackend::new(vec![(0, 1)], 0);
+        let lenient = verify_fix_loop_with(&backend2, &opts(3, None), None).unwrap();
+        assert!(lenient.passed);
+        assert_eq!(lenient.rounds_used(), 1);
+        assert_eq!(backend2.fix_calls(), 0);
     }
 }

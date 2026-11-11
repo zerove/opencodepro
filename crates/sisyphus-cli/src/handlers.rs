@@ -74,6 +74,8 @@ mod handle_team;
 mod handle_todo;
 #[path = "handle_tool.rs"]
 mod handle_tool;
+#[path = "handle_verify.rs"]
+mod handle_verify;
 #[path = "handle_wisdom.rs"]
 mod handle_wisdom;
 
@@ -208,6 +210,31 @@ pub async fn dispatch(
 
         // ── 修复 ────────────────────────────────────────────
         Commands::Fix(sub) => handle_fix::handle_fix(sub)?,
+
+        // ── 验证-修复循环 ────────────────────────────────────
+        Commands::Verify {
+            lang,
+            package,
+            all,
+            no_lint,
+            fix,
+            lint_fixes,
+            attempts,
+            max_warnings,
+            json,
+            cwd,
+        } => handle_verify::handle_verify(
+            lang.clone(),
+            package.clone(),
+            *all,
+            *no_lint,
+            *fix,
+            *lint_fixes,
+            *attempts,
+            *max_warnings,
+            *json,
+            cwd.clone(),
+        )?,
 
         // ── GitHub ─────────────────────────────────────────
         Commands::Github(sub) => handle_github::handle_github(sub)?,

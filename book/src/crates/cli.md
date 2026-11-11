@@ -70,6 +70,43 @@ SISYPHUS_POST_EDIT_VERIFY_TIMEOUT_SECS=60 \
 
 输出为单行摘要（`✓/✗/-` + 耗时 + 命令）；失败时附带输出尾部 20 行。
 
+## 验证与修复
+
+### verify — 有界验证-修复循环
+
+`diagnose` 只报告、`fix` 只修一轮；`verify` 把两者串成有界循环：**验证 → 未通过则修复 → 再验证**，
+直到达到门禁或用尽轮数，并逐轮输出错误/警告/耗时与修复结果。
+
+```bash
+# 只验证（等价于一次 check + lint）
+sisyphus verify
+
+# 零警告门禁 + 最多 3 轮自动修复
+sisyphus verify --max-warnings 0 --fix --attempts 3
+
+# 修复时同时应用 lint 修复；输出机器可读 JSON
+sisyphus verify --fix --lint-fixes --json
+
+# 指定后端/包/工作目录
+sisyphus verify --lang node -p web -C ./frontend
+```
+
+| 选项 | 说明 |
+|---|---|
+| `--lang` | 语言后端（rust/node/python/go/java/gradle/fe）；省略时按目录自动检测 |
+| `-p`, `--package` | 目标包 |
+| `--all` | 全部工作区成员 |
+| `--no-lint` | 跳过 lint，仅 check |
+| `--fix` | 未通过时执行一次修复并重试；未指定时只跑一轮验证 |
+| `--lint-fixes` | 修复阶段同时应用 lint 修复（Rust 下为 `cargo fix --clippy`） |
+| `--attempts N` | 最大验证轮数（默认 3，仅 `--fix` 时生效；上限保证终止） |
+| `--max-warnings N` | 允许的最大警告数，`0` 表示零警告门禁；省略表示不限制 |
+| `--json` | 输出结构化结果（轮次、耗时、修复记录、最终计数） |
+| `-C` | 工作目录 |
+
+门禁判定：`errors == 0` 且 `warnings <= max_warnings`（未设置时不限制）。未通过时命令以非零退出，
+可直接用于 CI 或编排节点的判定条件。
+
 ## 代理子命令
 
 ### librarian — 外部调研代理
