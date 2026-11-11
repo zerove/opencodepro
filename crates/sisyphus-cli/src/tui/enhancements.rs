@@ -33,6 +33,11 @@ pub const SLASH_COMMANDS: &[SlashCommand] = &[
         category: "General",
     },
     SlashCommand {
+        name: "/commands",
+        description: "List custom commands (.sisyphus/commands/*.md)",
+        category: "General",
+    },
+    SlashCommand {
         name: "/sessions",
         description: "Switch or manage sessions",
         category: "Session",
@@ -308,6 +313,15 @@ mod tests {
         let results = filter_slash_commands("/he");
         assert!(!results.is_empty());
         assert_eq!(results[0].0.name, "/help");
+    }
+
+    #[test]
+    fn test_filter_slash_commands_discovers_custom_command_entry() {
+        let results = filter_slash_commands("/comm");
+        assert!(
+            results.iter().any(|(cmd, _, _)| cmd.name == "/commands"),
+            "自定义命令入口应出现在补全中"
+        );
     }
 
     #[test]

@@ -220,6 +220,34 @@ fn execute_home_command(cmd: &str, app: &mut App) {
             };
             app.add_log(LogEntry::Info(format!("Theme: {:?}", app.theme_mode)));
         },
+        "/commands" | ":commands" => {
+            let commands =
+                crate::tools::custom_command::discover_commands(std::path::Path::new("."));
+            if commands.is_empty() {
+                app.add_log(LogEntry::Info(
+                    "No custom commands. Add .sisyphus/commands/*.md (project) or \
+                     ~/.config/sisyphus/commands/*.md (user)."
+                        .into(),
+                ));
+            } else {
+                app.add_log(LogEntry::Info(format!(
+                    "Custom commands ({}):",
+                    commands.len()
+                )));
+                for command in &commands {
+                    let description = if command.description.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" — {}", command.description)
+                    };
+                    app.add_log(LogEntry::Info(format!(
+                        "  {} [{}]{description}",
+                        command.usage_line(),
+                        command.kind.as_str()
+                    )));
+                }
+            }
+        },
         _ => {
             app.add_log(LogEntry::Warn(format!("Unknown command: {cmd}")));
         },

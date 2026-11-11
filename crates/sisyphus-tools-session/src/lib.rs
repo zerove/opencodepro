@@ -1,4 +1,5 @@
 pub mod collaboration;
+pub mod custom_command;
 pub mod plan;
 pub mod precommit;
 pub mod session;

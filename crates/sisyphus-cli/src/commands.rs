@@ -225,6 +225,10 @@ pub enum Commands {
     #[command(subcommand)]
     Permission(PermissionCommands),
 
+    ///自定义开发命令（.sisyphus/commands/*.md：列出、查看、渲染/执行）
+    #[command(subcommand, alias = "cmd")]
+    Command(CommandCommands),
+
     ///验证（check + lint），可选有界自动修复（verify → fix → verify）
     Verify {
         ///语言后端（rust/node/python/go/java/gradle/fe）。省略时自动检测。

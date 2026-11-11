@@ -229,6 +229,51 @@ pub enum PermissionCommands {
 }
 
 #[derive(Subcommand)]
+/// Custom Command Commands.
+pub enum CommandCommands {
+    /// 列出可发现的自定义命令（用户级 + 项目级）
+    List {
+        /// 输出 JSON
+        #[arg(long = "json")]
+        json: bool,
+        /// 项目根目录（默认：当前目录）
+        #[arg(short = 'C')]
+        cwd: Option<PathBuf>,
+    },
+    /// 显示命令详情与模板
+    Show {
+        /// 命令名
+        name: String,
+        /// 输出 JSON
+        #[arg(long = "json")]
+        json: bool,
+        /// 项目根目录（默认：当前目录）
+        #[arg(short = 'C')]
+        cwd: Option<PathBuf>,
+    },
+    /// 渲染命令（Shell 命令可用 --exec 执行）
+    Run {
+        /// 命令名
+        name: String,
+        /// 参数 `key=value`（可重复）
+        #[arg(long = "arg", value_name = "K=V")]
+        args: Vec<String>,
+        /// 执行 Shell 命令模板（提示词命令不可执行）
+        #[arg(long = "exec")]
+        exec: bool,
+        /// 执行超时毫秒（默认 120000）
+        #[arg(long = "timeout-ms", default_value_t = 120_000)]
+        timeout_ms: u64,
+        /// 输出 JSON
+        #[arg(long = "json")]
+        json: bool,
+        /// 项目根目录（默认：当前目录）
+        #[arg(short = 'C')]
+        cwd: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
 /// Init Commands.
 pub enum InitCommands {
     /// 列出可用项目模板

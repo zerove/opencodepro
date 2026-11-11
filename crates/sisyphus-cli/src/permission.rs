@@ -269,6 +269,55 @@ impl CliPermission {
     }
 }
 
+/// 交互式确认：判定 → 记录审计 → `Allow` 静默通过、`Deny` 直接失败、
+/// `Ask` 在终端提示 `[Y/n]`（默认同意）。
+///
+/// CLI 侧所有“可能执行任意命令”的入口都应走这里，保证审计口径一致，
+/// 而不是让不同入口各自复制一份提示逻辑。
+pub fn require_tool(perms: &CliPermission, tool: &str) -> Result<()> {
+    use std::io::Write;
+
+    let decision = perms.evaluate(tool);
+    match decision.decision {
+        Decision::Allow => {
+            perms.record_decision(tool, &decision, "allowed");
+            Ok(())
+        },
+        Decision::Deny => {
+            perms.record_decision(tool, &decision, "denied");
+            if tool == "exec" {
+                anyhow::bail!("Permission denied: shell execution is blocked by config");
+            }
+            anyhow::bail!("Permission denied: {tool} is blocked by config");
+        },
+        Decision::Ask => {
+            let label = if tool == "exec" {
+                "shell execution"
+            } else {
+                tool
+            };
+            eprint!("⚠  Allow {label}? [Y/n] ");
+            let _ = std::io::stderr().flush();
+            let mut buf = String::new();
+            let read = std::io::stdin().read_line(&mut buf);
+            if read.is_err() {
+                perms.record_decision(tool, &decision, "asked-unanswered");
+                anyhow::bail!("No interactive input available to approve {tool}");
+            }
+            let answer = buf.trim().to_lowercase();
+            if !answer.is_empty() && answer != "y" && answer != "yes" {
+                perms.record_decision(tool, &decision, "asked-denied");
+                if tool == "exec" {
+                    anyhow::bail!("Shell execution denied by user");
+                }
+                anyhow::bail!("{tool} denied by user");
+            }
+            perms.record_decision(tool, &decision, "asked-approved");
+            Ok(())
+        },
+    }
+}
+
 /// 读取审计日志（最近 `limit` 条，按时间顺序返回）。
 pub fn read_audit(path: &Path, limit: usize) -> Result<Vec<PermissionAuditEntry>> {
     if !path.exists() {
@@ -434,6 +483,33 @@ mod tests {
         let dir = TempDir::new().expect("tmpdir");
         let entries = read_audit(&dir.path().join("nope.jsonl"), 5).expect("缺失文件不应报错");
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn require_tool_allows_and_audits() {
+        let dir = TempDir::new().expect("tmpdir");
+        let audit = dir.path().join("permissions.jsonl");
+        let perm = CliPermission::default().with_audit_path(audit.clone());
+
+        require_tool(&perm, "file_read").expect("默认允许");
+        let entries = read_audit(&audit, 10).expect("读取审计");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].resolved, "allowed");
+    }
+
+    #[test]
+    fn require_tool_denies_and_audits() {
+        let dir = TempDir::new().expect("tmpdir");
+        let audit = dir.path().join("permissions.jsonl");
+        let perm = rules(&[("exec", "deny")]).with_audit_path(audit.clone());
+
+        let err = require_tool(&perm, "exec").expect_err("规则拒绝");
+        assert!(err.to_string().contains("Permission denied"), "err={err}");
+        let entries = read_audit(&audit, 10).expect("读取审计");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].decision, "deny");
+        assert_eq!(entries[0].resolved, "denied");
+        assert_eq!(entries[0].source, "rule:exec");
     }
 
     #[test]

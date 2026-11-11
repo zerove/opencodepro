@@ -143,6 +143,72 @@ sisyphus permission audit --json
 审计路径优先级：`SISYPHUS_PERMISSION_AUDIT` > `<data-dir>/audit/permissions.jsonl`。
 写入失败只告警，不阻断主命令。
 
+## 自定义开发命令
+
+项目里放一个 markdown 就能得到一条命令，不需要改 Rust 代码。加载目录：
+
+- 用户级：`~/.config/sisyphus/commands/*.md`
+- 项目级：`<project>/.sisyphus/commands/*.md`（同名命令覆盖用户级）
+
+文件由 YAML frontmatter + 正文组成，正文即模板，支持 `{{arg}}` 占位符：
+
+```markdown
+---
+name: review
+description: 审查指定文件
+usage: review <path> [focus]
+args:
+  - name: path
+    description: 目标文件
+    required: true
+  - name: focus
+    description: 关注点
+    default: correctness
+---
+请审查 {{path}}，重点关注 {{focus}}。
+```
+
+带 `run` 的是 Shell 命令（渲染后可执行），没有 `run` 的是提示词命令：
+
+```markdown
+---
+name: count
+description: 统计文件行数
+args:
+  - name: file
+    required: true
+run: "wc -l {{file}}"
+---
+```
+
+```bash
+# 发现（CLI 表格 / JSON）
+sisyphus command list
+sisyphus command list --json
+
+# 查看参数与模板
+sisyphus command show review
+
+# 渲染提示词（不执行）
+sisyphus command run review --arg path=src/lib.rs
+# 请审查 src/lib.rs，重点关注 correctness。
+
+# Shell 命令：默认只打印渲染结果，加 --exec 才执行
+sisyphus command run count --arg file=src/lib.rs
+sisyphus command run count --arg file=src/lib.rs --exec
+```
+
+规则：
+
+- `required` 缺省时，带 `default` 的参数视为可选，否则必填；
+- 必填参数缺失会拒绝渲染并打印用法（不会用空串蒙混）；
+- 未声明的 `{{...}}` 原样保留，模板里可安全写 `${{ github.ref }}`；
+- `--exec` 仅对 Shell 命令有效，并走与 `sisyphus exec` **相同**的权限规则、
+  交互审批与 JSONL 审计；
+- 非法 YAML 或空模板文件会被跳过，不影响其他命令加载。
+
+TUI 内输入 `/commands` 可列出当前目录可发现的命令（补全列表也包含该入口）。
+
 ## 代理子命令
 
 ### librarian — 外部调研代理

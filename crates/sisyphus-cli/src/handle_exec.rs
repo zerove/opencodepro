@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -9,29 +9,8 @@ pub async fn handle_exec(
     dir: &Option<PathBuf>,
     cli_perms: &sisyphus_cli::permission::CliPermission,
 ) -> Result<()> {
-    // 权限检查
-    let decision = cli_perms.evaluate("exec");
-    match decision.decision {
-        sisyphus_cli::permission::Decision::Allow => {
-            cli_perms.record_decision("exec", &decision, "allowed");
-        },
-        sisyphus_cli::permission::Decision::Deny => {
-            cli_perms.record_decision("exec", &decision, "denied");
-            anyhow::bail!("Permission denied: shell execution is blocked by config");
-        },
-        sisyphus_cli::permission::Decision::Ask => {
-            eprint!("⚠  Allow shell execution? [Y/n] ");
-            std::io::stderr().flush().ok();
-            let mut buf = String::new();
-            std::io::stdin().read_line(&mut buf).ok();
-            let answer = buf.trim().to_lowercase();
-            if !answer.is_empty() && answer != "y" && answer != "yes" {
-                cli_perms.record_decision("exec", &decision, "asked-denied");
-                anyhow::bail!("Shell execution denied by user");
-            }
-            cli_perms.record_decision("exec", &decision, "asked-approved");
-        },
-    }
+    // 权限检查（与自定义命令共用同一套审批与审计口径）
+    sisyphus_cli::permission::require_tool(cli_perms, "exec")?;
     let dir_ref = dir.as_deref();
     let output = sisyphus_cli::tools::bash::execute(command, dir_ref, 30000).await?;
     if !output.stdout.is_empty() {

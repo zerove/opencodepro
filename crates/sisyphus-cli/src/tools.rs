@@ -257,6 +257,10 @@ pub use session::{
     CompressStrategy, Message, Session, SessionCheckpoint,
 };
 
+pub mod custom_command {
+    pub use sisyphus_tools_session::custom_command::*;
+}
+
 pub mod skill {
     pub use sisyphus_tools_session::skill::*;
 }

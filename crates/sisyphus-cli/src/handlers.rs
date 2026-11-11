@@ -10,6 +10,8 @@ use crate::Cli;
 
 #[path = "handle_build.rs"]
 mod handle_build;
+#[path = "handle_custom_command.rs"]
+mod handle_custom_command;
 #[path = "handle_daemon.rs"]
 mod handle_daemon;
 #[path = "handle_delegate.rs"]
@@ -215,6 +217,9 @@ pub async fn dispatch(
 
         // ── 权限 ────────────────────────────────────────────
         Commands::Permission(sub) => handle_permission::handle_permission(sub, cli_perms)?,
+
+        // ── 自定义命令 ───────────────────────────────────────
+        Commands::Command(sub) => handle_custom_command::handle_command(sub, cli_perms).await?,
 
         // ── 验证-修复循环 ────────────────────────────────────
         Commands::Verify {
