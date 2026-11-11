@@ -28,8 +28,12 @@ MINUTES="${1:-10}"
 INTERVAL="${INTERVAL:-5}"
 BIN="${BIN:-./target/debug/sisyphus-bridge}"
 HTTP="${HTTP:-http://127.0.0.1:15291}"
-DATA_DIR="${DATA_DIR:-/tmp/opencode/long-run-data}"
-CFG="${CFG:-/tmp/opencode/long-run-bridge.toml}"
+GRPC_PORT="${GRPC_PORT:-15261}"
+DATA_DIR="${DATA_DIR:-$TMP_ROOT/long-run-data}"
+# CI runner 上 /tmp/opencode 不存在，配置写入会失败 → 先确保目录存在
+TMP_ROOT="${TMPDIR:-/tmp}/opencode"
+mkdir -p "$TMP_ROOT"
+CFG="${CFG:-$TMP_ROOT/long-run-bridge.toml}"
 COMMIT="$(git rev-parse --short HEAD)"
 STAMP="$(date -u +%Y-%m-%d)"
 REPO_ROOT="$(pwd)"
@@ -62,8 +66,40 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# 端口占用守卫：若目标端口已被其它实例占用，健康探测会打到**别的进程**，
+# 测出的「就绪耗时」属于那个进程，本次测量失真（实测踩过：与长窗口监测
+# 同端口时测出 45ms 的假数据）。
+if curl -sf --max-time 1 "${HTTP}/health" >/dev/null 2>&1; then
+  echo "HTTP 端口 ${HTTP} 已被占用：健康探测会打到既有实例，测量会失真" >&2
+  echo "请换一个端口（HTTP=<host:port>）后重试" >&2
+  exit 2
+fi
+# 端口占用检测（HTTP + gRPC）：任一端口已被其它实例占用时，
+# 本脚本启动的进程会绑定失败，而健康探测可能打到**别的实例** → 测量失真。
+port_in_use() {
+  python3 - "$1" <<'PY_PORT'
+import socket, sys
+port = int(sys.argv[1])
+sock = socket.socket()
+sock.settimeout(0.5)
+try:
+    sock.connect(("127.0.0.1", port))
+    sys.exit(0)
+except OSError:
+    sys.exit(1)
+finally:
+    sock.close()
+PY_PORT
+}
+
+if port_in_use "$GRPC_PORT"; then
+  echo "gRPC 端口 ${GRPC_PORT} 已被占用：本次启动会绑定失败，测量无意义" >&2
+  echo "请换一个端口（GRPC_PORT=<port>）后重试" >&2
+  exit 2
+fi
+
 cat > "$CFG" <<TOML
-bridge_address = "http://127.0.0.1:15261"
+bridge_address = "http://127.0.0.1:${GRPC_PORT}"
 http_address = "$HTTP"
 
 [cluster]
