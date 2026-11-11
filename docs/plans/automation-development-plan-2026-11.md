@@ -69,6 +69,7 @@
 | T1.2 | 验证-修复循环 | 基于 `scenario_diagnose_fix_verify_template`，失败时携带诊断上下文重试（有界次数）；记录每次尝试 | 一次真实“失败→修复→通过”记录（含耗时/次数）；无 LLM 时走确定性路径 | M |
 | T1.3 | 执行进度事件 | `/api/execute/goal/{id}/stream` 增加 `step_started/step_finished/tool_call/token_usage` 事件（向后兼容） | SSE 事件契约文档 + 消费端展示；旧客户端不受影响 | M |
 | T1.4 | L3 真实闭环证据 | 在具备 LLM/凭据环境执行 ≥3 个场景（诊断修复、质量门、功能新增），归档请求/响应/trace/耗时/成本 | `docs/benchmarks/acceptance/<date>-l3/` 完整证据；`summary.md` 判定 | M（受环境阻塞） |
+| T1.4 状态（执行） | BLOCKED | 缺失 LLM/凭据/MCP/工具环境，无法产出 `execute/goal` 成功证据 | 后续在具备环境时补跑并更新证据 | - |
 
 **阶段 1 完成标准**：至少 1 个真实任务形成“改文件 → 验证失败 → 修复 → 验证通过”的完整记录；其余场景有可解释结果或明确 `BLOCKED`。
 
@@ -96,6 +97,7 @@
 |---|---|---|---|---|
 | T4.1 | 质量指标定义与采集 | 成功率、修复率、回归率、单任务耗时/token 成本；从执行记录汇总 | 指标文档 + 首轮数据（脚本可复跑） | M |
 | T4.2 | 性能回归门禁 | 定时/触发式采样，对比基线阈值，超阈值告警 | CI job 或 `make perf-regression`；阈值与例外记录 | M |
+| T4.2 状态（执行） | DONE | `scripts/perf-regression-check.sh <mode>` + `make perf-regression{,-bridge}`；基线 `docs/benchmarks/perf-regression-baseline-2026-11-10.json`；实跑 `perf-regression-check.sh cli` rc=0（3 CLI 指标 p50 0.0097-0.0118s < 0.05s） |
 | T4.3 | evals 子集入 CI | 选取稳定、无外部依赖的 cases（metis/momus/security 等） | CI 通过；用例清单与运行时长记录 | M |
 | T4.4 | 统一 trace 关联 | 入口生成 trace id，贯穿 SOP/工具/LLM 日志与响应头；先行设计文档 | 一次请求可查到全部子步骤；设计评审记录 | M–L |
 | T4.5 | 长窗口稳定性 | 连续执行/资源泄漏（内存、句柄、DB）监测 | 数小时运行记录与结论（不伪造连续样本） | M |
@@ -179,6 +181,7 @@
 | T2.2 权限规则与审批审计 | PARTIAL | glob 规则 + 危险工具默认 `ask` + JSONL 审计 + `permission check/audit` 已落地（10 个单测；实跑：glob deny 阻断 exec 并落审计；ask 下 `n` 拒绝 / `y` 批准均正确记录）。**未完成**：TUI 内弹窗审批（当前沿用"输入即同意"并记录 `asked-proceeded-tui`） |
 | T2.3 会话回放页 | DONE | `render_session_html` + 渲染 helper（时间轴/工具折叠/diff 着色/长消息折叠/trace 徽标/CSS）；13 个渲染单测；实跑 `session export --format html` 后校验：`#1/2` 序号、`&lt;b&gt;` 转义、`<details class="tool">` 折叠、`+`/`-`/`@@` 着色、无外部资源；文档见 `book/src/crates/cli.md` 与 `docs/runbooks/single-node-sessions-and-tasks.md` §2.1 |
 | T3.1 自定义开发命令 | DONE | 新增 `custom_command` 模块（用户级 + 项目级目录、同名项目覆盖、`{{arg}}` 渲染、必填/默认校验）+ `sisyphus command list/show/run`；Shell 命令 `--exec` 复用 `require_tool` 审批与审计；TUI `/commands` 可发现；11 个 loader/render 单测 + 4 个输出/参数单测 + 2 个审批单测；实跑：提示词渲染、`--exec` 拒绝/批准/失败退出码、审计三条记录均符合预期 |
+| T2.4 错误提示有效性抽样 | DONE | 新增 `sisyphus-cli::hints`：`HINTS` 提示目录 + `suggest_hint`（多 pattern 命中取最长）；`sample_hints` 抽样聚合（初始判定 Indeterminate）+ `sample_hint_outcome`/`HintSample::with_action` 回填；TUI SOP 失败路径改用统一 `suggest_hint`；7 个 hint 单测 |
 
 > 状态取值：DONE / IN_PROGRESS / BLOCKED / TODO。`BLOCKED` 必须写明缺失的环境或依赖。
 
