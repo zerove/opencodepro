@@ -51,6 +51,7 @@ payload 中缺失该键、值为 `null`、或值不是字符串时，视为**无
 | `node_started` | `Custom` | `POST /api/execute/goal` 执行期间，payload 为内核 `ExecutionEvent::NodeStarted` 原文加 `sop_id` |
 | `node_completed` | `Custom` | 同上，`ExecutionEvent::NodeCompleted` |
 | `node_failed` | `Custom` | 同上，`ExecutionEvent::NodeFailed` |
+| `tool_call` | `Custom` | `POST /api/tools/execute`：`started` 与 `completed`/`failed` 成对发出，payload 含 `tool_id`、`phase`、`duration_ms`、`success`、`error`、`project_id`（来自 `x-project-id` 头，默认 `default`） |
 | `execution_complete` | `Custom` | 同上，`ExecutionEvent::ExecutionComplete` |
 | `cognitive_plan` | `Custom` | 同上，`ExecutionEvent::CognitivePlan` |
 | `cognitive_step` | `Custom` | 同上，`ExecutionEvent::CognitiveStep` |
@@ -59,7 +60,14 @@ payload 中缺失该键、值为 `null`、或值不是字符串时，视为**无
 
 `SseEvent` 枚举还定义了认知迭代、技能安装等变体，但**它们目前没有生产发送方**，仅在测试中构造。订阅这些事件类型不会收到数据。
 
-内核 `ExecutionEvent` 共 8 个变体，全部以 `Custom` 事件转发（snake_case 命名），payload 保留原始字段（含 `fuel_consumed`、`duration_ms`）并注入 `sop_id`。事件名与 gRPC `stream_events` 是两套独立通道但共享同一批内核事件。
+内核 `ExecutionEvent` 共 10 个变体，全部以 `Custom` 事件转发（snake_case 命名），payload 保留原始字段（含 `fuel_consumed`、`duration_ms`）并注入 `sop_id`。事件名与 gRPC `stream_events` 是两套独立通道但共享同一批内核事件。
+
+其中两个变体的生产方较特殊：
+
+- `tool_call`：内核不产生，由 REST 工具执行端点直接广播（见上表）；
+- `token_usage`：**当前仓库内没有生产发送方**。它由具备 usage 数据的一侧通过 `POST /api/events/broadcast`（`event_type = "token_usage"`）上报，或由未来的 provider 封装直接发出。订阅方必须按"可选事件"处理，不得假定一定出现。
+
+CLI/TUI 的控制台事件视图已可渲染这两个变体（`TOOL` / `TOKENS` 行）；未识别的变体不会中断事件流。
 
 ## 执行端点与事件订阅
 

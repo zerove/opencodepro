@@ -175,6 +175,7 @@
 | T0.4 验收证据自动化 | DONE | `scripts/single-node-acceptance-evidence.sh --run-l0` 生成 `l0-static.log`（模板校验 + 脚本语法）；`L0_FULL_SMOKE=1` 追加契约冒烟 |
 | T1.1 编辑后自动验证 | DONE | 新增 `crates/sisyphus-cli/src/post_edit.rs`；11 个单测；实跑：`auto` 模式捕获 `E0308` 类型错误、计时/超时/严格模式行为符合预期；文档见 `book/src/crates/cli.md` |
 | T1.2 验证-修复循环 | DONE | `verify_fix_loop_with`（`sisyphus-tools-llm-tools/src/diagnose.rs`）+ `sisyphus verify` 命令；5 个循环单测 + 3 个输出格式单测；实跑证据：临时 crate 第 1 轮 2 warning（`--max-warnings 0` 未通过）→ fix → 第 2 轮 0 warning（PASS，188ms）；不可修复错误在 2 轮后退出非零 |
+| T1.3 执行进度事件 | DONE | `ExecutionEvent` 新增 `ToolCall`/`TokenUsage`（共 10 变体）；`/api/tools/execute` 成对广播 `tool_call`（started → completed/failed，含 duration/success/error/project_id）；SSE 映射、TUI 渲染、OpenAPI 与 `book/src/sse-events.md` 已同步；bridge 侧 2 个广播单测 + 变体映射守卫 + TUI 3 个格式单测 |
 
 > 状态取值：DONE / IN_PROGRESS / BLOCKED / TODO。`BLOCKED` 必须写明缺失的环境或依赖。
 

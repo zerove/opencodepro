@@ -192,19 +192,46 @@ pub(super) async fn peer_publish_skill_handler(
 )]
 pub(super) async fn execute_tool_handler(
     State(state): State<RestApiState>,
+    headers: HeaderMap,
     Json(req): Json<ExecuteToolRequest>,
 ) -> impl IntoResponse {
     let fuel = req.fuel_limit.unwrap_or(state.bridge.default_fuel);
+    let project_id = extract_project_id(&headers, None).to_string();
+    let started = std::time::Instant::now();
+
+    // 进度事件：先发 started，再按结果发 completed/failed。
+    // 订阅方可用 `?events=tool_call` 过滤；无订阅者时 send 返回 Err，忽略即可。
+    emit_tool_call(
+        &state,
+        &project_id,
+        &req.tool_id,
+        "started",
+        None,
+        None,
+        None,
+    );
+
     let args_bytes = req.args_json.into_bytes();
-    match state
+    let result = state
         .bridge
         .kernel()
         .execution_manager
         .tool_router
         .execute(&req.tool_id, args_bytes, fuel)
-        .await
-    {
+        .await;
+    let duration_ms = i64::try_from(started.elapsed().as_millis()).unwrap_or(i64::MAX);
+
+    match result {
         Ok(bytes) => {
+            emit_tool_call(
+                &state,
+                &project_id,
+                &req.tool_id,
+                "completed",
+                Some(duration_ms),
+                Some(true),
+                None,
+            );
             let result_str = String::from_utf8_lossy(&bytes).to_string();
             (
                 StatusCode::OK,
@@ -215,15 +242,57 @@ pub(super) async fn execute_tool_handler(
             )
                 .into_response()
         },
-        Err(e) => (
-            super::handlers_platform::status_for_typed(Some(&e), &e.to_string()),
-            Json(ExecuteToolResponse {
-                status: format!("ERROR: {e}"),
-                result_json: String::new(),
-            }),
-        )
-            .into_response(),
+        Err(e) => {
+            let message = e.to_string();
+            emit_tool_call(
+                &state,
+                &project_id,
+                &req.tool_id,
+                "failed",
+                Some(duration_ms),
+                Some(false),
+                Some(&message),
+            );
+            (
+                super::handlers_platform::status_for_typed(Some(&e), &message),
+                Json(ExecuteToolResponse {
+                    status: format!("ERROR: {e}"),
+                    result_json: String::new(),
+                }),
+            )
+                .into_response()
+        },
     }
+}
+
+/// 广播一条 `tool_call` SSE 事件（payload 与 `ExecutionEvent::ToolCall` 字段同名）。
+fn emit_tool_call(
+    state: &RestApiState,
+    project_id: &str,
+    tool_id: &str,
+    phase: &str,
+    duration_ms: Option<i64>,
+    success: Option<bool>,
+    error: Option<&str>,
+) {
+    let mut payload = serde_json::json!({
+        "tool_id": tool_id,
+        "phase": phase,
+        "project_id": project_id,
+    });
+    if let Some(map) = payload.as_object_mut() {
+        if let Some(ms) = duration_ms {
+            map.insert("duration_ms".into(), serde_json::json!(ms));
+        }
+        if let Some(ok) = success {
+            map.insert("success".into(), serde_json::json!(ok));
+        }
+        if let Some(err) = error {
+            map.insert("error".into(), serde_json::json!(err));
+        }
+    }
+    let event = crate::http::sse_handlers::SseEvent::custom("tool_call".to_string(), payload);
+    let _ = state.sse_broadcaster.send(event);
 }
 
 pub(super) async fn delegate_cognitive_task_handler(
@@ -838,5 +907,98 @@ pub(super) async fn delete_workspace_handler(
             }),
         )
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::http::sse_handlers::SseEvent;
+    use std::sync::Arc;
+
+    /// 构造最小 RestApiState（允许 dummy embedding，否则构造会 panic）。
+    async fn test_state() -> RestApiState {
+        use crate::bridge_service::MySisyphusBridge;
+        use std::sync::{Arc as StdArc, RwLock as StdRwLock};
+        let mut cfg = sisyphus_types::Config::default();
+        cfg.llm.embedding.allow_dummy_embeddings = true;
+        let cfg = StdArc::new(StdRwLock::new(cfg));
+        let bridge =
+            Arc::new(MySisyphusBridge::new(cfg, None, None).await.expect("构造 test bridge"));
+        RestApiState::new(bridge, std::path::PathBuf::from("/tmp"))
+    }
+
+    fn tool_payload(event: &SseEvent) -> &serde_json::Value {
+        match event {
+            SseEvent::Custom {
+                event_type,
+                payload,
+                ..
+            } => {
+                assert_eq!(event_type, "tool_call");
+                payload
+            },
+            other => panic!("期望 Custom 事件，实际: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_tool_emits_started_and_completed_events() {
+        let state = test_state().await;
+        let mut rx = state.sse_broadcaster.subscribe();
+
+        let file =
+            std::env::temp_dir().join(format!("sisyphus-tool-call-{}.txt", std::process::id()));
+        std::fs::write(&file, "hello tool").expect("写临时文件");
+
+        let req = ExecuteToolRequest {
+            tool_id: "builtin:file_read".to_string(),
+            args_json: serde_json::json!({ "path": file }).to_string(),
+            fuel_limit: None,
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert("x-project-id", "proj-tool".parse().expect("header"));
+
+        let resp = execute_tool_handler(State(state), headers, Json(req)).await.into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let started = rx.recv().await.expect("started 事件");
+        let started_payload = tool_payload(&started);
+        assert_eq!(started_payload["tool_id"], "builtin:file_read");
+        assert_eq!(started_payload["phase"], "started");
+        assert_eq!(started_payload["project_id"], "proj-tool");
+        assert!(started_payload.get("duration_ms").is_none());
+
+        let completed = rx.recv().await.expect("completed 事件");
+        let completed_payload = tool_payload(&completed);
+        assert_eq!(completed_payload["phase"], "completed");
+        assert_eq!(completed_payload["success"], true);
+        assert!(completed_payload["duration_ms"].is_number());
+
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[tokio::test]
+    async fn test_execute_tool_emits_failed_event() {
+        let state = test_state().await;
+        let mut rx = state.sse_broadcaster.subscribe();
+
+        let req = ExecuteToolRequest {
+            tool_id: "builtin:file_read".to_string(),
+            args_json: serde_json::json!({ "path": "/nonexistent/sisyphus-probe" }).to_string(),
+            fuel_limit: None,
+        };
+        let resp =
+            execute_tool_handler(State(state), HeaderMap::new(), Json(req)).await.into_response();
+        assert_ne!(resp.status(), StatusCode::OK);
+
+        let started = rx.recv().await.expect("started 事件");
+        assert_eq!(tool_payload(&started)["phase"], "started");
+
+        let failed = rx.recv().await.expect("failed 事件");
+        let payload = tool_payload(&failed);
+        assert_eq!(payload["phase"], "failed");
+        assert_eq!(payload["success"], false);
+        assert!(payload["error"].is_string());
     }
 }

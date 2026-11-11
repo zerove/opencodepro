@@ -475,6 +475,50 @@ fn test_format_micro_reflection_event() {
 }
 
 #[test]
+fn test_format_tool_call_event() {
+    let event = sisyphus_types::ExecutionEvent::ToolCall {
+        tool_id: "builtin:file_read".into(),
+        phase: "completed".into(),
+        duration_ms: Some(12),
+        success: Some(true),
+        error: None,
+    };
+    let text = dialog::handlers::format_cognitive_event(&event);
+    assert!(text.contains("Tool builtin:file_read: completed"));
+    assert!(text.contains("duration: 12ms"));
+    assert!(text.contains("success: true"));
+}
+
+#[test]
+fn test_format_tool_call_failure_event() {
+    let event = sisyphus_types::ExecutionEvent::ToolCall {
+        tool_id: "builtin:bash_exec".into(),
+        phase: "failed".into(),
+        duration_ms: Some(30),
+        success: Some(false),
+        error: Some("permission denied".into()),
+    };
+    let text = dialog::handlers::format_cognitive_event(&event);
+    assert!(text.contains("phase") || text.contains("failed"));
+    assert!(text.contains("permission denied"));
+}
+
+#[test]
+fn test_format_token_usage_event() {
+    let event = sisyphus_types::ExecutionEvent::TokenUsage {
+        model: Some("gpt-probe".into()),
+        prompt_tokens: 10,
+        completion_tokens: 20,
+        total_tokens: 30,
+    };
+    let text = dialog::handlers::format_cognitive_event(&event);
+    assert!(text.contains("Token usage (gpt-probe)"));
+    assert!(text.contains("prompt: 10"));
+    assert!(text.contains("completion: 20"));
+    assert!(text.contains("total: 30"));
+}
+
+#[test]
 fn test_cognitive_trace_row_deserialize_from_rest_contract() {
     // 契约测试：与 REST /api/cognitive/trace 返回结构对齐（CognitiveTraceEntry JSON）。
     let json = serde_json::json!({

@@ -267,6 +267,8 @@ fn execution_event_type(event: &sisyphus_types::ExecutionEvent) -> String {
         E::NodeStarted { .. } => "node_started",
         E::NodeCompleted { .. } => "node_completed",
         E::NodeFailed { .. } => "node_failed",
+        E::ToolCall { .. } => "tool_call",
+        E::TokenUsage { .. } => "token_usage",
         E::ExecutionComplete { .. } => "execution_complete",
         E::CognitivePlan { .. } => "cognitive_plan",
         E::CognitiveStep { .. } => "cognitive_step",
@@ -951,7 +953,7 @@ mod tests {
     fn test_every_execution_event_variant_maps_to_sse() {
         use sisyphus_types::ExecutionEvent as E;
 
-        // 覆盖全部 8 个变体：任何新增变体若忘记映射，本测试的
+        // 覆盖全部 10 个变体：任何新增变体若忘记映射，本测试的
         // 「变体数量」断言会先失败，强制补齐。
         let variants = vec![
             (
@@ -977,6 +979,25 @@ mod tests {
                     duration_ms: 3000,
                 },
                 "node_failed",
+            ),
+            (
+                E::ToolCall {
+                    tool_id: "builtin:file_read".to_string(),
+                    phase: "completed".to_string(),
+                    duration_ms: Some(12),
+                    success: Some(true),
+                    error: None,
+                },
+                "tool_call",
+            ),
+            (
+                E::TokenUsage {
+                    model: Some("gpt-probe".to_string()),
+                    prompt_tokens: 10,
+                    completion_tokens: 20,
+                    total_tokens: 30,
+                },
+                "token_usage",
             ),
             (
                 E::ExecutionComplete {
@@ -1021,7 +1042,7 @@ mod tests {
         // 强制补齐映射而非静默漏掉。
         assert_eq!(
             variants.len(),
-            8,
+            10,
             "ExecutionEvent 变体数已变（当前 {}），必须为新变体补映射与测试",
             variants.len()
         );

@@ -227,6 +227,30 @@ pub enum ExecutionEvent {
         fuel_consumed: i64,
         duration_ms: i64,
     },
+    /// 工具调用进度事件。`phase` 取 `started` / `completed` / `failed`。
+    ///
+    /// 工具执行端点（REST `POST /api/tools/execute`）会成对发出
+    /// `started` 与 `completed|failed`，消费端可据此渲染进度与耗时。
+    ToolCall {
+        tool_id: String,
+        phase: String,
+        /// 已完成阶段的耗时（毫秒）；`started` 阶段为 `None`。
+        duration_ms: Option<i64>,
+        /// 是否成功；`started` 阶段为 `None`。
+        success: Option<bool>,
+        /// 失败信息（`phase = failed` 时存在）。
+        error: Option<String>,
+    },
+    /// LLM token 用量上报。
+    ///
+    /// 由具备 usage 数据的一侧（provider 封装、代理、外部集成）发出；
+    /// 内核当前不产生该事件，订阅方应按"可选"处理。
+    TokenUsage {
+        model: Option<String>,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        total_tokens: u64,
+    },
     ExecutionComplete {
         result: NodeOutput,
     },

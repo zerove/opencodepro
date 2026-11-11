@@ -639,6 +639,34 @@ pub(crate) fn format_cognitive_event(event: &sisyphus_types::ExecutionEvent) -> 
         } => format!(
             "✖ Node failed: {node_name}\nerror: {error}\nfuel: {fuel_consumed} | duration: {duration_ms}ms"
         ),
+        sisyphus_types::ExecutionEvent::ToolCall {
+            tool_id,
+            phase,
+            duration_ms,
+            success,
+            error,
+        } => {
+            let mut out = format!("🔧 Tool {tool_id}: {phase}");
+            if let Some(ms) = duration_ms {
+                out.push_str(&format!("\nduration: {ms}ms"));
+            }
+            if let Some(ok) = success {
+                out.push_str(&format!("\nsuccess: {ok}"));
+            }
+            if let Some(err) = error.as_deref() {
+                out.push_str(&format!("\nerror: {err}"));
+            }
+            out
+        },
+        sisyphus_types::ExecutionEvent::TokenUsage {
+            model,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+        } => format!(
+            "🪙 Token usage ({})\nprompt: {prompt_tokens} | completion: {completion_tokens} | total: {total_tokens}",
+            model.as_deref().unwrap_or("llm")
+        ),
         sisyphus_types::ExecutionEvent::ExecutionComplete { result } => {
             format!("✓ Execution complete\nresult: {}", result.0)
         }

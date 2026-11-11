@@ -954,6 +954,40 @@ fn cognitive_event_summary(
             format!("Node failed: {node_name}"),
             Style::default().fg(theme.error),
         ),
+        ExecutionEvent::ToolCall {
+            tool_id,
+            phase,
+            duration_ms,
+            success,
+            error,
+        } => {
+            let style = match success {
+                Some(false) => theme.error,
+                Some(true) => theme.success,
+                None => theme.secondary,
+            };
+            let mut summary = format!("Tool {tool_id}: {phase}");
+            if let Some(ms) = duration_ms {
+                summary.push_str(&format!(" ({ms}ms)"));
+            }
+            if let Some(err) = error.as_deref() {
+                summary.push_str(&format!(" — {err}"));
+            }
+            ("TOOL".into(), summary, Style::default().fg(style))
+        },
+        ExecutionEvent::TokenUsage {
+            model,
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+        } => (
+            "TOKENS".into(),
+            format!(
+                "{}: prompt {prompt_tokens} + completion {completion_tokens} = {total_tokens}",
+                model.as_deref().unwrap_or("llm")
+            ),
+            Style::default().fg(theme.secondary),
+        ),
         ExecutionEvent::ExecutionComplete { .. } => (
             "EXEC".into(),
             "Execution complete".into(),

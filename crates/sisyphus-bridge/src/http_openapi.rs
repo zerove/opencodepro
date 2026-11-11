@@ -1206,8 +1206,16 @@ fn build_document() -> Result<serde_json::Value, String> {
                 },
                 "ExecutionEvent": {
                     "type": "object",
-                    "description": "One cognitive execution event (serde externally tagged). Variants: NodeStarted | NodeCompleted | NodeFailed | ExecutionComplete | CognitivePlan | CognitiveStep | MicroReflection | CognitiveComplete.",
+                    "description": "One cognitive execution event (serde externally tagged). Variants: NodeStarted | NodeCompleted | NodeFailed | ToolCall | TokenUsage | ExecutionComplete | CognitivePlan | CognitiveStep | MicroReflection | CognitiveComplete.",
                     "properties": {
+                        "ToolCall": {
+                            "type": "object",
+                            "description": "Tool invocation progress: tool_id, phase (started|completed|failed), duration_ms (optional), success (optional), error (optional)"
+                        },
+                        "TokenUsage": {
+                            "type": "object",
+                            "description": "LLM token usage: model (optional), prompt_tokens, completion_tokens, total_tokens"
+                        },
                         "CognitiveStep": {
                             "type": "object",
                             "description": "Loop phase update with metrics: step, message, metrics (iteration, deviation, confidence, progress, token_cost, stability, info_gain)"
