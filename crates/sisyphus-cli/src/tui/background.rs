@@ -330,22 +330,50 @@ pub struct DevRunHandle {
 
 /// T2.1 MVP：开发 Agent 审批 approver。
 ///
-/// 收到工具调用请求时向 TUI 下发 `DevAsk`，等待用户应答（放行/拒绝）后返回。
+/// 判定走**统一权限体系**（T2.2）：先按 `CliPermission` 规则（glob / 危险默认 ask）
+/// 判定 —— 命中 allow/deny 直接放行/拒绝并写审计；只有需要人工确认（Ask）时才
+/// 向 TUI 下发 `DevAsk` 弹窗，等待用户应答。
+///
 /// 应答通道关闭（用户已离开）视为拒绝（fail-safe）。
 struct DevAskApprover {
     ask: tokio::sync::mpsc::UnboundedSender<BgOp>,
     answer: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<bool>>,
+    perms: crate::permission::CliPermission,
 }
 
 #[async_trait::async_trait]
 impl crate::tools::developer::DevApprover for DevAskApprover {
     async fn approve(&self, tool_id: &str, _action: &serde_json::Value) -> Result<bool, String> {
+        use crate::permission::Decision;
+
+        let decision = self.perms.evaluate(tool_id);
+        match decision.decision {
+            Decision::Allow => {
+                self.perms.record_decision(tool_id, &decision, "allowed");
+                return Ok(true);
+            },
+            Decision::Deny => {
+                self.perms.record_decision(tool_id, &decision, "denied");
+                return Ok(false);
+            },
+            Decision::Ask => {},
+        }
+
         let _ = self.ask.send(crate::tui::background::BgOp::DevAsk {
             tool_id: tool_id.to_string(),
         });
         let mut answer = self.answer.lock().await;
         let answered =
             answer.recv().await.ok_or_else(|| "dev approval channel closed".to_string())?;
+        self.perms.record_decision(
+            tool_id,
+            &decision,
+            if answered {
+                "asked-approved"
+            } else {
+                "asked-denied"
+            },
+        );
         Ok(answered)
     }
 }
@@ -400,6 +428,8 @@ pub fn spawn_dev_agent(
             .with_approval_handler(std::sync::Arc::new(DevAskApprover {
                 ask: ask_tx,
                 answer: tokio::sync::Mutex::new(answer_rx),
+                // 统一权限体系：dev 的工具调用同样受 glob 规则 / 危险默认 / 审计约束
+                perms: crate::permission::CliPermission::load(None).unwrap_or_default(),
             }));
         let goal_c = goal.clone();
         match developer.develop(&goal, &context, parallel, resume).await {
@@ -1047,5 +1077,124 @@ mod dev_checkpoint_tests {
         let name = dir.file_name().expect("文件名").to_string_lossy().to_string();
         assert!(!name.contains('/'), "目录名不应含路径分隔符: {name}");
         assert!(!name.contains(".."), "目录名不应含 ..: {name}");
+    }
+}
+
+#[cfg(test)]
+mod dev_approver_tests {
+    use super::*;
+    use crate::permission::CliPermission;
+    // `approve` 是 trait 方法：需要把 trait 引入作用域
+    use crate::tools::developer::DevApprover;
+    use serde_json::json;
+    use std::path::{Path, PathBuf};
+
+    /// 每个用例独占目录（并行执行时共用目录会互相覆盖规则文件）。
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "sisyphus-dev-approver-{}-{tag}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or_default()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("创建临时目录");
+        dir
+    }
+
+    fn perms(dir: &Path, rules: &str, audit: &Path) -> CliPermission {
+        let rules_path = dir.join("rules.json");
+        std::fs::write(&rules_path, rules).expect("写规则");
+        CliPermission::load(Some(rules_path))
+            .expect("加载规则")
+            .with_audit_path(audit.to_path_buf())
+    }
+
+    #[tokio::test]
+    async fn deny_rule_blocks_without_prompting() {
+        let dir = temp_dir("deny");
+        let audit = dir.join("audit.jsonl");
+        let (ask_tx, mut ask_rx) = tokio::sync::mpsc::unbounded_channel::<BgOp>();
+        let (_answer_tx, answer_rx) = tokio::sync::mpsc::unbounded_channel::<bool>();
+        let approver = DevAskApprover {
+            ask: ask_tx,
+            answer: tokio::sync::Mutex::new(answer_rx),
+            perms: perms(
+                &dir,
+                r#"[{"pattern":"builtin:bash_exec","permission":"deny"}]"#,
+                &audit,
+            ),
+        };
+
+        let allowed =
+            approver.approve("builtin:bash_exec", &json!({})).await.expect("判定不应出错");
+        assert!(!allowed, "deny 规则应拒绝执行");
+        assert!(
+            ask_rx.try_recv().is_err(),
+            "deny 不应弹出审批（无需人工确认）"
+        );
+        let logged = std::fs::read_to_string(&audit).unwrap_or_default();
+        assert!(
+            logged.contains("\"resolved\":\"denied\""),
+            "应写入 denied 审计：{logged}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn ask_decision_prompts_and_records_user_answer() {
+        let dir = temp_dir("ask");
+        let audit = dir.join("audit.jsonl");
+        let (ask_tx, mut ask_rx) = tokio::sync::mpsc::unbounded_channel::<BgOp>();
+        let (answer_tx, answer_rx) = tokio::sync::mpsc::unbounded_channel::<bool>();
+        let approver = DevAskApprover {
+            ask: ask_tx,
+            answer: tokio::sync::Mutex::new(answer_rx),
+            // 危险工具默认 ask（无规则时 builtin:bash_exec 走危险默认）
+            perms: perms(&dir, "[]", &audit),
+        };
+
+        let pending = tokio::spawn(async move {
+            let approver = approver;
+            approver.approve("builtin:bash_exec", &json!({})).await
+        });
+
+        let ask = ask_rx.recv().await.expect("应下发审批请求");
+        match ask {
+            BgOp::DevAsk { tool_id } => assert_eq!(tool_id, "builtin:bash_exec"),
+            other => panic!("期望 DevAsk，实际 {other:?}"),
+        }
+        answer_tx.send(true).expect("应答");
+
+        let allowed = pending.await.expect("审批任务应结束").expect("判定不应出错");
+        assert!(allowed, "用户放行应通过");
+        let logged = std::fs::read_to_string(&audit).unwrap_or_default();
+        assert!(
+            logged.contains("\"resolved\":\"asked-approved\""),
+            "应写入 asked-approved 审计：{logged}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn allowed_tool_runs_without_prompting() {
+        let dir = temp_dir("allow");
+        let audit = dir.join("audit.jsonl");
+        let (ask_tx, mut ask_rx) = tokio::sync::mpsc::unbounded_channel::<BgOp>();
+        let (_answer_tx, answer_rx) = tokio::sync::mpsc::unbounded_channel::<bool>();
+        let approver = DevAskApprover {
+            ask: ask_tx,
+            answer: tokio::sync::Mutex::new(answer_rx),
+            perms: perms(&dir, "[]", &audit),
+        };
+
+        // 非危险工具（文件写）默认放行，不打扰用户
+        let allowed =
+            approver.approve("builtin:file_write", &json!({})).await.expect("判定不应出错");
+        assert!(allowed, "非危险工具应直接放行");
+        assert!(ask_rx.try_recv().is_err(), "放行路径不应弹窗");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

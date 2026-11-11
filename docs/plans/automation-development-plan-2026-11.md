@@ -204,7 +204,7 @@
 
 | T1.4 L3 真实闭环 | BLOCKED | 缺 LLM/凭据/MCP/工具环境，无法产出 `execute/goal` 成功证据；后续在具备环境时补跑并更新证据 |
 | T2.1 TUI 对话式执行 MVP | DONE（脚本化验收） | 四切片落地：S1 `Developer` interrupt + `DevOverallStatus::Cancelled`；S2 `DevApprover` 审批闸；S3 TUI 接缝（`BgOp::DevAsk`/`DevRunHandle`/审批卡片/y·n·Esc 键位/Esc→Resume 恢复入口）；S4 验收测试 `crates/sisyphus-tools-agent/tests/t2_1_mvp_acceptance.rs`（2 次工具调用 / 2 次审批 / 1 次中断 + 恢复）；`sisyphus-cli` 120 单测、`tools-agent` 98 + 1 验收 |
-| T2.2 权限规则与审批审计 | DONE | glob 规则 + 危险默认 `ask` + JSONL 审计 + `permission check/audit`；TUI 审批弹窗补齐（crate 级 broker `crates/sisyphus-cli/src/approval.rs` + `Dialog::ToolApproval` + `shell::exec` Ask 分支接入，审计口径 `asked-approved`/`asked-denied`）；5 个新单测 |
+| T2.2 权限规则与审批审计 | DONE | glob 规则 + 危险默认 `ask` + JSONL 审计 + `permission check/audit`；TUI 审批弹窗补齐（crate 级 broker `crates/sisyphus-cli/src/approval.rs` + `Dialog::ToolApproval` + `shell::exec` Ask 分支接入，审计口径 `asked-approved`/`asked-denied`）；**dev 工具闸已接入同一权限体系**（allow 直接放行 / deny 直接拒绝 / ask 才弹窗，3 个新单测）；5 个新单测 |
 | T3.2 Provider 交互式引导 | BLOCKED | 缺可用 LLM 凭据，无法验证「5 分钟内完成首次真实调用」 |
 | T3.3 启动分段归因与优化 | DONE | bridge `startup_phase_*_ms` + `scripts/measure-bridge-startup.sh`（end_to_end_ready_ms≈1530ms）；TUI 首帧 PTY 测量 `scripts/measure-tui-first-frame.sh` + `make perf-tui`（p50≈14.3ms）；已接入 nightly workflow |
 | T3.4 并行冲突感知 | DONE | 新增 `team/conflict.rs`：`detect_conflicts`（写写/读写冲突，写键含显式 `write_keys` 与兼容旧 `args["_write_keys"]`）+ `partition_by_write_conflicts`（按写冲突拆波次）；调度器检测 → `TeamEvent::ConflictDetected` 告警 + `tracing::warn!` → 冲突任务串行化（波次内并行）；既有 `TeamContext::detect_write_conflicts` 复用新模块；6 个新单测 |
