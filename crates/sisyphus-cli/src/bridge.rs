@@ -90,6 +90,9 @@ impl BridgeClient {
     }
 
     /// 若已配置，将认证 token 注入 gRPC 请求。
+    ///
+    /// T4.4：同时注入 `x-trace-id` metadata（每次调用生成一个），
+    /// 使 CLI/TUI 侧的操作能与 bridge 日志、事件流按同一 id 串联。
     fn with_auth<T>(&self, mut req: tonic::Request<T>) -> Result<tonic::Request<T>> {
         if let Some(ref token) = self.token {
             let bearer = format!("Bearer {}", token);
@@ -97,6 +100,10 @@ impl BridgeClient {
                 "authorization",
                 bearer.parse().context("Invalid auth token format")?,
             );
+        }
+        let trace_id = sisyphus_types::trace::generate_trace_id();
+        if let Ok(value) = tonic::metadata::MetadataValue::try_from(trace_id.as_str()) {
+            req.metadata_mut().insert(sisyphus_types::trace::TRACE_ID_HEADER, value);
         }
         Ok(req)
     }

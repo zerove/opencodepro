@@ -3,7 +3,7 @@
 use super::types::*;
 use axum::{
     body::Body,
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     Json,
@@ -258,11 +258,15 @@ fn spawn_sse_event_forwarder(
     broadcaster: tokio::sync::broadcast::Sender<crate::http::sse_handlers::SseEvent>,
     mut rx: mpsc::UnboundedReceiver<sisyphus_types::ExecutionEvent>,
     sop_id: String,
+    trace_id: Option<String>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(event) = rx.recv().await {
-            let sse_event =
-                crate::http::sse_handlers::SseEvent::from_execution_event(&event, &sop_id);
+            let sse_event = crate::http::sse_handlers::SseEvent::from_execution_event_with_trace(
+                &event,
+                &sop_id,
+                trace_id.as_deref(),
+            );
             // send 失败仅表示当前无 SSE 订阅者，属正常情况（没人订阅时
             // 不该让内核执行失败），因此只忽略错误继续消费。
             let _ = broadcaster.send(sse_event);
@@ -286,6 +290,7 @@ fn wire_execution_events(
     broadcaster: tokio::sync::broadcast::Sender<crate::http::sse_handlers::SseEvent>,
     event_tx: Option<bool>,
     sop_id: String,
+    trace_id: Option<String>,
 ) -> (
     Option<mpsc::UnboundedSender<sisyphus_types::ExecutionEvent>>,
     Option<tokio::task::JoinHandle<()>>,
@@ -296,7 +301,7 @@ fn wire_execution_events(
     let (tx, rx) = mpsc::unbounded_channel();
     (
         Some(tx),
-        Some(spawn_sse_event_forwarder(broadcaster, rx, sop_id)),
+        Some(spawn_sse_event_forwarder(broadcaster, rx, sop_id, trace_id)),
     )
 }
 
@@ -310,6 +315,7 @@ fn wire_execution_events(
 pub(super) async fn execute_goal_handler(
     State(state): State<RestApiState>,
     workspace: WorkspaceContext,
+    Extension(trace_id): Extension<sisyphus_types::trace::TraceId>,
     Json(req): Json<GoalExecuteRequest>,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
@@ -318,8 +324,12 @@ pub(super) async fn execute_goal_handler(
     // 真正把内核执行事件转发到 SSE。旧实现只取 sender 而丢弃 receiver，
     // 内核 send 立即返回 Err，事件被静默吞掉（不 panic、不记日志），
     // 客户端传 `event_tx: true` 却收不到任何东西。
-    let (event_tx, event_forwarder) =
-        wire_execution_events(state.sse_broadcaster.clone(), req.event_tx, sop_id.clone());
+    let (event_tx, event_forwarder) = wire_execution_events(
+        state.sse_broadcaster.clone(),
+        req.event_tx,
+        sop_id.clone(),
+        Some(trace_id.0.clone()),
+    );
 
     let project_id =
         workspace.project_id.or(req.project_id).unwrap_or_else(|| "default".to_string());
@@ -539,6 +549,7 @@ pub(super) async fn goal_stream_handler(
 pub(super) async fn execute_composite_handler(
     State(state): State<RestApiState>,
     workspace: WorkspaceContext,
+    Extension(trace_id): Extension<sisyphus_types::trace::TraceId>,
     Json(req): Json<CompositeExecuteRequest>,
 ) -> impl IntoResponse {
     let kernel = state.bridge.kernel();
@@ -555,6 +566,7 @@ pub(super) async fn execute_composite_handler(
         state.sse_broadcaster.clone(),
         req.event_tx,
         composite_sop_id.clone(),
+        Some(trace_id.0.clone()),
     );
 
     let project_id = workspace.project_id.or(req.project_id);
@@ -1849,7 +1861,7 @@ mod wiring_tests {
         for (label, event_tx_param) in [("未传", None), ("显式 true", Some(true))] {
             let (sse_tx, mut sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(16);
             let (kern_tx, handle) =
-                wire_execution_events(sse_tx, event_tx_param, "sop-w".to_string());
+                wire_execution_events(sse_tx, event_tx_param, "sop-w".to_string(), None);
 
             let kern_tx = kern_tx.expect(
                 "event_tx 未传或为 true 时必须返回内核 sender —— \
@@ -1878,7 +1890,8 @@ mod wiring_tests {
     #[tokio::test]
     async fn explicit_false_disables_forwarding() {
         let (sse_tx, _rx) = tokio::sync::broadcast::channel::<SseEvent>(16);
-        let (kern_tx, handle) = wire_execution_events(sse_tx, Some(false), "sop-off".to_string());
+        let (kern_tx, handle) =
+            wire_execution_events(sse_tx, Some(false), "sop-off".to_string(), None);
 
         assert!(kern_tx.is_none(), "event_tx=false 时不应创建内核 sender");
         assert!(handle.is_none(), "event_tx=false 时不应创建转发器");
@@ -1890,7 +1903,7 @@ mod wiring_tests {
     #[tokio::test]
     async fn forwarder_handle_resolves_after_sender_dropped() {
         let (sse_tx, mut sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(16);
-        let (kern_tx, handle) = wire_execution_events(sse_tx, None, "sop-q".to_string());
+        let (kern_tx, handle) = wire_execution_events(sse_tx, None, "sop-q".to_string(), None);
         let kern_tx = kern_tx.expect("应有 sender");
 
         kern_tx
@@ -1925,7 +1938,7 @@ mod sse_forwarder_tests {
         let (sse_tx, mut sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(32);
         let (kern_tx, kern_rx) = mpsc::unbounded_channel::<ExecutionEvent>();
 
-        let handle = spawn_sse_event_forwarder(sse_tx, kern_rx, "sop-live".to_string());
+        let handle = spawn_sse_event_forwarder(sse_tx, kern_rx, "sop-live".to_string(), None);
 
         // 模拟内核在执行过程中推送的典型事件序列
         kern_tx
@@ -1990,7 +2003,7 @@ mod sse_forwarder_tests {
         drop(sse_rx); // 模拟无人订阅
 
         let (kern_tx, kern_rx) = mpsc::unbounded_channel::<ExecutionEvent>();
-        let handle = spawn_sse_event_forwarder(sse_tx, kern_rx, "sop-x".to_string());
+        let handle = spawn_sse_event_forwarder(sse_tx, kern_rx, "sop-x".to_string(), None);
 
         for _ in 0..20 {
             kern_tx
@@ -2022,7 +2035,7 @@ mod sse_forwarder_tests {
                 })
                 .expect("转发器未启动，channel 仍有容量");
         }
-        let handle = spawn_sse_event_forwarder(sse_tx, kern_rx, "sop-drain".to_string());
+        let handle = spawn_sse_event_forwarder(sse_tx, kern_rx, "sop-drain".to_string(), None);
         drop(kern_tx);
 
         let mut received = 0;

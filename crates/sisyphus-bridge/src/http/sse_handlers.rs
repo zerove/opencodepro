@@ -228,6 +228,26 @@ impl SseEvent {
     /// 破坏性变更；而 `ExecutionEvent` 本身已 `Serialize`，整体放入 payload
     /// 可无损保留全部字段（含 `fuel_consumed` / `duration_ms` 等枚举变体
     /// 中无处安放的信息），事件名用 snake_case 与既有 SSE 事件保持一致。
+    /// 同 [`SseEvent::from_execution_event`]，额外把 trace id 作为维度键注入 payload。
+    ///
+    /// T4.4：让订阅方能把事件与发起它的 HTTP/gRPC 请求串联（`trace_id` 键）。
+    pub fn from_execution_event_with_trace(
+        event: &sisyphus_types::ExecutionEvent,
+        sop_id: &str,
+        trace_id: Option<&str>,
+    ) -> Self {
+        let mut sse = Self::from_execution_event(event, sop_id);
+        if let (SseEvent::Custom { payload, .. }, Some(trace_id)) = (&mut sse, trace_id) {
+            if let Some(map) = payload.as_object_mut() {
+                map.insert(
+                    "trace_id".to_string(),
+                    serde_json::Value::String(trace_id.to_string()),
+                );
+            }
+        }
+        sse
+    }
+
     pub fn from_execution_event(event: &sisyphus_types::ExecutionEvent, sop_id: &str) -> Self {
         // 序列化为 {"NodeStarted": {...}} 的外部标签形态，取出内部值。
         // 失败时退回 NullValue 而不是丢弃事件：SSE 流的语义是「尽力送达」，
@@ -1090,6 +1110,27 @@ mod tests {
         assert_eq!(payload["duration_ms"], 1234);
         assert_eq!(payload["sop_id"], "sop-1");
         assert_eq!(payload["output"], serde_json::json!({"rows": 3}));
+    }
+
+    #[test]
+    fn test_mapped_execution_events_carry_trace_id() {
+        // T4.4：事件负载携带 trace id，便于与发起请求串联
+        let event = sisyphus_types::ExecutionEvent::NodeStarted {
+            node_name: "fetch".to_string(),
+        };
+        let sse = SseEvent::from_execution_event_with_trace(&event, "sop-abc", Some("trace-abc"));
+        assert_eq!(
+            sse.payload_field("trace_id"),
+            Some(serde_json::json!("trace-abc"))
+        );
+        assert_eq!(
+            sse.payload_field("sop_id"),
+            Some(serde_json::json!("sop-abc"))
+        );
+
+        // 未提供 trace id 时不注入该键（保持旧行为兼容）
+        let plain = SseEvent::from_execution_event_with_trace(&event, "sop-abc", None);
+        assert_eq!(plain.payload_field("trace_id"), None);
     }
 
     #[test]

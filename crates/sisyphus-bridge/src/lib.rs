@@ -26,5 +26,6 @@ pub mod peer;
 pub mod sandboxd_client;
 pub mod strategic_executor;
 pub mod tools;
+pub mod trace;
 
 pub use bridge_service::MySisyphusBridge;

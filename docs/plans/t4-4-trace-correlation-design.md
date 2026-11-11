@@ -62,6 +62,27 @@
    从 span 字段读取）。
 7. **文档与契约**：`book/src/sse-events.md` 增补 `trace_id` 说明；OpenAPI 增补响应头声明。
 
+### 5.1 实施进展
+
+| 步骤 | 状态 | 说明 |
+|---|---|---|
+| 1 trace id 工具 | DONE | `crates/sisyphus-types/src/trace.rs`：`generate_trace_id` / `sanitize_trace_id` / `resolve_trace_id` / `TraceId`（6 个单测） |
+| 2 HTTP 入口 | DONE | `crates/sisyphus-bridge/src/http/mod.rs`：`trace_id_middleware`（extensions + tracing span + 响应头），3 个单测 |
+| 3 gRPC 入口 | DONE | `crates/sisyphus-bridge/src/trace.rs`：`TraceInterceptor` + `AuthTraceInterceptor`（组合），3 个单测 |
+| 4 SSE 负载 | DONE | `SseEvent::from_execution_event_with_trace` 注入 `trace_id` 维度键；`execute_goal_handler` / `execute_composite_handler` 从 request extensions 取 trace id，1 个单测 |
+| 5 CLI 注入 | DONE | `BridgeClient::with_auth` 为每次 gRPC 调用注入 `x-trace-id` metadata |
+| 6 工具/LLM 日志 | TODO | 既有 `tracing::info!` 补 `trace_id` span 字段（子步骤继承入口 span） |
+| 7 文档与契约 | TODO | `book/src/sse-events.md` 增补 `trace_id`；OpenAPI 增补响应头声明 |
+
+**实跑证据**（bridge debug 构建，`cluster.enabled=false`）：
+
+| 请求 | 响应头 `x-trace-id` |
+|---|---|
+| `-H 'x-trace-id: trace-live-check'` | `trace-live-check`（原样透传） |
+| 不带该头 | `trace-77f68aeed7c24087b30d2ae59991b411`（生成） |
+| `-H 'x-trace-id: bad id!'` | `trace-acce6fe781c44634938e2d7a45fe6957`（非法值被替换） |
+
+
 ## 6. 兼容性与风险
 
 - **兼容性**：不修改任何 trait 签名；不修改 `ExecutionEvent` 变体；SSE 负载新增键为增量，

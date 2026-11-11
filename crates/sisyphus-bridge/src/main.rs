@@ -18,7 +18,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, Registry};
 
-use sisyphus_bridge::{auth, bridge_service::MySisyphusBridge, http};
+use sisyphus_bridge::{bridge_service::MySisyphusBridge, http};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -358,7 +358,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // ── Start gRPC server ───────────────────────────────────────────────
-    let auth_interceptor = auth::AuthInterceptor::new(auth_token);
+    // T4.4：鉴权 + trace id 注入（组合拦截器）。
+    let auth_interceptor = sisyphus_bridge::trace::AuthTraceInterceptor::new(auth_token);
     let mut server_builder = tonic::transport::Server::builder();
     if let Some(tls) = cluster_server_tls {
         server_builder = server_builder.tls_config(tls).map_err(|e| {
