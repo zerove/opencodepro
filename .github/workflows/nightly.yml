@@ -234,7 +234,7 @@ jobs:
 
   # ── T4.2: 性能回归门禁（定时采样对比基线阈值）────────────────
   perf-regression:
-    timeout-minutes: 30
+    timeout-minutes: 40
     name: Performance Regression Gate
     runs-on: ubuntu-latest
     steps:
@@ -242,6 +242,10 @@ jobs:
       - uses: ./.github/actions/setup-rust
       - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
+      # 采样脚本直接调用 ./target/debug/sisyphus —— 必须先构建 CLI，
+      # 否则门禁会因为找不到二进制而失败（不是「通过」）。
+      - name: Build CLI (debug)
+        run: cargo build -p sisyphus-cli
       - name: Check CLI metrics against baseline
         run: ./scripts/perf-regression-check.sh cli
 
