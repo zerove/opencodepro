@@ -42,6 +42,13 @@ if [ ! -x "$BIN" ]; then
   exit 2
 fi
 
+# 采样依赖 Linux /proc（RSS / FD / 线程）；其它平台无法得到等价指标，
+# 明确失败而不是产出全 0 的假数据。
+if [ ! -r "/proc/self/status" ]; then
+  echo "/proc is not available on this platform; resource sampling is Linux-only" >&2
+  exit 2
+fi
+
 # 转绝对路径（脚本后续会 cd 到数据目录）
 BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"
 
