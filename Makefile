@@ -91,6 +91,7 @@ HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 .PHONY: test-bridge-full test-bridge-dedicated test-cli-handlers
 .PHONY: test-ci
 .PHONY: perf-analyze
+.PHONY: perf-regression perf-regression-bridge
 .PHONY: target-gc target-gc-apply target-size
 .PHONY: dev-tui run-tui clean
 .PHONY: dev ci-quick dev-fmt dev-clippy dev-test ci-bridge
@@ -504,6 +505,24 @@ regs=[(n,i) for n,i in data.items() if isinstance(i,dict) and isinstance(i.get('
 		done; \
 		echo "Benchmark baseline saved as '$$BASELINE_NAME'"; \
 	fi
+
+# — Single-node performance regression gate (T4.2) —
+#
+#   Compares the latest bench sample (scripts/single-node-bench-sample.sh) against the
+#   P2-B baseline thresholds (docs/benchmarks/perf-regression-baseline-2026-11-10.json).
+#   Exits non-zero when any measured p50 exceeds the threshold (or p95 exceeds p50*2).
+#
+#   Usage:
+#     make perf-regression            # check cli
+#     make perf-regression mode=bridge
+
+perf-regression:
+	@echo "━━━ Running performance regression check (cli) ━━━"
+	@./scripts/perf-regression-check.sh cli
+
+perf-regression-bridge:
+	@echo "━━━ Running performance regression check (bridge) ━━━"
+	@./scripts/perf-regression-check.sh bridge
 
 
 # — Single-node demo/readiness convenience (P1-C/P2-C) —

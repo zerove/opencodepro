@@ -1,0 +1,13 @@
+{
+  "created_at": "2026-11-10",
+  "commit": "a3014aa5c7460ae6ee72998c94d9158589e912e0",
+  "description": "P2-B 单机性能回归基线阈值（同口径，p50 为判定项）",
+  "thresholds": {
+    "cli_help_p50_s": 0.05,
+    "cli_exec_p50_s": 0.05,
+    "cli_session_list_p50_s": 0.05,
+    "bridge_ready_p50_ms": 3000,
+    "http_health_p95_s": 0.01,
+    "http_sops_p95_s": 0.01
+  }
+}
