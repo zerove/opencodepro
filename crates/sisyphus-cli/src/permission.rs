@@ -258,14 +258,17 @@ impl CliPermission {
         };
         let line = serde_json::to_string(&entry).context("序列化审计记录失败")?;
         use std::io::Write;
+        // 行内容与换行**一次**写出：分两次 write 时，并发追加方可能插在
+        // 中间（O_APPEND 只保证单次 write 的原子性），产出
+        // `{"a":1}{"b":2}` 这种非法 JSONL 行，审计查询随之失效。
+        let mut payload = line.into_bytes();
+        payload.push(b'\n');
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
             .with_context(|| format!("打开审计文件失败: {}", path.display()))?;
-        file.write_all(line.as_bytes())
-            .and_then(|_| file.write_all(b"\n"))
-            .context("写入审计记录失败")
+        file.write_all(&payload).context("写入审计记录失败")
     }
 }
 
@@ -519,5 +522,42 @@ mod tests {
         std::fs::write(&path, r#"[{"pattern":"exec","permission":"maybe"}]"#).expect("write");
         let err = CliPermission::load(Some(path)).expect_err("非法取值必须报错");
         assert!(err.to_string().contains("Unknown permission value"));
+    }
+
+    #[test]
+    fn test_concurrent_audit_appends_keep_each_line_valid_json() {
+        // 回归：审计行与换行分两次 write 时，并发追加可能把两行拼在一起，
+        // 产出非法 JSONL（审计查询随之失效）。
+        use std::sync::Arc;
+        let dir = std::env::temp_dir().join(format!("sisyphus-perm-audit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("创建临时目录");
+        let audit = dir.join("audit").join("permissions.jsonl");
+        let perms = CliPermission::default().with_audit_path(audit.clone());
+        let perms = Arc::new(perms);
+
+        let mut handles = Vec::new();
+        for i in 0..8 {
+            let perms = perms.clone();
+            handles.push(std::thread::spawn(move || {
+                for _ in 0..25 {
+                    let decision = perms.evaluate("exec");
+                    perms.record_decision("exec", &decision, "allowed");
+                }
+                let _ = i;
+            }));
+        }
+        for handle in handles {
+            handle.join().expect("写线程不应 panic");
+        }
+
+        let content = std::fs::read_to_string(&audit).expect("读取审计文件");
+        let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(lines.len(), 8 * 25, "每条记录都应独占一行");
+        for line in lines {
+            serde_json::from_str::<serde_json::Value>(line)
+                .unwrap_or_else(|e| panic!("审计行不是合法 JSON（{e}）: {line}"));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
