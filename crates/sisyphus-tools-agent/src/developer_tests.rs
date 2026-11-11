@@ -1,7 +1,32 @@
 use super::*;
 use sisyphus_tools_llm::metis::{DummyLlmClient, FixedResponseClient};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tempfile::tempdir;
+
+/// T2.1 slice 1：确定性 2-step plan（CreateFile ×2），interrupt/resume 测试用。
+const T2_1_SLICE1_PLAN: &str = r#"{
+    "goal": "T2.1 Slice1 Goal",
+    "overview": "T2.1 Slice1 Overview",
+    "steps": [
+        {
+            "id": 1,
+            "description": "Create file A",
+            "action": { "type": "CreateFile", "params": { "path": "/tmp/opencode/t2_1_slice1_a.txt", "content": "a" } },
+            "expected_outcome": "File exists",
+            "verification": { "type": "None" },
+            "status": "Pending"
+        },
+        {
+            "id": 2,
+            "description": "Create file B",
+            "action": { "type": "CreateFile", "params": { "path": "/tmp/opencode/t2_1_slice1_b.txt", "content": "b" } },
+            "expected_outcome": "File exists",
+            "verification": { "type": "None" },
+            "status": "Pending"
+        }
+    ]
+}"#;
 
 #[tokio::test]
 async fn test_developer_new() {
@@ -216,4 +241,31 @@ async fn test_run_step_with_fix_sequential() {
     let result = dev.run_step_with_fix(&step).await;
     assert_eq!(result.status, StepStatus::Success);
     assert!(path.exists());
+}
+
+#[tokio::test]
+async fn test_develop_interrupt_returns_cancelled() {
+    let llm = Arc::new(FixedResponseClient(T2_1_SLICE1_PLAN.to_string()));
+    let interrupt = Arc::new(AtomicBool::new(true));
+    let dev =
+        Developer::new(llm).with_checkpoint(tempdir().unwrap().path()).with_interrupt(interrupt);
+
+    let report = dev.develop("T2.1 Slice1 Goal", "ctx", false, false).await.unwrap();
+    assert_eq!(report.overall_status, DevOverallStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn test_develop_resume_skips_completed_steps() {
+    let dir = tempdir().unwrap();
+    let llm = Arc::new(FixedResponseClient(T2_1_SLICE1_PLAN.to_string()));
+    let dev = Developer::new(llm).with_checkpoint(&dir);
+    let report = dev.develop("T2.1 Slice1 Goal", "ctx", false, false).await.unwrap();
+    assert_eq!(report.overall_status, DevOverallStatus::Success);
+    assert_eq!(report.steps.len(), 2);
+
+    let dev2 = Developer::new(Arc::new(FixedResponseClient(T2_1_SLICE1_PLAN.to_string())))
+        .with_checkpoint(&dir);
+    let resumed = dev2.develop("T2.1 Slice1 Goal", "ctx", false, true).await.unwrap();
+    assert_eq!(resumed.overall_status, DevOverallStatus::Success);
+    assert_eq!(resumed.steps.len(), 2);
 }

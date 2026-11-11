@@ -14,6 +14,7 @@ pub use types::{
 
 use sisyphus_tools_llm::metis::LlmClient;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::task::JoinSet;
 use types::EditRequest;
@@ -23,6 +24,7 @@ pub struct Developer {
     llm: Arc<dyn LlmClient>,
     checkpoint_dir: Option<PathBuf>,
     enable_wisdom: bool,
+    interrupt: Arc<AtomicBool>,
 }
 
 impl Developer {
@@ -32,6 +34,7 @@ impl Developer {
             llm,
             checkpoint_dir: None,
             enable_wisdom: false,
+            interrupt: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -44,6 +47,15 @@ impl Developer {
     /// Enable checkpoint-based resume: saves progress after each step.
     pub fn with_checkpoint<P: AsRef<Path>>(mut self, dir: P) -> Self {
         self.checkpoint_dir = Some(dir.as_ref().to_path_buf());
+        self
+    }
+
+    /// Enable cancellation: setting the flag interrupts the run at a step boundary.
+    ///
+    /// MVP（T2.1）：中断即「前端设置 flag → 循环在步骤边界检查 → 保存 checkpoint → 返回 Cancelled」。
+    /// 恢复仍复用 [`Developer::develop`] 的 `resume` 参数（checkpoint 加载 + 跳过已完成 step）。
+    pub fn with_interrupt(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.interrupt = flag;
         self
     }
 
@@ -399,6 +411,7 @@ Return ONLY the JSON object."#;
         }
 
         let mut step_results: Vec<StepResult> = existing_results;
+        let mut cancelled = false;
 
         if parallel && pending_steps.len() > 1 {
             // --- Parallel execution ---
@@ -406,6 +419,10 @@ Return ONLY the JSON object."#;
             let checkpoint_dir = self.checkpoint_dir.clone();
             let mut join_set = JoinSet::new();
             for step in &pending_steps {
+                if self.interrupt.load(Ordering::SeqCst) {
+                    cancelled = true;
+                    break;
+                }
                 let step = (*step).clone();
                 let llm = llm.clone();
                 let checkpoint_dir = checkpoint_dir.clone();
@@ -446,6 +463,10 @@ Return ONLY the JSON object."#;
         } else {
             // --- Sequential execution ---
             for step in &pending_steps {
+                if self.interrupt.load(Ordering::SeqCst) {
+                    cancelled = true;
+                    break;
+                }
                 let result = self.run_step_with_fix(step).await;
                 track_artifact(step, &mut artifacts);
                 step_results.push(result);
@@ -459,7 +480,10 @@ Return ONLY the JSON object."#;
             }
         }
 
-        let report = build_report(goal, step_results, artifacts);
+        let mut report = build_report(goal, step_results, artifacts);
+        if cancelled {
+            report.overall_status = DevOverallStatus::Cancelled;
+        }
 
         // --- Wisdom: record outcome ---
         if self.enable_wisdom {
@@ -467,6 +491,7 @@ Return ONLY the JSON object."#;
                 DevOverallStatus::Success => "SUCCESS",
                 DevOverallStatus::PartialFailure { .. } => "PARTIAL",
                 DevOverallStatus::Failed(_) => "FAILED",
+                DevOverallStatus::Cancelled => "CANCELLED",
             };
             let _ = sisyphus_tools_system::wisdom::wisdom_record(
                 "dev-outcomes",
@@ -534,6 +559,7 @@ pub fn format_report(report: &DevelopmentReport) -> String {
             ));
         },
         DevOverallStatus::Failed(e) => output.push_str(&format!("Overall Status: FAILED ({e})\n")),
+        DevOverallStatus::Cancelled => output.push_str("Overall Status: CANCELLED\n"),
     }
 
     output.push_str("--------------------------------------------------\n");

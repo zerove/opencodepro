@@ -82,8 +82,14 @@ pub struct StepResult {
 #[derive(Debug, Clone, PartialEq)]
 pub enum DevOverallStatus {
     Success,
-    PartialFailure { completed: usize, total: usize },
+    PartialFailure {
+        completed: usize,
+        total: usize,
+    },
     Failed(String),
+    /// 用户中断（T2.1 MVP）：中断前已完成的步骤结果已落 checkpoint，
+    /// 调用方可用 resume 恢复未完成步骤。
+    Cancelled,
 }
 
 /// Full development report
