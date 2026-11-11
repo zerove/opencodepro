@@ -1,0 +1,4 @@
+PASS  dev_dialog_opens
+PASS  running_view
+PASS  resume_entry_after_interrupt
+TUI dev smoke OK (3 checks)

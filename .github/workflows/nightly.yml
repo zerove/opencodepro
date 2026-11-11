@@ -199,6 +199,8 @@ jobs:
         run: cargo build -p sisyphus-cli
       - name: Measure first frame (3 samples)
         run: ./scripts/measure-tui-first-frame.sh ./target/debug/sisyphus 3
+      - name: TUI conversational-execution smoke
+        run: ./scripts/tui-dev-smoke.sh ./target/debug/sisyphus
       - uses: actions/upload-artifact@v4
         if: always()
         with:

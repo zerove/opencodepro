@@ -70,6 +70,18 @@
 - 提交信息使用中文 conventional commits；每条提交附可复跑验证命令。
 - 文档不使用 `- [x]` 勾选项（避免与 `scripts/audit_todo.py` 的证据门禁冲突）。
 
+## 8. 真实交互证据（录屏的等效替代）
+
+录屏不可复跑，因此用「可复跑脚本 + 断言 + 抓取的屏幕文本」作为等效证据：
+
+- 脚本：`scripts/tui-dev-smoke.sh [bin]`（伪终端驱动 TUI）
+- 覆盖路径：Ctrl+N 新建会话 → 输入模式 → `/dev` → Dev 对话框 → 输入目标 →
+  Tab 到 Run → 启动（运行中视图）→ Esc 中断（出现恢复入口）
+- 断言：3 项（`dev_dialog_opens` / `running_view` / `resume_entry_after_interrupt`）
+- 实跑：`./scripts/tui-dev-smoke.sh ./target/debug/sisyphus` → 3/3 PASS（rc=0）
+- 日志：`docs/benchmarks/acceptance/2026-11-12/phase2/tui-dev-smoke.txt`
+- CI：nightly `tui-first-frame` job（同 job 已构建 CLI，避免重复编译）
+
 ## 9. 已知后续项（不在 MVP 范围）
 
 1. **TUI ↔ bridge goal stream 打通**：当前 dev 流程走 **in-process `Developer`**（引擎内执行），

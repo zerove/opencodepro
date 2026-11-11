@@ -37,7 +37,8 @@ jobs:
                  scripts/measure-tui-first-frame.sh \
                  scripts/measure-bridge-startup.sh \
                  scripts/perf-regression-check.sh \
-                 scripts/quality-metrics-collect.sh
+                 scripts/quality-metrics-collect.sh \
+                 scripts/tui-dev-smoke.sh
 
       - name: Smoke script help
         run: ./scripts/single-node-contract-smoke.sh --help
