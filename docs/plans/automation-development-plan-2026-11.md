@@ -106,7 +106,7 @@
 | T4.4 | 统一 trace 关联 | 入口生成 trace id，贯穿 SOP/工具/LLM 日志与响应头；先行设计文档 | 一次请求可查到全部子步骤；设计评审记录 | M–L |
 | T4.4 状态（执行） | DONE | 设计：`docs/plans/t4-4-trace-correlation-design.md`；实施步骤 1-7 全部落地：trace id 工具（types，6 单测）、HTTP 入口中间件（extensions+span+响应头，3 单测）、gRPC 拦截器 + 鉴权组合（3 单测）、SSE 负载 `trace_id` 维度键（1 单测）、CLI metadata 注入、gRPC 关键方法 span 记录 trace_id、`book/src/sse-events.md` + OpenAPI 契约。实跑 bridge：带 `x-trace-id: trace-live-check` → 原样回写；不带 → 生成 `trace-77f68a…`；非法值 → 替换。测试独立成文件以避免 OpenAPI 路由覆盖测试误扫 |
 | T4.5 | 长窗口稳定性 | 连续执行/资源泄漏（内存、句柄、DB）监测 | 数小时运行记录与结论（不伪造连续样本） | M |
-| T4.5 状态（执行） | IN_PROGRESS | 监测脚本落地：`scripts/long-run-stability.sh` + `make long-run-stability`（bridge 周期只读负载 + RSS/FD/线程采样 → summary.json/summary.md）；实跑 10 分钟窗口（119 采样，探活与 metrics 100%）：RSS 57788→58564 KB（斜率 +35.6 KB/min，判定 stable）、FD 21→21、线程 18→18 均 stable；证据 `docs/benchmarks/long-run/2026-11-11-5b10b04/`。"数小时"结论需加长窗口重采（脚本已支持分钟参数），当前不外推 |
+| T4.5 状态（执行） | IN_PROGRESS | `scripts/long-run-stability.sh` + `make long-run-stability`（bridge 只读负载 + RSS/FD/线程采样 → summary.json/summary.md），已接入 nightly workflow；60 分钟窗口 715 采样：探活/metrics 100%，RSS +5.8 KB/min（stable）、FD 20→11、线程 18→14（不增反降）；证据 `docs/benchmarks/long-run/2026-11-11-558e7b0/`。「数小时」结论需更长窗口重采 |
 
 ## 5. 质量与性能指标（初始目标，待基线校准）
 
@@ -198,7 +198,7 @@
 | T4.2 性能回归门禁 | DONE | `scripts/perf-regression-check.sh <mode>` + `make perf-regression{,-bridge}`；基线 `docs/benchmarks/perf-regression-baseline-2026-11-10.json`；已接入 nightly workflow |
 | T4.3 evals 子集入 CI | DONE | eval-runner 支持 `--cases`（`agent/id`）；`scripts/evals-ci-run.sh` + `make eval-ci`；已接入 ci.yml（PR 期 `evals-ci` job）；实跑子集 2/2 PASS（`docs/benchmarks/evals-ci/2026-11-11-5a23f9a.json`） |
 | T4.4 统一 trace 关联 | DONE | 设计 `docs/plans/t4-4-trace-correlation-design.md`；实现 7 步全落地：trace id 工具（types）、HTTP 入口中间件、gRPC 拦截器 + 鉴权组合、SSE 负载 `trace_id` 维度键、CLI metadata 注入、gRPC 关键方法 span 字段、`book/src/sse-events.md` + OpenAPI 契约；10 个 trace 单测；实跑透传/生成/非法替换三态验证 |
-| T4.5 长窗口稳定性 | IN_PROGRESS | `scripts/long-run-stability.sh` + `make long-run-stability`（RSS/FD/线程采样 + 只读负载 + 泄漏启发式判定），已接入 nightly workflow；10 分钟窗口 119 采样：探活 100%、RSS +35.6 KB/min、FD 21→21、线程 18→18 均 stable（`docs/benchmarks/long-run/2026-11-11-5b10b04/`）；加长窗口证据重采中 |
+| T4.5 长窗口稳定性 | IN_PROGRESS | `scripts/long-run-stability.sh` + `make long-run-stability`（RSS/FD/线程采样 + 只读负载 + 泄漏启发式判定），已接入 nightly workflow；**60 分钟窗口**（715 采样，探活与 metrics 成功率 100%）：RSS 58112→58916 KB（斜率 **+5.8 KB/min**，判定 stable）、FD 20→11、线程 18→14 均不增反降 → 无泄漏迹象（证据 `docs/benchmarks/long-run/2026-11-11-558e7b0/`）；对照 10 分钟窗口斜率 +35.6 KB/min，说明短窗斜率含噪声。**未完成**：「数小时」结论需更长窗口重采（脚本支持分钟参数），当前不外推 |
 
 > 状态取值：DONE / IN_PROGRESS / BLOCKED / TODO。`BLOCKED` 必须写明缺失的环境或依赖。
 
