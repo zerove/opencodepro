@@ -86,3 +86,4 @@
 
 - 承接 `docs/plans/single-node-full-functionality-audit.md` 的 S1–S4 基线，作为 P1 启动输入。
 - 对标依据见 `docs/comparison/opencode-jcode-sisyphus-comparison-2026-11.md`；历史对比见 `docs/comparison/opencode-omo-comparison.md`（含 2026-11 更新说明）。
+- 后续执行计划（阶段 0–4、任务分解、指标与风险）见 `docs/plans/automation-development-plan-2026-11.md`。
