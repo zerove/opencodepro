@@ -102,3 +102,26 @@ DAG 节点级并发由 `[executor] max_concurrent_tasks` 控制。
   因此**本值只能收紧、不能放宽**：设为 `0.0` 表示完全采用自适应档位。
 
 使用 `RUST_LOG=sisyphus_core=info` 通过 tracing spans（`predict`、`execute`、`reflect`、`evolve`）监控认知循环性能。
+## 单机测量与回归门禁
+
+| 脚本 | 用途 | 产物 | CI 接线 |
+|---|---|---|---|
+| `scripts/single-node-bench-sample.sh` | CLI / bridge 采样（n/min/p50/p95/avg/max） | JSON | — |
+| `scripts/perf-regression-check.sh <cli\|bridge>` | 与基线阈值对比，超阈值退出非零 | 文本 / JSON | nightly `perf-regression` |
+| `scripts/measure-tui-first-frame.sh [bin] [samples]` | 伪终端测 TUI 首帧（进程启动 → 首帧可见） | `docs/benchmarks/tui-first-frame/*.json` | nightly `tui-first-frame` |
+| `scripts/measure-bridge-startup.sh` | bridge 启动分段（`startup_phase_*_ms`）与端到端就绪耗时 | JSON | — |
+| `scripts/long-run-stability.sh [minutes]` | 长窗口 RSS / 句柄 / 线程采样 + 周期性只读负载 | `docs/benchmarks/long-run/<date>-<commit>/` | nightly `long-run-stability` |
+| `scripts/quality-metrics-collect.sh` | 质量指标快照（bridge `llm_*` + 任务级聚合） | `docs/benchmarks/quality-metrics/*.json` | — |
+| `scripts/evals-ci-run.sh [cases]` | evals 稳定子集（mock LLM，无外部依赖） | `docs/benchmarks/evals-ci/*.json` | ci `evals-ci` |
+
+本地快速跑：
+
+```bash
+make perf-regression      # CLI 性能回归门禁
+make perf-tui             # TUI 首帧测量
+make long-run-stability   # 10 分钟长窗口稳定性
+make eval-ci              # evals 稳定子集
+./scripts/quality-metrics-collect.sh
+```
+
+口径约定：样本缺失时指标记 `null`（不伪造 0）；长窗口结论只覆盖**实际监测时长**，不外推到未测区间。

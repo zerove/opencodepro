@@ -69,3 +69,15 @@
 - 每完成一个切片：更新主计划 §11 执行进展表中 T2.1 行（状态 + 证据命令与结果），并在本文 §3 表格更新切片状态。
 - 提交信息使用中文 conventional commits；每条提交附可复跑验证命令。
 - 文档不使用 `- [x]` 勾选项（避免与 `scripts/audit_todo.py` 的证据门禁冲突）。
+
+## 9. 已知后续项（不在 MVP 范围）
+
+1. **TUI ↔ bridge goal stream 打通**：当前 dev 流程走 **in-process `Developer`**（引擎内执行），
+   未接 `/api/execute/goal/{id}/stream`。MVP 选 in-process 是为了避免新增 RPC 与审批/中断跨边界改造，
+   但「对话式执行」若要覆盖**跨进程真实目标**（bridge 侧 DAG + SSE 流），需要把
+   `BgOp::DevAsk`/中断语义迁到 bridge 侧（goal 级 cancel + 事件负载携带审批请求）。
+2. **token 级 LLM 流式**：`LlmClient::chat` 返回整段字符串，MVP 以「step 进度 + 终态 report」
+   作为流式等价物；真正的 token 流需要 provider 侧改造。
+3. **并行分支的中断语义**：`Developer::develop` 的 parallel 分支未做 checkpoint 粒度中断，
+   MVP 验收固定 `parallel=false`。
+4. **`Developer` 错误类型仍为 `String`**（未迁到 `thiserror`），属既有技术债，不在 T2.1 内改动签名。
