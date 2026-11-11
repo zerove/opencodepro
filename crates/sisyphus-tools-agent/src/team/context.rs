@@ -153,27 +153,13 @@ impl TeamContext {
         &self,
         tasks: &[&crate::team::TaskNode],
     ) -> Vec<(String, Vec<String>)> {
-        let mut key_writers: HashMap<String, Vec<String>> = HashMap::new();
-        for task in tasks {
-            // Tasks declare write keys via a convention in args
-            // For now, we check the tool_id for known patterns
-            // In the future, TaskNode will have explicit write_keys field
-            if let Some(write_keys) = Self::extract_write_keys(task) {
-                for key in write_keys {
-                    key_writers.entry(key).or_default().push(task.id.clone());
-                }
-            }
-        }
-        key_writers.into_iter().filter(|(_, writers)| writers.len() > 1).collect()
-    }
-
-    /// Extract declared write keys from a task's args.
-    /// Convention: args["_write_keys"] = ["key1", "key2", ...]
-    fn extract_write_keys(task: &crate::team::TaskNode) -> Option<Vec<String>> {
-        task.args
-            .get("_write_keys")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        // 统一走冲突检测模块（T3.4）：写键来源含显式 `write_keys` 字段
+        // 与兼容旧约定 `args["_write_keys"]`。
+        crate::team::conflict::detect_conflicts(tasks)
+            .into_iter()
+            .filter(|c| c.kind == crate::team::conflict::ConflictKind::WriteWrite)
+            .map(|c| (c.key, c.task_ids))
+            .collect()
     }
 }
 

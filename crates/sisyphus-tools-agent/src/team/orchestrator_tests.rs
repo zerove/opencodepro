@@ -1091,3 +1091,59 @@ fn test_delegation_policy_from_args() {
     let malformed = DelegationPolicy::from_args(&json!({"_delegation": "not-an-object"}));
     assert_eq!(malformed, DelegationPolicy::default());
 }
+
+#[tokio::test]
+async fn test_parallel_write_conflict_is_detected_and_serialized() {
+    // T3.4：同批任务写同一资源 → 产生冲突告警事件，且两个任务仍都执行
+    let orch = make_orchestrator();
+    let tasks = vec![
+        TaskNode {
+            id: "t1".into(),
+            agent_id: "metis".into(),
+            tool_id: "metis/analyse".into(),
+            args: json!({"request": "first"}),
+            depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec!["src/lib.rs".into()],
+        },
+        TaskNode {
+            id: "t2".into(),
+            agent_id: "metis".into(),
+            tool_id: "metis/analyse".into(),
+            args: json!({"request": "second"}),
+            depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec!["src/lib.rs".into()],
+        },
+    ];
+    let plan = TeamPlan {
+        goal_id: "conflict".into(),
+        tasks,
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+    let ctx = Arc::new(TeamContext::new());
+    let report = orch.execute_plan_internal(plan, Some(tx), ctx).await.expect("计划应执行完成");
+
+    assert_eq!(report.task_results.len(), 2, "两个任务都应执行");
+    assert!(
+        report.task_results.iter().all(|r| r.success),
+        "冲突串行化后任务仍应成功"
+    );
+
+    let mut conflicts = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        if let TeamEvent::ConflictDetected {
+            kind,
+            key,
+            task_ids,
+        } = event
+        {
+            conflicts.push((kind, key, task_ids));
+        }
+    }
+    assert_eq!(conflicts.len(), 1, "应产生 1 个冲突告警");
+    assert_eq!(conflicts[0].0, "write_write");
+    assert_eq!(conflicts[0].1, "src/lib.rs");
+    assert_eq!(conflicts[0].2.len(), 2, "告警应指出两个冲突任务");
+}

@@ -90,6 +90,7 @@
 | T3.2 | Provider 交互式引导 | `provider login` 选择→输入→连通性测试→写配置；失败可解释 | 新用户 5 分钟内完成首次真实调用（有凭据环境） | M |
 | T3.3 | 启动分段归因与优化 | bridge 就绪分段计时（配置/sqlite/embedding/端口）；TUI 首帧 PTY 测量；按需懒加载 | 分段耗时表 + 优化前后对比；TUI 首帧基线文档 | M |
 | T3.4 | 并行冲突感知（可选） | `team run --strategy parallel` 检测同文件并发编辑，串行化或告警 | 冲突场景产生告警而非静默覆盖 | M–L |
+| T3.4 状态（执行） | DONE | 新增 `crates/sisyphus-tools-agent/src/team/conflict.rs`：`detect_conflicts`（写写 / 读写冲突，写键来源含显式 `write_keys` 与兼容旧 `args["_write_keys"]`）+ `partition_by_write_conflicts`（按写冲突拆执行波次）；调度器在每批就绪任务上检测 → 发 `TeamEvent::ConflictDetected` 告警 + `tracing::warn!` → 冲突任务分波次串行化（波次内仍并行），避免静默覆盖；既有 `TeamContext::detect_write_conflicts` 改为复用新模块。证据：6 个新单测（5 模块级 + 1 调度器级：两任务写同一 key → 产生 1 个 `write_write` 告警且两任务均执行成功）；`cargo test -p sisyphus-tools-agent --lib` 104 passed |
 
 ### 阶段 4：质量指标与回归（持续）
 

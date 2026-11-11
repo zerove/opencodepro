@@ -11,11 +11,13 @@
 pub mod error;
 pub(crate) mod parse;
 
+pub mod conflict;
 mod context;
 mod decomposer;
 mod orchestrator;
 mod scheduler;
 
+pub use conflict::{detect_conflicts, partition_by_write_conflicts, Conflict, ConflictKind};
 pub use context::TeamContext;
 pub use error::TeamError;
 pub use orchestrator::TeamOrchestrator;
@@ -142,6 +144,17 @@ pub enum TeamEvent {
     },
     /// A task completed (success or failure).
     TaskCompleted(TaskResult),
+    /// 检测到并行冲突（T3.4）：同批任务写同一资源，或读写竞争。
+    ///
+    /// 冲突任务会被拆到不同执行波次（串行化），避免静默覆盖。
+    ConflictDetected {
+        /// 冲突类型：`write_write` / `read_write`。
+        kind: String,
+        /// 冲突的资源键（文件路径等）。
+        key: String,
+        /// 参与冲突的任务 id。
+        task_ids: Vec<String>,
+    },
     /// All tasks complete, synthesis starting.
     Synthesizing { completed: usize, failed: usize },
     /// Reflection phase started.

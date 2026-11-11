@@ -4,6 +4,7 @@
 //! runs tasks respecting dependency order with per-agent concurrency limits,
 //! deadlock detection, and optional event streaming.
 
+use super::conflict::{detect_conflicts, partition_by_write_conflicts};
 use super::orchestrator::TeamOrchestrator;
 use super::{
     DelegationPolicy, TaskNode, TaskResult, TeamContext, TeamError, TeamEvent, TeamPlan, TeamReport,
@@ -154,169 +155,191 @@ impl TeamOrchestrator {
                 *active.entry(task.agent_id.clone()).or_insert(0) += 1;
             }
 
-            // Execute ready tasks in parallel
-            let units: Vec<WorkUnit> = ready
-                .iter()
-                .map(|task| {
-                    let executor = self.executor.clone();
-                    let tool_id = task.tool_id.clone();
-                    let context = context.clone();
-                    let task_id = task.id.clone();
-                    let read_keys = task.read_keys.clone();
-                    let write_keys = task.write_keys.clone();
-                    let agent_id = task.agent_id.clone();
+            // T3.4：并行冲突检测 —— 同批任务写同一资源时告警，并拆波次串行化
+            let conflicts = detect_conflicts(&ready);
+            for conflict in &conflicts {
+                tracing::warn!(
+                    kind = conflict.kind.as_str(),
+                    key = %conflict.key,
+                    tasks = ?conflict.task_ids,
+                    "parallel task conflict detected; conflicting tasks will be serialized"
+                );
+                if let Some(tx) = &event_tx {
+                    let _ = tx.try_send(TeamEvent::ConflictDetected {
+                        kind: conflict.kind.as_str().to_string(),
+                        key: conflict.key.clone(),
+                        task_ids: conflict.task_ids.clone(),
+                    });
+                }
+            }
+            // 写冲突的任务分到不同波次：波次之间顺序执行，波次内部并行
+            let waves = partition_by_write_conflicts(&ready);
 
-                    // Inject context values into args for keys this task reads
-                    let mut args = task.args.clone();
-                    if !read_keys.is_empty() {
-                        let mut ctx_values = serde_json::Map::new();
-                        for key in &read_keys {
-                            if let Some(value) = context.read_tracked(key, &task_id) {
-                                ctx_values.insert(key.clone(), value);
+            for wave in waves {
+                // Execute ready tasks in parallel
+                let units: Vec<WorkUnit> = wave
+                    .iter()
+                    .map(|task| {
+                        let executor = self.executor.clone();
+                        let tool_id = task.tool_id.clone();
+                        let context = context.clone();
+                        let task_id = task.id.clone();
+                        let read_keys = task.read_keys.clone();
+                        let write_keys = task.write_keys.clone();
+                        let agent_id = task.agent_id.clone();
+
+                        // Inject context values into args for keys this task reads
+                        let mut args = task.args.clone();
+                        if !read_keys.is_empty() {
+                            let mut ctx_values = serde_json::Map::new();
+                            for key in &read_keys {
+                                if let Some(value) = context.read_tracked(key, &task_id) {
+                                    ctx_values.insert(key.clone(), value);
+                                }
+                            }
+                            if !ctx_values.is_empty() {
+                                args["_context"] = Value::Object(ctx_values);
                             }
                         }
-                        if !ctx_values.is_empty() {
-                            args["_context"] = Value::Object(ctx_values);
+
+                        // Resolve the delegation policy (`args["_delegation"]` convention):
+                        // retries, per-attempt timeout, and fallback agents.
+                        // Fallback agents are pre-validated here so the handler only
+                        // deals with retry + timeout + candidate sequencing.
+                        let policy = DelegationPolicy::from_args(&args);
+                        let mut candidates: Vec<String> =
+                            Vec::with_capacity(1 + policy.fallback_agents.len());
+                        candidates.push(agent_id.clone());
+                        for fallback in &policy.fallback_agents {
+                            if fallback != &agent_id
+                                && self.validate_tool_for_agent(fallback, &tool_id).is_ok()
+                            {
+                                candidates.push(fallback.clone());
+                            }
                         }
-                    }
+                        let retries = policy.retries;
+                        let timeout_ms = policy.timeout_ms;
 
-                    // Resolve the delegation policy (`args["_delegation"]` convention):
-                    // retries, per-attempt timeout, and fallback agents.
-                    // Fallback agents are pre-validated here so the handler only
-                    // deals with retry + timeout + candidate sequencing.
-                    let policy = DelegationPolicy::from_args(&args);
-                    let mut candidates: Vec<String> =
-                        Vec::with_capacity(1 + policy.fallback_agents.len());
-                    candidates.push(agent_id.clone());
-                    for fallback in &policy.fallback_agents {
-                        if fallback != &agent_id
-                            && self.validate_tool_for_agent(fallback, &tool_id).is_ok()
-                        {
-                            candidates.push(fallback.clone());
-                        }
-                    }
-                    let retries = policy.retries;
-                    let timeout_ms = policy.timeout_ms;
+                        let args_bytes = serde_json::to_vec(&args).unwrap_or_default();
 
-                    let args_bytes = serde_json::to_vec(&args).unwrap_or_default();
-
-                    WorkUnit {
-                        id: task_id.clone(),
-                        name: format!("{}:{}", agent_id, tool_id),
-                        handler: Box::new(move || {
-                            let ex = executor.clone();
-                            let tid = tool_id.clone();
-                            let args = args_bytes.clone();
-                            let ctx = context.clone();
-                            let wid = write_keys.clone();
-                            let tid_for_write = task_id.clone();
-                            Box::pin(async move {
-                                // Delegation loop: primary agent first, then fallbacks,
-                                // each with up to `retries` retries after the first attempt.
-                                let mut last_error: Option<String> = None;
-                                for candidate in &candidates {
-                                    for _ in 0..=retries {
-                                        let fut = ex.execute(&tid, args.clone(), 0);
-                                        let result = match timeout_ms {
-                                            Some(ms) if ms > 0 => {
-                                                match tokio::time::timeout(
-                                                    std::time::Duration::from_millis(ms),
-                                                    fut,
-                                                )
-                                                .await
-                                                {
-                                                    Ok(res) => res,
-                                                    Err(_) => Err(
-                                                        sisyphus_types::TypesError::InternalError(
-                                                            format!("task timed out after {ms}ms"),
+                        WorkUnit {
+                            id: task_id.clone(),
+                            name: format!("{}:{}", agent_id, tool_id),
+                            handler: Box::new(move || {
+                                let ex = executor.clone();
+                                let tid = tool_id.clone();
+                                let args = args_bytes.clone();
+                                let ctx = context.clone();
+                                let wid = write_keys.clone();
+                                let tid_for_write = task_id.clone();
+                                Box::pin(async move {
+                                    // Delegation loop: primary agent first, then fallbacks,
+                                    // each with up to `retries` retries after the first attempt.
+                                    let mut last_error: Option<String> = None;
+                                    for candidate in &candidates {
+                                        for _ in 0..=retries {
+                                            let fut = ex.execute(&tid, args.clone(), 0);
+                                            let result = match timeout_ms {
+                                                Some(ms) if ms > 0 => {
+                                                    match tokio::time::timeout(
+                                                        std::time::Duration::from_millis(ms),
+                                                        fut,
+                                                    )
+                                                    .await
+                                                    {
+                                                        Ok(res) => res,
+                                                        Err(_) => Err(
+                                                            sisyphus_types::TypesError::InternalError(
+                                                                format!("task timed out after {ms}ms"),
+                                                            ),
                                                         ),
-                                                    ),
-                                                }
-                                            },
-                                            _ => fut.await,
-                                        };
-                                        match result {
-                                            Ok(bytes) => {
-                                                let mut value: Value =
-                                                    serde_json::from_slice(&bytes)
-                                                        .unwrap_or(Value::Null);
+                                                    }
+                                                },
+                                                _ => fut.await,
+                                            };
+                                            match result {
+                                                Ok(bytes) => {
+                                                    let mut value: Value =
+                                                        serde_json::from_slice(&bytes)
+                                                            .unwrap_or(Value::Null);
 
-                                                // Capture writes from task output
-                                                // Convention: output["_writes"] = {"key": value, ...}
-                                                if let Some(writes) =
-                                                    value.get("_writes").and_then(|v| v.as_object())
-                                                {
-                                                    for (key, val) in writes {
-                                                        if wid.contains(key) || wid.is_empty() {
-                                                            ctx.write(
-                                                                key.clone(),
-                                                                val.clone(),
-                                                                &tid_for_write,
-                                                            );
+                                                    // Capture writes from task output
+                                                    // Convention: output["_writes"] = {"key": value, ...}
+                                                    if let Some(writes) =
+                                                        value.get("_writes").and_then(|v| v.as_object())
+                                                    {
+                                                        for (key, val) in writes {
+                                                            if wid.contains(key) || wid.is_empty() {
+                                                                ctx.write(
+                                                                    key.clone(),
+                                                                    val.clone(),
+                                                                    &tid_for_write,
+                                                                );
+                                                            }
                                                         }
                                                     }
-                                                }
 
-                                                // Annotate which agent actually produced
-                                                // the result (primary or fallback).
-                                                if let Value::Object(map) = &mut value {
-                                                    map.insert(
-                                                        "_delegated_agent".into(),
-                                                        Value::String(candidate.clone()),
-                                                    );
-                                                }
+                                                    // Annotate which agent actually produced
+                                                    // the result (primary or fallback).
+                                                    if let Value::Object(map) = &mut value {
+                                                        map.insert(
+                                                            "_delegated_agent".into(),
+                                                            Value::String(candidate.clone()),
+                                                        );
+                                                    }
 
-                                                return Ok(value);
-                                            },
-                                            Err(e) => last_error = Some(e.to_string()),
+                                                    return Ok(value);
+                                                },
+                                                Err(e) => last_error = Some(e.to_string()),
+                                            }
                                         }
                                     }
-                                }
-                                Err(sisyphus_tools_core::ToolError::Generic(
-                                    last_error.unwrap_or_else(|| {
-                                        "delegation failed: no candidates".into()
-                                    }),
-                                ))
-                            })
-                        }),
-                    }
-                })
-                .collect();
+                                    Err(sisyphus_tools_core::ToolError::Generic(
+                                        last_error.unwrap_or_else(|| {
+                                            "delegation failed: no candidates".into()
+                                        }),
+                                    ))
+                                })
+                            }),
+                        }
+                    })
+                    .collect();
 
-            let orchestrator = WorkOrchestrator::new(ready.len());
-            let reports = orchestrator.run_all(units).await.unwrap_or_default();
+                let orchestrator = WorkOrchestrator::new(wave.len());
+                let reports = orchestrator.run_all(units).await.unwrap_or_default();
 
-            for (i, report) in reports.iter().enumerate() {
-                let task = ready[i];
-                let result = if report.status == crate::delegate::WorkStatus::Completed {
-                    TaskResult {
-                        task_id: task.id.clone(),
-                        agent_id: task.agent_id.clone(),
-                        success: true,
-                        output: report.result.clone(),
-                        error: None,
-                        duration_ms: report.duration_ms,
+                for (i, report) in reports.iter().enumerate() {
+                    let task = wave[i];
+                    let result = if report.status == crate::delegate::WorkStatus::Completed {
+                        TaskResult {
+                            task_id: task.id.clone(),
+                            agent_id: task.agent_id.clone(),
+                            success: true,
+                            output: report.result.clone(),
+                            error: None,
+                            duration_ms: report.duration_ms,
+                        }
+                    } else {
+                        TaskResult {
+                            task_id: task.id.clone(),
+                            agent_id: task.agent_id.clone(),
+                            success: false,
+                            output: None,
+                            error: report.error.clone(),
+                            duration_ms: report.duration_ms,
+                        }
+                    };
+                    // Decrement active count for this agent
+                    if let Some(count) = active.get_mut(&task.agent_id) {
+                        *count = count.saturating_sub(1);
                     }
-                } else {
-                    TaskResult {
-                        task_id: task.id.clone(),
-                        agent_id: task.agent_id.clone(),
-                        success: false,
-                        output: None,
-                        error: report.error.clone(),
-                        duration_ms: report.duration_ms,
+                    // Emit TaskCompleted
+                    if let Some(tx) = &event_tx {
+                        let _ = tx.try_send(TeamEvent::TaskCompleted(result.clone()));
                     }
-                };
-                // Decrement active count for this agent
-                if let Some(count) = active.get_mut(&task.agent_id) {
-                    *count = count.saturating_sub(1);
+                    task_results.push(result.clone());
+                    completed.insert(task.id.clone(), result);
                 }
-                // Emit TaskCompleted
-                if let Some(tx) = &event_tx {
-                    let _ = tx.try_send(TeamEvent::TaskCompleted(result.clone()));
-                }
-                task_results.push(result.clone());
-                completed.insert(task.id.clone(), result);
             }
 
             for task in &ready {
