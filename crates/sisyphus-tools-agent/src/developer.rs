@@ -1024,6 +1024,7 @@ fn gate_file_context(output: &str) -> String {
             ));
         }
     }
+    ctx.push_str(&gate_test_context());
     ctx
 }
 
@@ -1347,6 +1348,49 @@ fn api_identifier(signature: &str) -> Option<String> {
     } else {
         Some(name)
     }
+}
+
+/// 收集工作区里的**测试文件**内容，作为闸门修复的额外上下文。
+///
+/// 测试文件才是「期望的 API 长什么样」的权威说明：实测 3B 模型在 s3 里把函数
+/// 写成了模块声明（`pub mod multiply;`），因为它没看到测试里的
+/// `use l3_s3::multiply;`（函数导入）。错误输出只点名了 `src/lib.rs`，测试文件
+/// 没进上下文，于是模型无从判断该定义函数还是模块。
+fn gate_test_context() -> String {
+    gate_test_context_in(std::path::Path::new("."))
+}
+
+/// `gate_test_context` 的可测版本：从 `root` 下找测试文件。
+fn gate_test_context_in(root: &std::path::Path) -> String {
+    let mut ctx = String::new();
+    let mut files: Vec<PathBuf> = Vec::new();
+    for dir in ["tests", "test", "src/tests"] {
+        let Ok(entries) = std::fs::read_dir(root.join(dir)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    for path in files.iter().take(2) {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            ctx.push_str(&format!(
+                "--- {} (test expectations) ---\n{}\n",
+                path.display(),
+                truncate_chars(&content, 2000)
+            ));
+        }
+    }
+    if ctx.is_empty() {
+        return String::new();
+    }
+    format!(
+        "Test files (they define the expected API — a `use x::y;` import means a FUNCTION, not a module):\n{ctx}"
+    )
 }
 
 /// 从旧内容里抽出某个公开 API 的**完整代码块**（按大括号配平）。

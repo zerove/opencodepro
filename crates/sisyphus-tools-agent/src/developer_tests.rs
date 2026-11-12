@@ -847,3 +847,89 @@ fn merge_missing_public_apis_is_noop_when_nothing_dropped() {
     assert!(restored.is_empty());
     assert_eq!(merged, after);
 }
+
+// ── 闸门修复上下文必须包含测试文件 ────────────────────────────────
+//
+// 背景（真实缺陷）：s3 场景里 3B 模型把 `pub fn multiply` 写成了
+// `pub mod multiply;`。闸门错误只点名 `src/lib.rs`，而「期望的是函数」这件事
+// 只写在测试里（`use l3_s3::multiply;`）—— 测试文件没进上下文，模型无从判断。
+// 补上测试文件后 s3 从「2/3 通过」变成连续 6/6 通过。
+
+#[test]
+fn gate_test_context_includes_tests_dir_files() {
+    let dir = tempdir().unwrap();
+    let tests = dir.path().join("tests");
+    std::fs::create_dir_all(&tests).unwrap();
+    std::fs::write(tests.join("feature.rs"), "use demo::multiply;\n").unwrap();
+
+    let ctx = gate_test_context_in(dir.path());
+
+    assert!(ctx.contains("use demo::multiply;"), "应读到测试内容: {ctx}");
+    assert!(
+        ctx.contains("test expectations"),
+        "需标明这是「期望的 API」来源: {ctx}"
+    );
+    assert!(
+        ctx.contains("FUNCTION, not a module"),
+        "必须点明「导入即函数」这一判别依据: {ctx}"
+    );
+}
+
+#[test]
+fn gate_test_context_is_empty_without_tests() {
+    let dir = tempdir().unwrap();
+    assert!(
+        gate_test_context_in(dir.path()).is_empty(),
+        "没有测试文件时不得凭空产出上下文（否则每次修复都白烧 token）"
+    );
+}
+
+#[test]
+fn gate_test_context_ignores_non_rust_files() {
+    let dir = tempdir().unwrap();
+    let tests = dir.path().join("tests");
+    std::fs::create_dir_all(&tests).unwrap();
+    std::fs::write(tests.join("notes.txt"), "should not appear").unwrap();
+    std::fs::write(tests.join("a.rs"), "use demo::alpha;\n").unwrap();
+
+    let ctx = gate_test_context_in(dir.path());
+
+    assert!(ctx.contains("use demo::alpha;"));
+    assert!(
+        !ctx.contains("should not appear"),
+        "非 .rs 文件不该进上下文"
+    );
+}
+
+#[test]
+fn gate_test_context_caps_number_of_files() {
+    let dir = tempdir().unwrap();
+    let tests = dir.path().join("tests");
+    std::fs::create_dir_all(&tests).unwrap();
+    for i in 0..5 {
+        std::fs::write(tests.join(format!("t{i}.rs")), format!("use demo::f{i};\n")).unwrap();
+    }
+
+    let ctx = gate_test_context_in(dir.path());
+    let shown = ctx.matches("(test expectations)").count();
+
+    assert_eq!(shown, 2, "最多 2 个测试文件，避免 prompt 无上限膨胀");
+    assert!(ctx.contains("use demo::f0;") && ctx.contains("use demo::f1;"));
+    assert!(!ctx.contains("use demo::f4;"), "超出的文件不应出现");
+}
+
+#[test]
+fn gate_file_context_actually_appends_test_context() {
+    // 前面的用例只验证 gate_test_context_in 的逻辑；这一条验证它**真的被接上**。
+    // 没有这条，把 `ctx.push_str(&gate_test_context())` 删掉后上面的用例仍全绿，
+    // 而 s3 会退回「模型把函数写成模块」。
+    //
+    // cargo test 的 cwd 是本 crate 根（src/developer.rs 与 tests/*.rs 都存在），
+    // 因此用真实相对路径即可，不需要伪造目录。
+    let ctx = gate_file_context("--> src/developer.rs:1:1");
+
+    assert!(
+        ctx.contains("test expectations"),
+        "闸门修复上下文必须带上测试文件: {ctx}"
+    );
+}
