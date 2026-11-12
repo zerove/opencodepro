@@ -20,7 +20,7 @@ round-trip 测试，全部掩盖了它们）：
 
 | 项 | 值 |
 |---|---|
-| 服务器 | `scripts/l3-mcp-server.py`（stdio，newline-delimited JSON） |
+| 服务器 | `scripts/l3-mcp-server.py`（stdio，newline-delimited JSON）+ `scripts/l3-mcp-http-server.py`（Streamable HTTP） |
 | 工具 | `sum(a,b)` / `word_count(text)` / `echo(text)` |
 | CLI | `sisyphus mcp info` / `sisyphus mcp call` |
 | 自家 server | `sisyphus mcp serve`（客户端 ↔ 自家 server，同一套协议两端） |
@@ -34,7 +34,7 @@ round-trip 测试，全部掩盖了它们）：
 原始输出：`runs/mcp/l3-mcp-check.out`（`PASS=12 FAIL=0`），bridge 侧连接日志
 `runs/mcp/bridge.log`（`Connected MCP server 'l3' via stdio: ... (3 tools)`）。
 
-CLI 级（8 项）：
+CLI 级（11 项，含 HTTP 传输 3 项）：
 
 ```
 PASS  mcp info 握手并列出 3 个工具
@@ -45,15 +45,20 @@ PASS  mcp call word_count = 3
 PASS  mcp call 参数缺失返回 isError
 PASS  自家 MCP server 可被协议客户端读取工具列表
 PASS  自家 MCP server 工具名 metis_analyse
+PASS  HTTP 传输握手并列出 3 个工具
+PASS  HTTP 传输 mcp call sum(20,22) = 42
+PASS  HTTP 传输参数缺失返回 isError
 ```
 
-引擎级（4 项）：
+引擎级（6 项，stdio 与 HTTP 各一个服务器）：
 
 ```
 PASS  引擎 /api/tools 含 MCP 工具 l3:sum
 PASS  引擎 /api/tools 标注来源为 mcp
 PASS  引擎调用 MCP 工具 l3:sum(40,2)
 PASS  引擎调用返回 SUCCESS
+PASS  引擎 /api/tools 含 HTTP 传输的 MCP 工具 l3http:sum
+PASS  引擎调用 HTTP 传输的 MCP 工具 l3http:sum(1,2)
 ```
 
 ## 4. 缺陷细节
@@ -125,8 +130,8 @@ server」检查守住这条。
 ## 5. 诚实性说明
 
 - 本场景验证的是 **MCP 协议互通性**（客户端 ↔ 独立实现的服务器），不涉及 LLM。
-- 覆盖的是 stdio 传输；HTTP 传输（`mcp info http://...`）未在本机验证（需外部
-  MCP 服务器），但 `notify()` 的 HTTP 实现与 stdio 同为「只写不读」。
+- 传输覆盖 stdio 与 HTTP（Streamable HTTP）两种，均有 CLI 级与引擎级断言；
+  HTTP fixture 的通知按规范返回 `202 Accepted` + 空体（若回响应体就会错位）。
 - 未覆盖：MCP 服务器的 OAuth 流程（`crates/sisyphus-tools-mcp/src/mcp/oauth.rs`
   未做端到端验证）、resources / prompts 等非 tools 能力。
 - 引擎级只验证了「注册 + 调用一次 MCP 工具」，未验证多服务器并存、

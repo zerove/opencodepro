@@ -393,6 +393,19 @@ async fn test_develop_approval_denies_step() {
     assert!(format!("{:?}", report.steps[0].status).contains("denied by user"));
 }
 
+#[test]
+fn complex_change_maps_to_file_edit_tool_id() {
+    // ComplexChange 之前返回 None → 整个审批闸被跳过（deny 规则拦不住）。
+    let action = DevAction::ComplexChange {
+        description: "批量修改".to_string(),
+    };
+    assert_eq!(
+        dev_tool_id(&action),
+        Some("builtin:file_edit"),
+        "批量文件编辑必须走同一套权限规则"
+    );
+}
+
 #[tokio::test]
 async fn test_develop_approval_allows_step() {
     let llm = Arc::new(FixedResponseClient(T2_1_SLICE1_PLAN.to_string()));

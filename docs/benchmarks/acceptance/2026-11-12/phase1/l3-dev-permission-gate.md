@@ -95,9 +95,10 @@ bash scripts/l3-dev-permission-check.sh
 - **`dev --verify-cmd` 的客观闸门与权限闸是正交的两件事**：闸门决定「目标是否
   达成」，权限闸决定「哪些命令允许执行」。被拒绝的步骤会在报告里显示
   `denied by user: builtin:bash_exec`，不影响闸门判定。
-- 遗留：`ComplexChange` 动作不走审批（`dev_tool_id` 返回 `None`），它做的是
-  文件编辑（`builtin:file_write`/`file_edit` 在权限体系里本就不是危险工具），
-  但如果将来让 `ComplexChange` 能执行命令，必须一并接进审批闸。
+- `ComplexChange` 动作原先**整个跳过**审批（`dev_tool_id` 返回 `None`）——
+  它做的是批量文件编辑（非危险工具，默认 allow），但 deny 规则拦不住它。
+  现映射到 `builtin:file_edit`，与普通编辑走同一套规则
+  （单测 `complex_change_maps_to_file_edit_tool_id`）。
 
 ## 6. 诚实性说明
 

@@ -745,15 +745,19 @@ Return ONLY the JSON object."#;
 
 /// Map a dev step action to the external tool id it corresponds to (MVP).
 ///
-/// Returns `None` for LLM-internal actions (`ComplexChange`) that bypass the
-/// approval gate in MVP.
+/// 每个动作都有对应工具 id —— 审批闸按 id 判定，`None` 会让动作**整个跳过**
+/// 审批（deny 规则拦不住）。`ComplexChange` 做的是批量文件编辑，映射到
+/// `builtin:file_edit`。
 fn dev_tool_id(action: &DevAction) -> Option<&'static str> {
     match action {
         DevAction::RunCommand { .. } => Some("builtin:bash_exec"),
         DevAction::CreateFile { .. } => Some("builtin:file_write"),
         DevAction::EditFile { .. } => Some("builtin:file_edit"),
         DevAction::ReadFile { .. } => Some("builtin:file_read"),
-        DevAction::ComplexChange { .. } => None,
+        // ComplexChange 实际做的是「批量文件编辑」，映射到 file_edit。
+        // 此前返回 None → **整个审批闸被跳过**：deny 规则拦不住它。
+        // 映射后它与普通编辑走同一套规则（默认 allow，deny 规则可拦）。
+        DevAction::ComplexChange { .. } => Some("builtin:file_edit"),
     }
 }
 

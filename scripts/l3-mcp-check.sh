@@ -6,8 +6,9 @@
 # 做端到端验收：
 #
 #   级别 1（CLI）：sisyphus mcp info / mcp call —— 校验握手、工具列表、工具调用
-#   级别 2（引擎）：启动 bridge，校验 /api/tools 出现 MCP 工具，并经
-#                   /api/tools/execute 真正调用一次
+#                 （stdio 与 HTTP 两种传输各跑一遍）
+#   级别 2（引擎）：启动 bridge（同时挂 stdio 与 HTTP 两个 MCP 服务器），校验
+#                   /api/tools 出现 MCP 工具，并经 /api/tools/execute 真正调用一次
 #
 # 用法：
 #   ./scripts/l3-mcp-check.sh [--cli-only] [--bridge-bin PATH]
@@ -20,6 +21,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CLI="${SISYPHUS_BIN:-$REPO_ROOT/target/debug/sisyphus}"
 BRIDGE_BIN="${BRIDGE_BIN:-$REPO_ROOT/target/debug/sisyphus-bridge}"
 SERVER="$REPO_ROOT/scripts/l3-mcp-server.py"
+HTTP_SERVER="$REPO_ROOT/scripts/l3-mcp-http-server.py"
+HTTP_MCP_PORT="${HTTP_MCP_PORT:-11520}"
 CLI_ONLY=0
 TMP_ROOT="${TMPDIR:-/tmp}/opencode"
 WORKDIR="$TMP_ROOT/l3-mcp"
@@ -85,6 +88,22 @@ self_out="$(timeout 60 "$CLI" mcp info "$CLI" mcp serve 2>&1)"
 check "自家 MCP server 可被协议客户端读取工具列表" "Available tools (" "$self_out"
 check "自家 MCP server 工具名 metis_analyse" "metis_analyse" "$self_out"
 
+# ── 级别 1b：HTTP 传输（Streamable HTTP）────────────────────────
+python3 "$HTTP_SERVER" --port "$HTTP_MCP_PORT" >"$WORKDIR/http-server.log" 2>&1 &
+HTTP_PID=$!
+for _ in $(seq 1 40); do
+  (exec 3<>"/dev/tcp/127.0.0.1/$HTTP_MCP_PORT") 2>/dev/null && break
+  sleep 0.25
+done
+HTTP_URL="http://127.0.0.1:$HTTP_MCP_PORT/mcp"
+
+http_info="$(timeout 60 "$CLI" mcp info "$HTTP_URL" 2>&1)"
+check "HTTP 传输握手并列出 3 个工具" "Available tools (3)" "$http_info"
+http_sum="$(timeout 60 "$CLI" mcp call sum '{"a":20,"b":22}' "$HTTP_URL" 2>&1)"
+check "HTTP 传输 mcp call sum(20,22) = 42" '"text": "42"' "$http_sum"
+http_err="$(timeout 60 "$CLI" mcp call sum '{}' "$HTTP_URL" 2>&1)"
+check "HTTP 传输参数缺失返回 isError" '"isError": true' "$http_err"
+
 # ── 级别 2：引擎（bridge）侧注册与调用 ───────────────────────
 if [ "$CLI_ONLY" -eq 1 ]; then
   echo
@@ -119,6 +138,8 @@ allow_dummy_embeddings = true
 [mcp]
   [mcp.stdio_servers]
   "l3" = "python3 $SERVER"
+  [mcp.http_servers]
+  "l3http" = "$HTTP_URL"
 TOML
 
 BRIDGE_LOG="$WORKDIR/bridge.log"
@@ -128,6 +149,8 @@ BPID=$!
 cleanup() {
   [ -n "${BPID:-}" ] && kill "$BPID" 2>/dev/null
   wait "${BPID:-}" 2>/dev/null
+  [ -n "${HTTP_PID:-}" ] && kill "$HTTP_PID" 2>/dev/null
+  wait "${HTTP_PID:-}" 2>/dev/null
 }
 trap cleanup EXIT
 
@@ -150,6 +173,12 @@ else
     -d '{"tool_id":"l3:sum","args_json":"{\"a\":40,\"b\":2}"}' 2>&1)"
   check "引擎调用 MCP 工具 l3:sum(40,2)" '42' "$exec_out"
   check "引擎调用返回 SUCCESS" '"status":"SUCCESS"' "$exec_out"
+
+  check "引擎 /api/tools 含 HTTP 传输的 MCP 工具 l3http:sum" '"l3http:sum"' "$tools_out"
+  http_exec_out="$(curl -sf --max-time 20 -X POST "$BASE/api/tools/execute" \
+    -H 'content-type: application/json' \
+    -d '{"tool_id":"l3http:sum","args_json":"{\"a\":1,\"b\":2}"}' 2>&1)"
+  check "引擎调用 HTTP 传输的 MCP 工具 l3http:sum(1,2)" '3' "$http_exec_out"
 fi
 
 echo

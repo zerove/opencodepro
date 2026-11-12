@@ -46,6 +46,14 @@ sisyphus mcp call sum '{"a":2,"b":3}' python3 scripts/l3-mcp-server.py
 # → { "content": [ { "type": "text", "text": "5" } ], "isError": false }
 ```
 
+HTTP（Streamable HTTP）传输同理：
+
+```bash
+python3 scripts/l3-mcp-http-server.py --port 11520 &   # 本地测试服务器
+sisyphus mcp info http://127.0.0.1:11520/mcp
+sisyphus mcp call sum '{"a":20,"b":22}' http://127.0.0.1:11520/mcp
+```
+
 一条命令跑完整验收（CLI 级 + bridge 引擎级）：
 
 ```bash

@@ -182,8 +182,8 @@ bash scripts/l3-mcp-check.sh            # CLI 级 + 引擎级（需要 bridge �
 bash scripts/l3-mcp-check.sh --cli-only # 只跑 CLI 级
 ```
 
-覆盖：握手 / 工具列表 / 工具调用 / 工具错误路径，以及 bridge 侧 `/api/tools`
-注册与 `/api/tools/execute` 调用。说明与证据：
+覆盖：握手 / 工具列表 / 工具调用 / 工具错误路径（stdio 与 HTTP 两种传输各一遍），
+以及 bridge 侧 `/api/tools` 注册与 `/api/tools/execute` 调用。说明与证据：
 `docs/benchmarks/acceptance/2026-11-12/phase1/l3-mcp-scenario.md`。
 
 ### 7.4 dev 权限闸（不需要 LLM）
