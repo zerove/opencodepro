@@ -39,6 +39,10 @@ pub struct DynamicLlmClient {
     fast_fail_until: Arc<ParkingRwLock<HashMap<String, std::time::Instant>>>,
     /// provider 上报的 token 用量（仅统计真实上报值，不混估算）。
     token_usage: Arc<TokenUsageCounters>,
+    /// 检测到 provider **静默截断**了 prompt（上报的 prompt token 远小于我们
+    /// 实际发出的量）。本地 provider（ollama 默认 num_ctx 较小）会保留尾部、
+    /// 丢掉开头，且不报错 —— 模型因此可能在「没看到开头」的情况下作答。
+    prompt_truncated: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// provider 上报的 token 计数（原子累加）。
@@ -75,7 +79,56 @@ impl TokenUsageCounters {
     }
 }
 
+/// 粗略估算一段文本的 token 数。
+///
+/// CJK 字符约 1 字 1 token，其余约 4 字符 1 token。只用于「provider 是不是
+/// 截断了我们的 prompt」这一相对比较，不需要精确。
+fn estimate_tokens(text: &str) -> u64 {
+    let mut cjk = 0u64;
+    let mut other = 0u64;
+    for c in text.chars() {
+        let is_cjk = matches!(c as u32,
+            0x3000..=0x303F | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF
+            | 0xFF00..=0xFFEF | 0x20000..=0x2FA1F);
+        if is_cjk {
+            cjk += 1;
+        } else {
+            other += 1;
+        }
+    }
+    cjk + other / 4
+}
+
 impl DynamicLlmClient {
+    /// 本次运行中，provider 是否**静默截断**过 prompt。
+    ///
+    /// 典型场景：本地 ollama 的 `num_ctx` 默认较小（实测 37KB 的 prompt 被裁到
+    /// ~2050 token，保留尾部、丢掉开头，且不报错）。此时模型可能根本没看到
+    /// 任务的开头部分，却仍会给出自信的答案。
+    pub fn prompt_truncated(&self) -> bool {
+        self.prompt_truncated.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// 比较「我们发出的 token 估算」与「provider 上报的 prompt token」，
+    /// 差距过大即判定 provider 截断了 prompt。
+    fn note_prompt_truncation(&self, sent_text: &str, reported_prompt_tokens: Option<u64>) {
+        use std::sync::atomic::Ordering;
+        let Some(reported) = reported_prompt_tokens else {
+            return;
+        };
+        let estimate = estimate_tokens(sent_text);
+        // 容忍 30% 的估算误差；低于 70% 视为被裁剪。
+        if estimate > 512 && reported * 10 < estimate * 7 {
+            self.prompt_truncated.store(true, Ordering::Relaxed);
+            tracing::warn!(
+                target: "llm",
+                sent_estimate = estimate,
+                reported_prompt_tokens = reported,
+                "provider 截断了 prompt：模型可能没有看到上下文开头"
+            );
+        }
+    }
+
     pub fn new(config: Arc<RwLock<Config>>) -> Self {
         // 连接超时在建 client 时固定（配置在构造前已加载）；**请求超时必须在每次
         // 调用时按配置下发**。
@@ -105,6 +158,7 @@ impl DynamicLlmClient {
             provider_registry,
             fast_fail_until: Arc::new(ParkingRwLock::new(HashMap::new())),
             token_usage: Arc::new(TokenUsageCounters::default()),
+            prompt_truncated: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -318,6 +372,10 @@ impl LlmClient for DynamicLlmClient {
                         let token_estimate = (response.content.len() / 4).max(1) as u64;
                         self.router.record_usage(&response.model, 0.0, token_estimate);
                         self.token_usage.record(response.input_tokens, response.output_tokens);
+                        self.note_prompt_truncation(
+                            &format!("{system}\n{user}"),
+                            response.input_tokens,
+                        );
                         self.clear_fast_fail(&model);
                         return Ok(response.content);
                     },
@@ -468,6 +526,10 @@ impl LlmClient for DynamicLlmClient {
             self.token_usage.record(
                 response_json["usage"]["prompt_tokens"].as_u64(),
                 response_json["usage"]["completion_tokens"].as_u64(),
+            );
+            self.note_prompt_truncation(
+                &format!("{system}\n{user}"),
+                response_json["usage"]["prompt_tokens"].as_u64(),
             );
             let token_estimate = (text.len() / 4).max(1) as u64;
             let actual_cost = (token_estimate as f64 / 1000.0) * 0.01;
@@ -663,6 +725,49 @@ mod tests {
         assert_eq!(usage.completion_tokens, 34);
         assert_eq!(usage.calls, 1);
         assert_eq!(usage.total_tokens(), 154);
+    }
+
+    #[tokio::test]
+    async fn prompt_truncation_is_detected_when_provider_reports_fewer_tokens() {
+        // provider 静默裁剪 prompt（本地 ollama 的 num_ctx 较小时会保留尾部、
+        // 丢掉开头且不报错）→ 引擎必须能察觉并提示。
+        let endpoint = mock_server_once(
+            r#"{"model":"m","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":20,"completion_tokens":5}}"#,
+        );
+        let mut cfg = Config::default();
+        cfg.llm.endpoint = endpoint;
+        let client = DynamicLlmClient::new(Arc::new(RwLock::new(cfg)));
+
+        let long_prompt = "x".repeat(8000);
+        client.chat("sys", &long_prompt, false).await.expect("mock 响应应成功");
+
+        assert!(
+            client.prompt_truncated(),
+            "上报 token 远小于实际发送量时应判定为截断"
+        );
+    }
+
+    #[tokio::test]
+    async fn prompt_truncation_not_flagged_when_tokens_match() {
+        let endpoint = mock_server_once(
+            r#"{"model":"m","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":20,"completion_tokens":5}}"#,
+        );
+        let mut cfg = Config::default();
+        cfg.llm.endpoint = endpoint;
+        let client = DynamicLlmClient::new(Arc::new(RwLock::new(cfg)));
+
+        client.chat("sys", "hi", false).await.expect("mock 响应应成功");
+
+        assert!(!client.prompt_truncated(), "正常长度不应判定为截断");
+    }
+
+    #[test]
+    fn estimate_tokens_counts_cjk_and_ascii_differently() {
+        // 100 个汉字 ≈ 100 token；400 个 ASCII ≈ 100 token。
+        let cjk = "字".repeat(100);
+        let ascii = "a".repeat(400);
+        assert_eq!(estimate_tokens(&cjk), 100);
+        assert_eq!(estimate_tokens(&ascii), 100);
     }
 
     #[tokio::test]

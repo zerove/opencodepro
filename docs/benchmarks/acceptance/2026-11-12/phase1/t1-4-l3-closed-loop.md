@@ -126,6 +126,33 @@ token/http 全局指标为 `null`，不伪造）。
 - `regressed` 恒为 `false`：dev 不做跨任务回归检测，该字段在 dev 链路不具信息量；
 - `--record` 必须配 `--verify-cmd`，否则 CLI 直接拒绝 —— 没有客观闸门就没有成败。
 
+### 4.4b 归档的「9/9 PASS」包含了静默破坏（判定加严后的更正）
+
+原始归档（§4.1 的 9/9）用的是**只判闸门**的判定：s3 只要求「`fn multiply`
+存在 + `cargo test` 通过」。复核归档日志发现，模型当时的动作是
+`CreateFile: src/lib.rs` —— **整文件覆盖**，把原有的 `pub fn add` 删掉了；
+因为测试只用到 `multiply`，闸门照样 PASS，于是被记成成功：
+
+```
+Step 1: Status: Success
+Output: Created file: src/lib.rs        ← 整文件覆盖：pub fn add 已被删掉
+Objective verification: PASSED (`cargo test`, 0 fix attempt(s))
+```
+
+即：**「9/9 PASS」里有一部分是「任务通过但顺手毁了不相关代码」**。现在把 s3 的
+判定加严为「既有的 `pub fn add` 必须保留」，本地 3B 模型**做不到**（它总是
+整文件覆盖），s3 在严格判定下 FAIL：
+
+| 场景 | 旧判定（只判闸门） | 新判定（闸门 + 保留既有公开 API） |
+|---|---|---|
+| s1 诊断修复 | PASS | PASS |
+| s2 质量门 | PASS | PASS |
+| s3 功能新增 | PASS（**含删除 `pub fn add`**） | **FAIL**（3B 模型整文件覆盖） |
+
+这是**测量口径变严**导致的结果，不是回归：旧口径把「静默破坏」算成成功。
+引擎侧已加两道防线（见 §5.11–§5.12）：闸门修复不得删除公开 API（回滚），
+以及闭环结束后的公开 API 删除检测与提示。
+
 ### 4.5 多文件重构缺口（s4 探索场景，3B 模型 FAIL）
 
 在三个场景之外新增了 `s4`（多文件重构）以覆盖原「未覆盖」项，**opt-in**：
@@ -262,6 +289,53 @@ sisyphus --config <bad-model> dev "do nothing" --timeout-secs 60
 §5.2 的背景），拒绝会把可完成的任务变成不可完成；改为如实标注 + 由客观闸门
 兜底。单测 `create_file_reports_overwrite_of_existing_file`。
 
+### 5.11 provider 会静默截断超长 prompt（目标与 schema 都被裁掉）
+
+本地 ollama 的有效窗口远小于模型标称的 32k（实测 37KB 的 prompt 被裁到
+**2050 token**，保留**尾部**、丢掉**开头**，且**不报错**）。后果：
+
+- 目标写在 prompt 最前面 → **被裁掉** → 模型把「拆 add 到 src/math.rs」误解成
+  「实现 helper_320」；
+- system prompt 里的完整 schema 被裁掉 → 模型只回一句摘要而不是计划。
+
+修复（三处）：
+
+1. **检测**：比较「我们发出的 token 估算」与「provider 上报的 prompt token」，
+   差距 > 30% 即判定被裁剪（`DynamicLlmClient::prompt_truncated()`），CLI 在
+   `dev` 成功与失败两条路径上都提示「模型可能没有看到上下文开头」。
+2. **目标前后都放**：保留「第一句是目标」（弱模型友好），同时在末尾重复一次
+   （尾部不会被裁）。
+3. **末尾加精简 schema 提醒**：长上下文时 system prompt 的 schema 会被裁掉，
+   末尾提醒能保住格式要求。**刻意用描述而非可照抄的 JSON 样例** —— 带占位值
+   的样例会被弱模型直接抄进输出（实测它把 `"path": "..."` 原样写进计划，
+   导致 s2/s3 连续回归）。
+
+### 5.12 闸门修复会删掉用户的公开 API，而闸门照样 PASS
+
+闸门修复的目标是「让命令通过」，但弱模型在全文件重写时会把不相关的公开函数
+一起删掉；而闸门只检查被测行为，**发现不了**。实测 s3 里修复把 `pub fn add`
+删了，`cargo test` 依然 PASS（测试只用到 `multiply`）。
+
+修复：**闸门修复不得删除公开 API** —— 应用前留快照，应用后比对公开 API
+签名，删除则**回滚**并如实报错（`repair removed public API (rolled back)`）。
+例外：闸门验证输出**点名**要删的 API 时允许删（否则「删除某个函数」类任务
+永远做不成）。配套：闭环结束后用 `git diff` 检测公开 API 删除并提示（CLI）。
+
+### 5.13 计划 JSON 差一点就整份作废
+
+`serde` 严格解析要求每个字段齐全：弱模型漏写 `goal`、或把动作类型当
+`verification.type`（`{"type":"ReadFile"}`），都会让**整份计划**作废并触发
+重试（3B 每次重试要 30–60s）。现在严格解析失败时走**宽松解析兜底**：缺
+`goal` 用引擎已知的目标补上，未知 `verification` 退化为 `None`（步骤级自检
+不是目标判据），动作本身认不出仍然报错（不猜）。单测见
+`plan_parsing::tests::*`。
+
+### 5.14 执行失败（编辑匹配不上）不走模型纠错路径
+
+`run_step_with_fix` 原本只在**验证失败**时让模型纠错；**执行失败**
+（`EditFile` 的 old_string 匹配不上、命令跑不起来）直接失败返回 —— 而这类
+错误信息恰恰是模型最需要的上下文。现在执行失败也会走一次纠错。
+
 ## 6. 诚实性说明与局限
 
 - **本地 3B 模型**：结果不代表云端大模型能力；`qwen2.5-coder:3b` 在 CPU 上
@@ -270,8 +344,10 @@ sisyphus --config <bad-model> dev "do nothing" --timeout-secs 60
   不填 USD 金额。
 - **trace**：CLI 目前不发送 trace 头，`llm.jsonl` 中的 `l3-00N` 是记录代理生成的
   调用序号 id，用于归档内关联；**端到端 trace 传播仍属 T4.4 范围**。
-- **样本量**：最终 3 轮 9/9；改动前存在 s2 失败（2/4）。模型输出具随机性，
-  该数据不构成通过率保证。
+- **样本量**：最终 3 轮 9/9（**旧判定口径**，见 §4.4b 的更正）；改动前存在 s2
+  失败（2/4）。模型输出具随机性，该数据不构成通过率保证。
+- **判定加严后的真实通过率**：s1/s2 PASS，**s3 FAIL**（3B 模型整文件覆盖、
+  删掉既有 `pub fn add`）。本地 3B 模型做不到「加函数但不破坏既有代码」。
 - 场景工作区是最小 Rust crate，不是 sisyphus 仓库自身的任务；多文件重构已由
   s4 探索场景覆盖（3B FAIL，见 §4.5）；**MCP 已由独立实现的标准服务器覆盖**
   （CLI + 引擎两级 10/10 PASS，见 `l3-mcp-scenario.md`）；长上下文仍未覆盖。

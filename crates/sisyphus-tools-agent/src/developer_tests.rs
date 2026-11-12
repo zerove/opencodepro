@@ -68,10 +68,10 @@ async fn test_plan_parsing() {
 
 #[tokio::test]
 async fn plan_retry_keeps_goal_and_context() {
-    // 首次响应用了非法的 verification 变体 → 触发重试。
+    // 首次响应连宽松解析都救不了（动作类型无法识别）→ 触发重试。
     // 真实缺陷：旧实现只把报错发给模型，3B 模型因此彻底丢失目标
     // （实测把「拆 add 到 src/math.rs」重试成「新建 Hello World 项目」）。
-    let invalid = r#"{"goal":"Test Goal","overview":"x","steps":[{"id":1,"description":"d","action":{"type":"ReadFile","params":{"path":"a"}},"expected_outcome":"e","verification":{"type":"ReadFile","params":{"path":"a"}},"status":"Pending"}]}"#;
+    let invalid = r#"{"goal":"Test Goal","overview":"x","steps":[{"id":1,"description":"d","action":{"type":"Deploy","params":{}},"expected_outcome":"e","verification":{"type":"None"},"status":"Pending"}]}"#;
     let valid = r#"{"goal":"Test Goal","overview":"x","steps":[{"id":1,"description":"d","action":{"type":"ReadFile","params":{"path":"a"}},"expected_outcome":"e","verification":{"type":"None"},"status":"Pending"}]}"#;
     let client = Arc::new(SequenceClient::new(&[invalid, valid]));
     let dev = Developer::new(client.clone());
@@ -91,6 +91,99 @@ async fn plan_retry_keeps_goal_and_context() {
         "重试 prompt 丢失项目上下文: {}",
         prompts[1]
     );
+}
+
+#[tokio::test]
+async fn plan_uses_lenient_fallback_without_retry() {
+    // 弱模型经常漏 `goal`/把动作类型当 verification —— 宽松解析应直接兜住，
+    // 不必浪费一次重试（重试对 3B 模型代价高：一次 30–60s）。
+    let lenient = r#"{"steps":[{"id":1,"action":{"type":"CreateFile","params":{"path":"/tmp/opencode/t2_1_lenient.txt","content":"x"}},"verification":{"type":"ReadFile","params":{"path":"a"}}}]}"#;
+    let llm = Arc::new(SequenceClient::new(&[lenient]));
+    let dev = Developer::new(llm.clone());
+
+    let plan = dev.plan("Original Goal", "ctx").await.expect("宽松解析应成功");
+    assert_eq!(plan.goal, "Original Goal", "缺 goal 时用引擎已知的目标");
+    assert_eq!(plan.steps.len(), 1);
+    assert_eq!(
+        llm.prompts.lock().expect("prompts").len(),
+        1,
+        "宽松解析成功时不应重试"
+    );
+}
+
+#[test]
+fn public_api_deletion_is_detected() {
+    let old = "pub fn add(a: i32, b: i32) -> i32 { a + b }\npub fn mul(a: i32, b: i32) -> i32 { a * b }\n";
+    let new = "pub fn mul(a: i32, b: i32) -> i32 { a * b }\n";
+    let deleted = deleted_public_apis(old, new);
+    assert_eq!(deleted.len(), 1, "应识别出被删的公开 API: {deleted:?}");
+    assert!(deleted[0].contains("pub fn add"));
+}
+
+#[test]
+fn public_api_kept_is_not_a_deletion() {
+    let old = "pub fn add(a: i32, b: i32) -> i32 { a + b }\n";
+    let new = "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n";
+    assert!(
+        deleted_public_apis(old, new).is_empty(),
+        "只是格式变化不算删除"
+    );
+}
+
+#[test]
+fn repair_rolls_back_when_public_api_removed() {
+    // 修复把用户已有的公开函数删了 → 必须回滚并如实报错（闸门只检查被测
+    // 行为，删掉别的公开 API 它照样 PASS）。
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    std::fs::write(
+        &path,
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }\npub fn mul(a: i32, b: i32) -> i32 { a * b }\n",
+    )
+    .unwrap();
+
+    let raw = format!(
+        "{{\"files\":[{{\"path\":\"{}\",\"content\":\"pub fn mul(a: i32, b: i32) -> i32 {{ a * b }}\\n\"}}]}}",
+        path.display()
+    );
+    let err = apply_repair_response(&raw, "").expect_err("删除公开 API 的修复必须失败");
+    assert!(err.contains("removed public API"), "错误应说明原因: {err}");
+
+    let after = std::fs::read_to_string(&path).expect("读取");
+    assert!(
+        after.contains("pub fn add"),
+        "必须回滚到修复前的内容: {after}"
+    );
+}
+
+#[test]
+fn repair_may_remove_api_the_gate_asked_for() {
+    // 闸门点名要删的 API（如「cannot find function `add`」）→ 允许删，
+    // 否则「删除某个函数」类任务永远做不成。
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    std::fs::write(
+        &path,
+        "pub fn add(a: i32, b: i32) -> i32 { a + b }\npub fn mul(a: i32, b: i32) -> i32 { a * b }\n",
+    )
+    .unwrap();
+
+    let raw = format!(
+        "{{\"files\":[{{\"path\":\"{}\",\"content\":\"pub fn mul(a: i32, b: i32) -> i32 {{ a * b }}\\n\"}}]}}",
+        path.display()
+    );
+    apply_repair_response(
+        &raw,
+        "error[E0425]: cannot find function `add` in this scope",
+    )
+    .expect("闸门点名的删除应被允许");
+
+    let after = std::fs::read_to_string(&path).expect("读取");
+    assert!(
+        !after.contains("pub fn add"),
+        "闸门要求删时应真的删掉: {after}"
+    );
+    assert!(after.contains("pub fn mul"), "其余内容应保留: {after}");
 }
 
 #[tokio::test]
@@ -614,7 +707,7 @@ fn apply_repair_response_rewrites_whole_file() {
         r#"{{"files":[{{"path":"{}","content":"pub fn ok() {{}}\n"}}]}}"#,
         file.display()
     );
-    let summary = apply_repair_response(&raw).expect("整文件重写应成功");
+    let summary = apply_repair_response(&raw, "").expect("整文件重写应成功");
     assert!(summary.contains("Rewrote"), "summary: {summary}");
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "pub fn ok() {}\n");
 }
@@ -629,7 +722,7 @@ fn apply_repair_response_accepts_bare_rewrite_object_and_fence() {
         "```json\n{{\"path\":\"{}\",\"content\":\"fixed\"}}\n```",
         file.display()
     );
-    apply_repair_response(&raw).expect("单对象 + 围栏应成功");
+    apply_repair_response(&raw, "").expect("单对象 + 围栏应成功");
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "fixed");
 }
 
@@ -643,7 +736,7 @@ fn apply_repair_response_falls_back_to_edits() {
         r#"[{{"path":"{}","old_string":"let x = 1;","new_string":"let x = 2;"}}]"#,
         file.display()
     );
-    apply_repair_response(&raw).expect("编辑形态应成功");
+    apply_repair_response(&raw, "").expect("编辑形态应成功");
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "let x = 2;");
 }
 
@@ -657,7 +750,7 @@ fn apply_repair_response_errors_on_stale_old_string() {
         r#"[{{"path":"{}","old_string":"imagined","new_string":"x"}}]"#,
         file.display()
     );
-    let err = apply_repair_response(&raw).expect_err("不匹配必须报错，不能记成成功");
+    let err = apply_repair_response(&raw, "").expect_err("不匹配必须报错，不能记成成功");
     assert!(err.contains("edit failed"), "err: {err}");
     // 文件未被改动
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "actual");
@@ -665,8 +758,8 @@ fn apply_repair_response_errors_on_stale_old_string() {
 
 #[test]
 fn apply_repair_response_rejects_empty_payload() {
-    assert!(apply_repair_response(r#"{"files":[]}"#).is_err());
-    assert!(apply_repair_response("not json").is_err());
+    assert!(apply_repair_response(r#"{"files":[]}"#, "").is_err());
+    assert!(apply_repair_response("not json", "").is_err());
 }
 
 #[test]
@@ -692,6 +785,6 @@ fn apply_repair_response_strips_fence_in_rewrite_content() {
         r#"{{"files":[{{"path":"{}","content":"```rust\npub fn ok() {{}}\n```"}}]}}"#,
         file.display()
     );
-    apply_repair_response(&raw).expect("应成功");
+    apply_repair_response(&raw, "").expect("应成功");
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "pub fn ok() {}\n");
 }

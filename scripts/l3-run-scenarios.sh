@@ -10,6 +10,9 @@
 #   s4 多文件重构：add() 与 format_sum() 同处 lib.rs → 要求把 add() 拆到新文件
 #                src/math.rs 并声明模块，判定 `cargo test` 通过、math.rs 存在、
 #                lib.rs 不再定义 add（复制粘贴不算重构）
+#   s5 长上下文：src/lib.rs 有 400 个 helper（约 2.3k token，超过本地 provider 的
+#                有效窗口）→ 在**末尾**追加一个函数；判定 `cargo test` 通过、
+#                新函数存在、**400 个 helper 一个不少**（长文件不得被改残）
 #                **opt-in**：不在默认集合内。本地 3B 模型当前无法完成（见
 #                docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md §4.5），
 #                该场景用于覆盖缺口与暴露缺陷，默认跑会返回非零。
@@ -41,7 +44,7 @@ SCENARIOS=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    s1|s2|s3|s4) SCENARIOS+=("$1"); shift ;;
+    s1|s2|s3|s4|s5) SCENARIOS+=("$1"); shift ;;
     --model) MODEL="$2"; shift 2 ;;
     --timeout-secs) TIMEOUT_SECS="$2"; shift 2 ;;
     --upstream) UPSTREAM="$2"; shift 2 ;;
@@ -170,6 +173,50 @@ fn multiply_works() {
 RS
 }
 
+# s5：长上下文。lib.rs 有 600 个 helper（约 3.5k token），超过本地 provider 的
+# 有效窗口（ollama 默认 num_ctx 较小）→ 引擎应检测并提示「prompt 被截断」。
+# 任务本身放在**文件末尾**（截断保留尾部，仍可完成），判定额外要求：
+# 600 个 helper **一个都不能少**（模型不得把长文件改残）。
+reset_s5() {
+  local d="$WORKDIR/s5"
+  rm -rf "$d"; mkdir -p "$d/src" "$d/tests"
+  cat > "$d/Cargo.toml" <<'TOML'
+[package]
+name = "l3-s5"
+version = "0.1.0"
+edition = "2021"
+TOML
+  {
+    echo "// 长文件：400 个 helper，用于验证长上下文下的改动不会把文件改残。"
+    local i
+    for i in $(seq 1 400); do
+      echo "pub fn helper_${i}(v: i64) -> i64 { v + ${i} }"
+    done
+  } > "$d/src/lib.rs"
+  # 测试放独立文件，避免「删测试」绕过闸门
+  cat > "$d/tests/long.rs" <<'RS'
+use l3_s5::scale;
+
+#[test]
+fn scale_works() {
+    assert_eq!(scale(3, 4), 12);
+    assert_eq!(scale(-2, 5), -10);
+}
+RS
+  # 上下文 = 整个长文件（模型需要看到文件末尾才能追加）
+  {
+    # 上下文顺序刻意与引擎一致：先给长文件，**最后**再给任务说明 ——
+    # provider 截断长 prompt 时保留尾部，任务必须落在尾部才不会被裁掉。
+    echo "项目是 Rust lib crate。src/lib.rs 里**已经存在** 400 个 helper 函数（下面全文）。"
+    echo "---- src/lib.rs 全文开始 ----"
+    cat "$d/src/lib.rs"
+    echo "---- src/lib.rs 全文结束 ----"
+    echo ""
+    echo "任务只有一个：在**文件最后**追加下面这个函数，其余内容一个字都不要改："
+    echo "pub fn scale(v: i64, k: i64) -> i64 { v * k }"
+  } > "$WORKDIR/s5-context.txt"
+}
+
 reset_s4() {
   local d="$WORKDIR/s4"
   rm -rf "$d"; mkdir -p "$d/src" "$d/tests"
@@ -229,9 +276,27 @@ judge_s2() {
 
 judge_s3() {
   ( cd "$WORKDIR/s3" && grep -q "fn multiply" src/lib.rs ) || return 1
+  # 既有的公开 API 必须保留：任务只要求「新增 multiply」，删掉 `pub fn add`
+  # 是破坏（实测 3B 模型会用 CreateFile 整文件覆盖，闸门只测 multiply 因此
+  # 照样 PASS —— 旧判定漏掉了这类静默破坏）。
+  ( cd "$WORKDIR/s3" && grep -q "fn add" src/lib.rs ) || return 1
   local out
   out="$( cd "$WORKDIR/s3" && env -u RUSTUP_TOOLCHAIN cargo test 2>&1 )" || return 1
   # 必须真的跑了 ≥1 个测试，而不是「0 passed」的空跑
+  printf '%s' "$out" | grep -qE "test result: ok\. [1-9][0-9]* passed"
+}
+
+judge_s5() {
+  local d="$WORKDIR/s5"
+  # 1) 新函数存在
+  grep -q "fn scale" "$d/src/lib.rs" || return 1
+  # 2) 600 个 helper 一个都不能少（长文件不得被改残）
+  local count
+  count="$(grep -c "pub fn helper_" "$d/src/lib.rs" || true)"
+  [ "$count" = "400" ] || return 1
+  # 3) 测试真的跑过
+  local out
+  out="$( cd "$d" && env -u RUSTUP_TOOLCHAIN cargo test 2>&1 )" || return 1
   printf '%s' "$out" | grep -qE "test result: ok\. [1-9][0-9]* passed"
 }
 
@@ -261,6 +326,7 @@ run_case() {
     s2) scenario="quality-gate" ;;
     s3) scenario="feature" ;;
     s4) scenario="refactor" ;;
+    s5) scenario="long-context" ;;
     *) scenario="$tag" ;;
   esac
   local record="$RECORDS_DIR/l3-$tag-$scenario.json"
@@ -350,6 +416,12 @@ fn multiply_works() {
     assert_eq!(multiply(-2, 5), -10);
 }
 multiply 未定义 → cargo test 编译失败。请在 src/lib.rs 实现 pub fn multiply(a: i32, b: i32) -> i32。" "cargo test"
+      ;;
+    s5)
+      reset_s5
+      git_baseline "$WORKDIR/s5"
+      run_case s5 "只在 src/lib.rs 的**最后一行之后**追加这一个函数，其余内容保持不变：pub fn scale(v: i64, k: i64) -> i64 { v * k }" \
+        "$(cat "$WORKDIR/s5-context.txt")" "cargo test"
       ;;
     s4)
       reset_s4

@@ -64,11 +64,43 @@ pub(crate) async fn handle_dev(
             let token_usage = llm.token_usage();
             println!("{}", sisyphus_cli::tools::developer::format_report(&report));
 
+            // 客观闸门只检查被测行为，检查不到「顺手毁掉别的代码」→
+            // 额外检测公开 API 删除（回归信号）。
+            let deleted_apis = detect_deleted_public_apis();
+            let regressed = !deleted_apis.is_empty();
+            if regressed {
+                eprintln!(
+                    "⚠️  检测到 {} 处公开 API 被删除（回归风险，闸门不一定能发现）：",
+                    deleted_apis.len()
+                );
+                for line in deleted_apis.iter().take(5) {
+                    eprintln!("    - {line}");
+                }
+                if deleted_apis.len() > 5 {
+                    eprintln!("    … 共 {} 处", deleted_apis.len());
+                }
+            }
+
             // T4.1：闸门失败也要落记录（失败样本是成功率的分母），
             // 因此写在 bail 之前。
             if let Some(path) = record {
-                write_dev_task_record(path, scenario, &report, duration_ms, token_usage)?;
+                write_dev_task_record(
+                    path,
+                    scenario,
+                    &report,
+                    duration_ms,
+                    token_usage,
+                    regressed,
+                )?;
                 println!("📝 Task record: {}", path.display());
+            }
+
+            // provider 静默截断 prompt 时必须提示：模型可能根本没看到上下文
+            // 开头（本地 ollama 的 num_ctx 较小时会保留尾部、丢掉开头）。
+            if llm.prompt_truncated() {
+                eprintln!(
+                    "⚠️  provider 截断了 prompt（模型可能没有看到上下文开头）。\n    建议：缩短 --context，或换用更长上下文的模型。"
+                );
             }
 
             match &report.final_verification {
@@ -102,6 +134,11 @@ pub(crate) async fn handle_dev(
         },
         Ok(Err(e)) => {
             eprintln!("❌ Development failed: {e:#}");
+            if llm.prompt_truncated() {
+                eprintln!(
+                    "⚠️  provider 截断了 prompt（模型可能没有看到上下文开头，目标也可能被裁掉）。\n    建议：缩短 --context，或换用更长上下文的模型。"
+                );
+            }
             // 自动化脚本以退出码判断成败：规划/执行失败同样必须是非零。
             // （闸门失败已单独 bail；这里覆盖「连计划都拿不到」的路径。）
             anyhow::bail!("development failed: {e:#}");
@@ -112,6 +149,53 @@ pub(crate) async fn handle_dev(
         },
     }
     Ok(())
+}
+
+/// 从 `git diff -U0` 输出里找出**被删除的公开 API 行**。
+///
+/// 客观闸门（`--verify-cmd`）只检查被测行为，**检查不到「agent 顺手毁掉了
+/// 别的代码」**：实测 3B 模型用 `CreateFile` 覆盖长文件、删掉 400 个
+/// `pub fn helper_N`，而 `cargo test` 依然通过（测试只用到新函数）。
+/// 删除公开 API 是回归的强信号，这里把它识别出来。
+fn parse_deleted_public_apis(diff: &str) -> Vec<String> {
+    diff.lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix('-')?;
+            if rest.starts_with('-') {
+                return None; // 文件头 `--- a/...`
+            }
+            let trimmed = rest.trim_start();
+            let is_public_api = [
+                "pub fn ",
+                "pub struct ",
+                "pub enum ",
+                "pub trait ",
+                "pub const ",
+                "pub static ",
+                "pub type ",
+                "pub mod ",
+                "pub union ",
+            ]
+            .iter()
+            .any(|prefix| trimmed.starts_with(prefix));
+            is_public_api.then(|| trimmed.to_string())
+        })
+        .collect()
+}
+
+/// 用 git diff 检测本次闭环是否删除了公开 API。
+///
+/// 非 git 仓库或没有 diff 时返回空（不猜、不伪造）。
+fn detect_deleted_public_apis() -> Vec<String> {
+    let out = sisyphus_tools_core::process::run_command_blocking(
+        "git",
+        ["diff", "-U0", "--no-color", "--", "."],
+        sisyphus_tools_core::process::CommandOpts::default(),
+    );
+    match out {
+        Ok(o) if o.exit_code == 0 => parse_deleted_public_apis(&o.stdout),
+        _ => Vec::new(),
+    }
 }
 
 /// `--record` 必须配 `--verify-cmd`：没有客观闸门就没有「成败」可记录。
@@ -129,13 +213,15 @@ fn ensure_recordable(record: &Option<PathBuf>, verify_cmd: &Option<String>) -> R
 /// 口径与 `verify --record` 保持一致：
 /// - `initial_verify_passed`：闸门**首轮**是否通过；
 /// - `fix_attempts`：仅统计客观闸门的自动修复次数（步骤内自愈不计入）；
-/// - `regressed`：dev 不检测跨任务回归，恒为 false（不伪造）。
+/// - `regressed`：本次闭环是否**删除了公开 API**（闸门检查不到这类破坏，
+///   实测模型覆盖长文件删掉 400 个 `pub fn` 而闸门仍 PASS）。
 fn write_dev_task_record(
     path: &Path,
     scenario: &str,
     report: &DevelopmentReport,
     duration_ms: u64,
     token_usage: Option<LlmTokenUsage>,
+    regressed: bool,
 ) -> Result<()> {
     let gate =
         report.final_verification.as_ref().context("--record 需要闸门结果，但报告中不存在")?;
@@ -156,11 +242,12 @@ fn write_dev_task_record(
         initial_verify_passed: gate.initial_passed,
         final_verify_passed: gate.passed,
         fix_attempts: gate.fix_attempts as u32,
-        regressed: false,
         duration_ms,
         // provider 未上报 usage 时留空（未知 ≠ 0），避免污染 token 均值。
         prompt_tokens: token_usage.map(|u| u.prompt_tokens),
         completion_tokens: token_usage.map(|u| u.completion_tokens),
+        // 公开 API 被删除 = 回归信号（闸门检查不到这一类破坏）。
+        regressed,
         recorded_at: chrono::Utc::now().to_rfc3339(),
     };
 
@@ -210,8 +297,15 @@ mod tests {
             output: "clippy output".to_string(),
         };
 
-        write_dev_task_record(&path, "quality-gate", &report(Some(gate)), 12_345, None)
-            .expect("写入");
+        write_dev_task_record(
+            &path,
+            "quality-gate",
+            &report(Some(gate)),
+            12_345,
+            None,
+            false,
+        )
+        .expect("写入");
 
         let raw = std::fs::read_to_string(&path).expect("读取");
         let record: TaskRecord = serde_json::from_str(&raw).expect("解析");
@@ -237,7 +331,8 @@ mod tests {
             output: "error".to_string(),
         };
 
-        write_dev_task_record(&path, "diagnose-fix", &report(Some(gate)), 1, None).expect("写入");
+        write_dev_task_record(&path, "diagnose-fix", &report(Some(gate)), 1, None, false)
+            .expect("写入");
         let record: TaskRecord =
             serde_json::from_str(&std::fs::read_to_string(&path).expect("读取")).expect("解析");
         assert_eq!(record.status, TaskStatus::Fail);
@@ -261,8 +356,15 @@ mod tests {
             calls: 2,
         };
 
-        write_dev_task_record(&path, "feature", &report(Some(gate)), 10, Some(usage))
-            .expect("写入");
+        write_dev_task_record(
+            &path,
+            "feature",
+            &report(Some(gate)),
+            10,
+            Some(usage),
+            false,
+        )
+        .expect("写入");
 
         let raw = std::fs::read_to_string(&path).expect("读取");
         let record: TaskRecord = serde_json::from_str(&raw).expect("解析");
@@ -271,9 +373,26 @@ mod tests {
     }
 
     #[test]
+    fn deleted_public_apis_are_detected_in_diff() {
+        // 实测：3B 模型用 CreateFile 覆盖长文件、删掉 400 个 pub fn，
+        // 而 `cargo test` 依然通过 —— 闸门检查不到这类破坏。
+        let diff = "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -10,3 +10,1 @@\n-pub fn helper_1(v: i64) -> i64 { v + 1 }\n-pub fn helper_2(v: i64) -> i64 { v + 2 }\n-    let x = 1;\n+pub fn scale(v: i64, k: i64) -> i64 { v * k }\n";
+        let deleted = parse_deleted_public_apis(diff);
+        assert_eq!(deleted.len(), 2, "应只识别公开 API 删除: {deleted:?}");
+        assert!(deleted[0].contains("helper_1"));
+        assert!(deleted[1].contains("helper_2"));
+    }
+
+    #[test]
+    fn non_api_deletions_are_ignored() {
+        let diff = "--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,2 +1,1 @@\n-    let x = 1;\n-// 注释\n+pub fn scale() {}\n";
+        assert!(parse_deleted_public_apis(diff).is_empty());
+    }
+
+    #[test]
     fn record_without_gate_is_an_error() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("no-gate.json");
-        assert!(write_dev_task_record(&path, "dev", &report(None), 1, None).is_err());
+        assert!(write_dev_task_record(&path, "dev", &report(None), 1, None, false).is_err());
     }
 }

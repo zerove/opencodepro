@@ -4,7 +4,9 @@
 //!
 //! ## Sub-modules
 //! - [`types`]: Shared types (DevAction, DevStep, DevelopmentPlan, etc.).
+//! - `plan_parsing`: 宽松的计划解析兜底（弱模型经常漏字段/用错变体）。
 
+pub mod plan_parsing;
 pub mod types;
 
 pub use types::{
@@ -169,20 +171,51 @@ Return ONLY the JSON object."#;
             project_context.to_string()
         };
 
-        let user_prompt =
-            format!("Goal: {goal}\n\nProject Context: {context_with_wisdom}\n\nPlan this goal.");
+        // 目标**前后都放**：
+        // - 放前面：保持既有行为（弱模型对「第一句是目标」友好），短上下文场景
+        //   不受影响；
+        // - 放后面：provider 截断超长 prompt 时保留的是尾部（本地 ollama 实测
+        //   从头部裁剪），目标写在最前面会被一起裁掉 —— 实测长上下文场景里
+        //   模型因此把任务误解成「实现 helper_320」。
+        //
+        // 末尾再补一段**精简 schema 提醒**：长上下文时 system prompt 里的完整
+        // schema 也会被裁掉，模型于是只回一句摘要而不是计划（实测）。
+        let user_prompt = format!(
+            "Goal: {goal}\n\nProject Context: {context_with_wisdom}\n\n\
+Goal (repeat): {goal}\n\n{PLAN_SCHEMA_REMINDER}\n\nPlan this goal."
+        );
 
         // First attempt
         let response =
             self.llm.chat(system_prompt, &user_prompt, true).await.map_err(|e| e.to_string())?;
         match serde_json::from_str::<DevelopmentPlan>(&response) {
             Ok(plan) => Ok(plan),
-            Err(e) => {
+            Err(strict_err) => {
+                // 先试宽松解析：漏字段/未知验证类型不该让整份计划作废
+                // （实测弱模型经常缺 `goal`，或把动作类型当 verification）。
+                match plan_parsing::parse_plan_lenient(&response, goal) {
+                    Ok(plan) => {
+                        tracing::warn!(
+                            target: "dev",
+                            error = %strict_err,
+                            "计划未严格匹配 schema，已用宽松解析兜底"
+                        );
+                        return Ok(plan);
+                    },
+                    Err(lenient_err) => {
+                        tracing::warn!(
+                            target: "dev",
+                            strict_error = %strict_err,
+                            lenient_error = %lenient_err,
+                            "严格与宽松解析都失败"
+                        );
+                    },
+                }
                 // 重试必须带上**原始任务**：只发报错信息时，弱模型会彻底丢失目标
                 // （实测 3B 模型把「拆 add 到 src/math.rs」重试成「新建 Hello World 项目」，
                 // 并真的执行了那个计划，覆盖掉用户仓库的 Cargo.toml）。
                 let corrective_prompt = format!(
-                    "{user_prompt}\n\n---\nYour previous response was not valid JSON for DevelopmentPlan.\nError: {e}\nPrevious response (truncated): {}\n\nFix ONLY the schema error. `verification.type` must be exactly one of: CargoCheck, CargoTest, LspDiagnostics, Command, LlmReview, None. Action types (CreateFile / EditFile / RunCommand / ReadFile / ComplexChange) are NOT verification types.\nReturn ONLY the corrected JSON object for the SAME goal and project context above.",
+                    "{user_prompt}\n\n---\nYour previous response was not valid JSON for DevelopmentPlan.\nError: {strict_err}\nPrevious response (truncated): {}\n\nFix ONLY the schema error. `verification.type` must be exactly one of: CargoCheck, CargoTest, LspDiagnostics, Command, LlmReview, None. Action types (CreateFile / EditFile / RunCommand / ReadFile / ComplexChange) are NOT verification types.\nReturn ONLY the corrected JSON object for the SAME goal and project context above.",
                     truncate_chars(&response, 800)
                 );
                 let response = self
@@ -192,7 +225,17 @@ Return ONLY the JSON object."#;
                     .map_err(|e| e.to_string())?;
                 match serde_json::from_str::<DevelopmentPlan>(&response) {
                     Ok(plan) => Ok(plan),
-                    Err(e2) => Err(format!("Failed to parse DevelopmentPlan after retry: {e2}")),
+                    Err(e2) => match plan_parsing::parse_plan_lenient(&response, goal) {
+                        Ok(plan) => {
+                            tracing::warn!(
+                                target: "dev",
+                                error = %e2,
+                                "重试后的计划未严格匹配 schema，已用宽松解析兜底"
+                            );
+                            Ok(plan)
+                        },
+                        Err(_) => Err(format!("Failed to parse DevelopmentPlan after retry: {e2}")),
+                    },
                 }
             },
         }
@@ -359,10 +402,49 @@ Return ONLY the JSON object."#;
         let mut result = match self.execute_step(step).await {
             Ok(r) => r,
             Err(e) => {
+                // 执行失败（编辑匹配不上、命令跑不起来…）也交给模型纠错一次 ——
+                // 旧实现直接失败返回，而这类错误信息恰恰是模型最需要的上下文
+                // （实测 `EditFile` 的 old_string 匹配不上时，模型自己能改对）。
+                let fix_step = DevStep {
+                    id: step.id * 100,
+                    description: format!("Fix for step {}", step.id),
+                    action: DevAction::ComplexChange {
+                        description: format!(
+                            "Step {} ({}) failed: {}. Perform the intended change with exact-match edits.",
+                            step.id,
+                            step.description,
+                            e
+                        ),
+                    },
+                    expected_outcome: "The intended change is applied".to_string(),
+                    verification: step.verification.clone(),
+                    status: StepStatus::Pending,
+                };
+                let fix_result = match self.execute_step(&fix_step).await {
+                    Ok(r) => r,
+                    Err(fix_err) => {
+                        return StepResult {
+                            step_id: step.id,
+                            status: StepStatus::Failed(format!(
+                                "{e} (fix attempt errored: {fix_err})"
+                            )),
+                            output: String::new(),
+                            verification_output: None,
+                        };
+                    },
+                };
+                if fix_result.status != StepStatus::Success {
+                    return StepResult {
+                        step_id: step.id,
+                        status: StepStatus::Failed(format!("{e} (fix attempt failed)")),
+                        output: fix_result.output,
+                        verification_output: None,
+                    };
+                }
                 return StepResult {
                     step_id: step.id,
-                    status: StepStatus::Failed(e),
-                    output: String::new(),
+                    status: StepStatus::Success,
+                    output: format!("Fixed after execution error ({e}). {}", fix_result.output),
                     verification_output: None,
                 };
             },
@@ -432,10 +514,14 @@ Return ONLY the JSON object."#;
     /// 本地小模型很难精确复现 `old_string`（换行/缩进一错就 no match），而「输出
     /// 完整文件」对它更自然。因此闸门修复同时接受 `{"files":[{path,content}]}`
     /// 与 `[{path,old_string,new_string}]`，前者优先。
-    async fn repair_files(&self, prompt: &str) -> Result<String, String> {
+    async fn repair_files(
+        &self,
+        prompt: &str,
+        verification_output: &str,
+    ) -> Result<String, String> {
         const SYSTEM: &str = "You are a code fixer. Return ONLY JSON. Preferred: {\"files\":[{\"path\":\"...\",\"content\":\"<complete corrected file>\"}]}. Alternative: [{\"path\":\"...\",\"old_string\":\"...\",\"new_string\":\"...\"}].";
         let response = self.llm.chat(SYSTEM, prompt, true).await.map_err(|e| e.to_string())?;
-        apply_repair_response(&response)
+        apply_repair_response(&response, verification_output)
     }
 
     /// 运行客观验收门（用户通过 `--verify-cmd` 指定），失败时带着输出做有界自动修复。
@@ -491,7 +577,7 @@ Return ONLY the JSON object."#;
                  Prefer form 1 for small files. `content` must be the ENTIRE file with no omissions.\n\
                  For form 2, `old_string` must be copied verbatim from the current content, preserving newlines and indentation."
             );
-            let (status, repair_output) = match self.repair_files(&prompt).await {
+            let (status, repair_output) = match self.repair_files(&prompt, &output).await {
                 Ok(summary) => (StepStatus::Success, summary),
                 // 修复环节自身失败（JSON 解析失败 / old_string 不匹配）不是「已修复」，
                 // 必须如实记录；循环仍会再跑一次命令，用实际状态决定下一步。
@@ -742,6 +828,19 @@ Return ONLY the JSON object."#;
 }
 
 // --- Helpers ---
+
+/// 计划请求末尾的精简 schema 提醒。
+///
+/// 放在尾部：长上下文被 provider 裁剪时（保留尾部），system prompt 里的完整
+/// schema 会连同开头一起被裁掉，模型于是只回一句摘要而不是计划（实测）。
+///
+/// 刻意用**描述**而不是可照抄的示例模板 —— 带占位值的 JSON 样例会被弱模型
+/// 直接抄进输出（实测它曾把 `"path": "..."` 原样写进计划）。
+const PLAN_SCHEMA_REMINDER: &str =
+    "Return ONLY one JSON object, no markdown and no extra keys, with fields: \
+goal (string), overview (string), steps (array). Each step has: id (number), description (string), \
+action (object with type + params), expected_outcome (string), verification (object with type), \
+status (string \"Pending\"). action.type must be exactly one of: CreateFile, EditFile, RunCommand, ReadFile, ComplexChange.";
 
 /// Map a dev step action to the external tool id it corresponds to (MVP).
 ///
@@ -1080,20 +1179,73 @@ fn strip_code_fence(content: &str) -> String {
     format!("{}\n", inner.trim_end())
 }
 
+/// 提取一段内容里的**公开 API 声明行**（`pub fn` / `pub struct` / …）。
+///
+/// 用于「修复不得删除公开 API」的约束：闸门修复的目标是让命令通过，
+/// 顺手删掉用户已有的公开函数不是目标（实测 3B 修复时把 `pub fn add` 删了，
+/// 而 `cargo test` 依然通过 —— 闸门只检查被测行为）。
+pub fn public_api_signatures(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| {
+            [
+                "pub fn ",
+                "pub struct ",
+                "pub enum ",
+                "pub trait ",
+                "pub const ",
+                "pub static ",
+                "pub type ",
+                "pub mod ",
+                "pub union ",
+            ]
+            .iter()
+            .any(|prefix| line.starts_with(prefix))
+        })
+        .map(|line| {
+            // 只取 `{` 之前的**签名**部分：函数体重新排版（单行改多行）不算
+            // API 变更，否则修复只要重排格式就会被误判成删了公开 API。
+            line.split('{').next().unwrap_or(line).trim().to_string()
+        })
+        .collect()
+}
+
+/// 比较新旧内容，返回**被删除**的公开 API 声明。
+pub fn deleted_public_apis(old_content: &str, new_content: &str) -> Vec<String> {
+    let new_set = public_api_signatures(new_content);
+    public_api_signatures(old_content)
+        .into_iter()
+        .filter(|sig| !new_set.iter().any(|n| n == sig))
+        .collect()
+}
+
 /// 应用一次修复响应：优先整文件重写，其次精确编辑。
 ///
 /// 任一改写/编辑失败都返回 `Err` —— 闸门不能把「没改成」记成成功。
-fn apply_repair_response(raw: &str) -> Result<String, String> {
+fn apply_repair_response(raw: &str, repair_context: &str) -> Result<String, String> {
     let value = parse_json_payload(raw)?;
 
     let rewrites = collect_rewrites(&value);
     if !rewrites.is_empty() {
+        // 修复不得删除公开 API：先留快照，应用后比对，发现删除就回滚。
+        let mut snapshots: Vec<(PathBuf, Option<String>)> = Vec::new();
+        for rw in &rewrites {
+            let path = PathBuf::from(&rw.path);
+            let before = std::fs::read_to_string(&path).ok();
+            snapshots.push((path, before));
+        }
+
         let mut summary = Vec::new();
         for rw in rewrites {
             let content = strip_code_fence(&rw.content);
             sisyphus_tools_system::file::write(Path::new(&rw.path), &content)
                 .map_err(|e| format!("rewrite failed for {}: {e}", rw.path))?;
             summary.push(format!("Rewrote {}", rw.path));
+        }
+
+        if let Some(violation) = rollback_if_public_api_removed(&snapshots, repair_context) {
+            return Err(violation);
         }
         return Ok(summary.join("\n"));
     }
@@ -1102,6 +1254,13 @@ fn apply_repair_response(raw: &str) -> Result<String, String> {
     if edits.is_empty() {
         return Err("repair response contained no edits".to_string());
     }
+    let mut snapshots: Vec<(PathBuf, Option<String>)> = Vec::new();
+    for edit in &edits {
+        let path = PathBuf::from(&edit.path);
+        let before = std::fs::read_to_string(&path).ok();
+        snapshots.push((path, before));
+    }
+
     let mut summary = Vec::new();
     for edit in edits {
         sisyphus_tools_system::file::edit(
@@ -1112,7 +1271,80 @@ fn apply_repair_response(raw: &str) -> Result<String, String> {
         .map_err(|e| format!("edit failed for {}: {e}", edit.path))?;
         summary.push(format!("Applied edit to {}", edit.path));
     }
+
+    if let Some(violation) = rollback_if_public_api_removed(&snapshots, repair_context) {
+        return Err(violation);
+    }
     Ok(summary.join("\n"))
+}
+
+/// 从一条公开 API 声明里取出标识符名（`pub fn add(...)` → `add`）。
+fn api_identifier(signature: &str) -> Option<String> {
+    let rest = [
+        "pub fn ",
+        "pub struct ",
+        "pub enum ",
+        "pub trait ",
+        "pub const ",
+        "pub static ",
+        "pub type ",
+        "pub mod ",
+        "pub union ",
+    ]
+    .iter()
+    .find_map(|prefix| signature.strip_prefix(prefix))?;
+    let name: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+/// 若本次改动删除了公开 API，回滚到改动前的内容并返回错误说明。
+///
+/// 例外：**闸门自己要求删掉**该 API 时允许删除（验证输出里点名了它）。
+///
+/// 闸门修复的目标是「让命令通过」，不是「重构用户的 API」。实测弱模型会在
+/// 全文件重写时顺手删掉不相关的公开函数，而客观闸门（只检查被测行为）照样
+/// 通过 —— 破坏就此静默发生。
+fn rollback_if_public_api_removed(
+    snapshots: &[(PathBuf, Option<String>)],
+    verification_output: &str,
+) -> Option<String> {
+    let mut violations: Vec<String> = Vec::new();
+    for (path, before) in snapshots {
+        let Some(before) = before else { continue };
+        let Ok(after) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let deleted: Vec<String> = deleted_public_apis(before, &after)
+            .into_iter()
+            .filter(|sig| {
+                // 闸门点名要删的 API → 允许删（否则「删除某个函数」类任务永远做不成）。
+                let requested = api_identifier(sig)
+                    .map(|name| verification_output.contains(&name))
+                    .unwrap_or(false);
+                !requested
+            })
+            .collect();
+        if !deleted.is_empty() {
+            violations.push(format!("{}: {}", path.display(), deleted.join(", ")));
+        }
+    }
+    if violations.is_empty() {
+        return None;
+    }
+    // 回滚：把文件恢复成改动前的内容。
+    for (path, before) in snapshots {
+        if let Some(content) = before {
+            let _ = sisyphus_tools_system::file::write(path, content);
+        }
+    }
+    Some(format!(
+        "repair removed public API (rolled back): {}",
+        violations.join("; ")
+    ))
 }
 
 #[cfg(test)]
