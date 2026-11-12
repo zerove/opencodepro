@@ -372,7 +372,8 @@ sisyphus dev "<目标>" \
   [--parallel] [--resume] \
   [--timeout-secs 300] \
   [--verify-cmd "cargo clippy -- -D warnings"] \
-  [--verify-fix-attempts 2]
+  [--verify-fix-attempts 2] \
+  [--record <path>] [--scenario <label>]
 ```
 
 | 参数 | 说明 |
@@ -383,6 +384,8 @@ sisyphus dev "<目标>" \
 | `--timeout-secs` | 整体超时（默认 300s）；本地/慢速模型需调大 |
 | `--verify-cmd` | **客观验收命令**。通过才判定目标达成；未通过则自动修复，仍失败则整体判失败 |
 | `--verify-fix-attempts` | 闸门失败后的自动修复次数（默认 2，`0` 表示只判定不修复） |
+| `--record` | 把本次闭环写成一条任务级质量记录（JSON）；**必须同时指定 `--verify-cmd`**，否则直接拒绝 |
+| `--scenario` | 记录里的场景标签（默认 `dev-closed-loop`），如 `diagnose-fix` / `quality-gate` / `feature` |
 
 ### 为什么需要 `--verify-cmd`
 
@@ -411,6 +414,26 @@ if ! sisyphus dev "实现 tests/feature.rs 引用的 API" --verify-cmd "cargo te
   echo "目标未达成" >&2
 fi
 ```
+
+### `--record`：把闭环结果接入质量指标
+
+`sisyphus metrics quality` 聚合的是任务级记录（成功率 / 修复率 / 回归率 / 平均耗时）。
+`dev --record` 把一次闭环落成同样的 `TaskRecord`：
+
+```bash
+sisyphus dev "修复 src/lib.rs 的编译错误" \
+  --verify-cmd "cargo check" \
+  --record docs/benchmarks/quality-metrics/records/l3-s1-diagnose-fix.json \
+  --scenario diagnose-fix
+```
+
+- **闸门失败也落记录**（`status: fail`）—— 失败样本是成功率的分母；
+- `initial_verify_passed` 取闸门**首轮**结果，`fix_attempts` 只统计闸门自动修复次数，
+  步骤内自愈不计入；
+- `regressed` 恒为 `false`：dev 不做跨任务回归检测，不为指标伪造数据；
+- 没有客观闸门的 `dev` 无法判定成败，因此 `--record` 单独使用会被拒绝。
+
+记录格式与聚合口径见 `docs/benchmarks/quality-metrics/records/README.md`。
 
 > 本地 3B 模型的真实闭环验收（三场景 × 3 轮）与复现脚本见
 > `docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md`。

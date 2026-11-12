@@ -85,6 +85,35 @@ phase1/
     └── pre-diff-s2-failure.out     # 加 diff 上下文之前的一次真实失败（见 §5.4）
 ```
 
+### 4.4 同一闭环进入质量指标（T4.1）
+
+`dev --record <path>` 把一次闭环落成 `TaskRecord`，使 L3 结果不只是日志，
+而是可聚合的样本。本节数据来自一次独立的记录运行（2026-11-12，同一模型与场景）：
+
+| 场景 | 闸门命令 | 首轮 | 最终 | 闸门修复次数 | 耗时 |
+|---|---|---|---|---|---|
+| s1 `diagnose-fix` | `cargo check` | FAIL | PASS | 1 | 34.6s |
+| s2 `quality-gate` | `cargo clippy -- -D warnings` | FAIL | PASS | 1 | 22.9s |
+| s3 `feature` | `cargo test` | PASS | PASS | 0 | 24.6s |
+
+记录已归档到 `docs/benchmarks/quality-metrics/records/l3-s{1,2,3}-*.json`。
+与既有 4 条仓库 `verify` 记录合并后共 7 条，聚合结果：
+
+```
+success_rate 1.0 / fix_rate 1.0 / regression_rate 0.0 / mean_duration 45.4s
+```
+
+产物 `docs/benchmarks/quality-metrics/2026-11-12-a668479.json`
+（bridge 未运行，token/http 指标为 `null`，不伪造）。
+
+口径说明：
+
+- `initial_verify_passed` 取闸门首轮，`fix_attempts` 只计闸门自动修复，
+  步骤内自愈不计入 —— 因此 s1/s2 的「首轮失败 → 修复通过」才能被修复率看见；
+- 闸门失败也会落记录（`status: fail`），失败样本是成功率的分母；
+- `regressed` 恒为 `false`：dev 不做跨任务回归检测，该字段在 dev 链路不具信息量；
+- `--record` 必须配 `--verify-cmd`，否则 CLI 直接拒绝 —— 没有客观闸门就没有成败。
+
 ## 5. 过程中发现并修复的缺陷（均来自真实运行）
 
 ### 5.1 成功标准由模型自选 → 假 SUCCESS（核心缺陷）

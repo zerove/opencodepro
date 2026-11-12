@@ -11,9 +11,9 @@
 | 指标 | 定义 | 来源 | 状态 |
 |---|---|---|---|
 | L3 场景成功率 | 验收 PASS / 可解释 BLOCKED 的比例 | `docs/benchmarks/acceptance/<date>/phase1/runs/` 证据目录 | 已有本地模型数据（9/9）；样本量小，待更多真实仓库任务 |
-| 任务成功率 | `pass / (pass + fail)`（blocked 单独计数） | 任务记录目录（`TaskRecord`）聚合 | 链路已就绪，真实样本待 L3 |
-| 任务修复率 | 初次验证失败且最终通过 / 初次验证失败 | 同上 | 同上 |
-| 任务回归率 | 修复引入回归 / 执行过修复 | 同上 | 同上 |
+| 任务成功率 | `pass / (pass + fail)`（blocked 单独计数） | 任务记录目录（`TaskRecord`）聚合 | 已有 7 条真实样本（4 仓库 `verify` + 3 L3 `dev` 闭环），成功率 1.0 |
+| 任务修复率 | 初次验证失败且最终通过 / 初次验证失败 | 同上 | 修复率 1.0（2 条首轮失败样本均修复通过） |
+| 任务回归率 | 修复引入回归 / 执行过修复 | 同上 | 0.0（`verify` 链路采样；`dev` 链路不检测跨任务回归，恒 false） |
 | 单任务耗时/token 成本 | 单任务端到端耗时、LLM token 用量 | 任务记录 `duration_ms` + bridge `/api/metrics`（`sisyphus_token_budget_usage` 等） | 链路已就绪（bridge 未运行时记 `null`） |
 
 ## 2. 采集口径
@@ -73,9 +73,15 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records
 **样本性质说明**：`fixture-samples/` 下的记录来自**受控 fixture crate** 的真实
 `sisyphus verify --fix` 运行（真实 cargo check / clippy / cargo clippy --fix 执行），
 用于验证指标口径与聚合链路；**不是**仓库真实开发任务的样本。
-仓库真实任务样本目录为 `records/`，现已含 4 条真实样本
-（`repo-sisyphus-tools-build.json`：`sisyphus verify -p sisyphus-tools-build --max-warnings 0`
-的真实运行结果）。后续在具备 LLM 凭据的环境（T1.4）补齐更多真实开发任务样本。
+仓库真实任务样本目录为 `records/`，现已含 7 条真实样本：
+
+- 4 条仓库 `verify` 任务（`repo-sisyphus-{tools-build,types,metrics,tools-agent}.json`）；
+- 3 条 L3 开发闭环（`l3-s{1,2,3}-*.json`，`dev --record` 产出，本地 ollama
+  `qwen2.5-coder:3b`：s1/s2 首轮闸门失败 → 修复 1 次通过，s3 一次通过）。
+
+最新聚合产物 `docs/benchmarks/quality-metrics/2026-11-12-a668479.json`
+（成功率 1.0 / 修复率 1.0 / 回归率 0.0 / 平均 45.4s）。样本量仍小，且 L3 样本来自
+本地 3B 模型，不代表云端大模型能力；后续以真实仓库开发任务继续扩充。
 
 ## 5. 关联
 
