@@ -39,10 +39,15 @@ pub(crate) async fn handle_dev(
         Ok(Ok(report)) => {
             println!("{}", sisyphus_cli::tools::developer::format_report(&report));
             match &report.final_verification {
-                Some(gate) if !gate.passed => println!(
-                    "❌ Objective verification failed after {} fix attempt(s): `{}`",
-                    gate.fix_attempts, gate.command
-                ),
+                Some(gate) if !gate.passed => {
+                    println!(
+                        "❌ Objective verification failed after {} fix attempt(s): `{}`",
+                        gate.fix_attempts, gate.command
+                    );
+                    // 自动化脚本以退出码判断成败：闸门失败必须是非零，
+                    // 不能只打印一行 ❌ 然后返回 0。
+                    anyhow::bail!("objective verification failed: `{}`", gate.command);
+                },
                 Some(gate) => {
                     println!(
                         "✅ Objective verification passed: `{}` ({} fix attempt(s))",
