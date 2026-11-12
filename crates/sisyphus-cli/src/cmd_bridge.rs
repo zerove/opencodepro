@@ -235,6 +235,34 @@ pub enum McpCommands {
     },
     /// 启动通过 stdio 暴露 Sisyphus 代理工具的 MCP 服务器
     Serve,
+    /// 列出 MCP 服务器暴露的资源
+    Resources {
+        ///服务器命令/URL，后跟可选参数（stdio: <command> [args...]；HTTP: http(s)://...）
+        #[arg(required = true)]
+        connect: Vec<String>,
+    },
+    /// 读取 MCP 服务器上的资源
+    ReadResource {
+        ///资源 URI
+        uri: String,
+        ///服务器连接：`<url>` 或 `<command>` `[args...]`
+        connect: Vec<String>,
+    },
+    /// 列出 MCP 服务器暴露的提示模板
+    Prompts {
+        ///服务器命令/URL，后跟可选参数（stdio: <command> [args...]；HTTP: http(s)://...）
+        #[arg(required = true)]
+        connect: Vec<String>,
+    },
+    /// 获取 MCP 服务器上的提示模板
+    GetPrompt {
+        ///提示名称
+        name: String,
+        ///JSON 参数对象（可选，例如 '{"topic":"rust"}'，值会转为字符串参数）
+        args: Option<String>,
+        ///服务器连接：`<url>` 或 `<command>` `[args...]`
+        connect: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]

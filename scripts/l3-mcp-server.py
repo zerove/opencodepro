@@ -56,6 +56,36 @@ TOOLS = [
     },
 ]
 
+RESOURCES = [
+    {
+        "uri": "memo://welcome",
+        "name": "welcome",
+        "description": "欢迎文本资源",
+        "mimeType": "text/plain",
+    },
+    {
+        "uri": "memo://status",
+        "name": "status",
+        "description": "状态资源",
+        "mimeType": "text/plain",
+    },
+]
+
+PROMPTS = [
+    {
+        "name": "greet",
+        "description": "生成问候语",
+        "arguments": [
+            {"name": "name", "description": "名字", "required": True},
+        ],
+    },
+    {
+        "name": "summary",
+        "description": "生成摘要提示",
+        "arguments": [],
+    },
+]
+
 
 def call_tool(name, args):
     """执行工具；未知工具/参数缺失抛 ValueError（客户端会收到 isError=true）。"""
@@ -86,7 +116,11 @@ def handle(msg):
     if method == "initialize":
         result = {
             "protocolVersion": params.get("protocolVersion", PROTOCOL_VERSION),
-            "capabilities": {"tools": {"listChanged": True}},
+            "capabilities": {
+                "tools": {"listChanged": True},
+                "resources": {"subscribe": False, "listChanged": False},
+                "prompts": {"listChanged": False},
+            },
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
         }
     elif method == "tools/list":
@@ -97,6 +131,57 @@ def handle(msg):
             result = {"content": [{"type": "text", "text": text}], "isError": False}
         except ValueError as exc:
             result = {"content": [{"type": "text", "text": str(exc)}], "isError": True}
+    elif method == "resources/list":
+        result = {"resources": RESOURCES}
+    elif method == "resources/read":
+        uri = params.get("uri")
+        body = {
+            "memo://welcome": "hello from mcp resource",
+            "memo://status": "status: ok",
+        }.get(uri)
+        if body is None:
+            return {
+                "jsonrpc": "2.0",
+                "id": mid,
+                "error": {"code": -32002, "message": f"resource not found: {uri}"},
+            }
+        result = {
+            "contents": [
+                {"uri": uri, "mimeType": "text/plain", "text": body},
+            ]
+        }
+    elif method == "prompts/list":
+        result = {"prompts": PROMPTS}
+    elif method == "prompts/get":
+        name = params.get("name")
+        args = params.get("arguments") or {}
+        if name == "greet":
+            who = args.get("name", "world")
+            result = {
+                "description": "greeting prompt",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": {"type": "text", "text": f"Say hello to {who}"},
+                    }
+                ],
+            }
+        elif name == "summary":
+            result = {
+                "description": "summary prompt",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": {"type": "text", "text": "Summarize the context."},
+                    }
+                ],
+            }
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "id": mid,
+                "error": {"code": -32602, "message": f"prompt not found: {name}"},
+            }
     else:
         return {
             "jsonrpc": "2.0",

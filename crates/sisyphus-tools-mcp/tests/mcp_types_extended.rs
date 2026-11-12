@@ -159,6 +159,7 @@ fn initialize_params_field_assignment() {
         capabilities: Some(ClientCapabilities {
             tools: None,
             resources: None,
+            prompts: None,
         }),
         client_info: Some(ClientInfo {
             name: "test".into(),
@@ -188,6 +189,7 @@ fn initialize_result_field_assignment() {
         capabilities: ServerCapabilities {
             tools: None,
             resources: None,
+            prompts: None,
         },
         server_info: Some(ServerInfo {
             name: "srv".into(),
@@ -207,6 +209,7 @@ fn initialize_result_serde_no_server_info() {
         capabilities: ServerCapabilities {
             tools: None,
             resources: None,
+            prompts: None,
         },
         server_info: None,
     };

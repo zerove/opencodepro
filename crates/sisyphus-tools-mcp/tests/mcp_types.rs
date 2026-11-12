@@ -159,6 +159,7 @@ fn initialize_params_with_all_fields() {
                 subscribe: Some(false),
                 list_changed: Some(true),
             }),
+            prompts: None,
         }),
         client_info: Some(ClientInfo {
             name: "test_client".into(),
@@ -200,6 +201,7 @@ fn initialize_result_with_server_info() {
                 list_changed: Some(false),
             }),
             resources: None,
+            prompts: None,
         },
         server_info: Some(ServerInfo {
             name: "my_server".into(),

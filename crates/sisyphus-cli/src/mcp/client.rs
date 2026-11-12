@@ -82,3 +82,57 @@ pub async fn run_call(
     println!("{}", serde_json::to_string_pretty(&result)?);
     Ok(())
 }
+
+/// `sisyphus mcp resources <url-or-command...>` — 列出服务器资源。
+pub async fn run_resources(connect_args: &[String]) -> Result<()> {
+    let mut client = resolve_client(connect_args).await?;
+    let result = client.list_resources().await?;
+    println!("{}", serde_json::to_string_pretty(&result)?);
+    Ok(())
+}
+
+/// `sisyphus mcp read-resource <uri> <url-or-command...>` — 读取资源。
+pub async fn run_read_resource(uri: &str, connect_args: &[String]) -> Result<()> {
+    let mut client = resolve_client(connect_args).await?;
+    let result = client.read_resource(uri).await?;
+    println!("{}", serde_json::to_string_pretty(&result)?);
+    Ok(())
+}
+
+/// `sisyphus mcp prompts <url-or-command...>` — 列出服务器提示模板。
+pub async fn run_prompts(connect_args: &[String]) -> Result<()> {
+    let mut client = resolve_client(connect_args).await?;
+    let result = client.list_prompts().await?;
+    println!("{}", serde_json::to_string_pretty(&result)?);
+    Ok(())
+}
+
+/// `sisyphus mcp get-prompt <name> [args-json] <url-or-command...>` — 获取提示模板。
+pub async fn run_get_prompt(
+    name: &str,
+    args_json: Option<&str>,
+    connect_args: &[String],
+) -> Result<()> {
+    let mut client = resolve_client(connect_args).await?;
+    let arguments = if let Some(raw) = args_json {
+        let value: serde_json::Value =
+            serde_json::from_str(raw).context("Invalid JSON arguments — must be a JSON object")?;
+        let obj = value
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("Prompt arguments must be a JSON object"))?;
+        let mut map = std::collections::BTreeMap::new();
+        for (k, v) in obj {
+            let s = match v {
+                serde_json::Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            map.insert(k.clone(), s);
+        }
+        Some(map)
+    } else {
+        None
+    };
+    let result = client.get_prompt(name, arguments).await?;
+    println!("{}", serde_json::to_string_pretty(&result)?);
+    Ok(())
+}

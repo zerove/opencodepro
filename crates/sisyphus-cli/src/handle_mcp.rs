@@ -39,6 +39,34 @@ pub async fn handle_mcp(
                 "MCP serve 启动失败。请检查本地环境与依赖；该模式通过 stdio 暴露代理工具。",
             )?;
         },
+        McpCommands::Resources { connect } => {
+            sisyphus_cli::mcp::run_resources(connect).await.with_context(|| {
+                format!(
+                    "MCP resources 失败。请检查服务器命令/URL 与参数是否正确（connect={connect:?}）。"
+                )
+            })?;
+        },
+        McpCommands::ReadResource { uri, connect } => {
+            sisyphus_cli::mcp::run_read_resource(uri, connect)
+                .await
+                .with_context(|| format!("MCP read-resource 失败（uri={uri}）。"))?;
+        },
+        McpCommands::Prompts { connect } => {
+            sisyphus_cli::mcp::run_prompts(connect).await.with_context(|| {
+                format!(
+                    "MCP prompts 失败。请检查服务器命令/URL 与参数是否正确（connect={connect:?}）。"
+                )
+            })?;
+        },
+        McpCommands::GetPrompt {
+            name,
+            args,
+            connect,
+        } => {
+            sisyphus_cli::mcp::run_get_prompt(name, args.as_deref(), connect)
+                .await
+                .with_context(|| format!("MCP get-prompt 失败（name={name}）。"))?;
+        },
     }
     Ok(())
 }

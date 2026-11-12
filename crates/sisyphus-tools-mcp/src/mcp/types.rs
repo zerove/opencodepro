@@ -64,14 +64,16 @@ pub struct InitializeParams {
     pub client_info: Option<ClientInfo>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 /// Client Capabilities.
 pub struct ClientCapabilities {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<ToolsCapability>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resources: Option<ResourcesCapability>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompts: Option<PromptsCapability>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +96,14 @@ pub struct ResourcesCapability {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Prompts Capability.
+pub struct PromptsCapability {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub list_changed: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Client Info.
 pub struct ClientInfo {
     pub name: String,
@@ -110,14 +120,16 @@ pub struct InitializeResult {
     pub server_info: Option<ServerInfo>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 /// Server Capabilities.
 pub struct ServerCapabilities {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<ToolsCapability>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resources: Option<ResourcesCapability>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompts: Option<PromptsCapability>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -323,6 +335,7 @@ mod tests {
                     list_changed: Some(true),
                 }),
                 resources: None,
+                prompts: None,
             }),
             client_info: Some(ClientInfo {
                 name: "sisyphus".into(),
@@ -345,6 +358,7 @@ mod tests {
                     subscribe: Some(false),
                     list_changed: None,
                 }),
+                prompts: None,
             },
             server_info: Some(ServerInfo {
                 name: "test-server".into(),
@@ -369,6 +383,7 @@ mod tests {
                     list_changed: Some(true),
                 }),
                 resources: None,
+                prompts: None,
             }),
             client_info: Some(ClientInfo {
                 name: "sisyphus".into(),
@@ -476,3 +491,132 @@ pub const MCP_ERROR_INTERNAL: i64 = -32603;
 
 pub const MCP_ERROR_TOOL_NOT_FOUND: i64 = -32000;
 pub const MCP_ERROR_TOOL_EXECUTION: i64 = -32001;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Mcp Resource.
+pub struct McpResource {
+    pub uri: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Mcp Resource Template.
+pub struct McpResourceTemplate {
+    pub uri_template: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// List Resources Result.
+pub struct ListResourcesResult {
+    pub resources: Vec<McpResource>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resource_templates: Vec<McpResourceTemplate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Read Resource Params.
+pub struct ReadResourceParams {
+    pub uri: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Read Resource Result.
+pub struct ReadResourceResult {
+    pub contents: Vec<ReadResourceContent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Read Resource Content.
+pub struct ReadResourceContent {
+    pub uri: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blob: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Mcp Prompt.
+pub struct McpPrompt {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arguments: Vec<PromptArgument>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Prompt Argument.
+pub struct PromptArgument {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// List Prompts Result.
+pub struct ListPromptsResult {
+    pub prompts: Vec<McpPrompt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Get Prompt Params.
+pub struct GetPromptParams {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<std::collections::BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Get Prompt Result.
+pub struct GetPromptResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub messages: Vec<PromptMessage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Prompt Message.
+pub struct PromptMessage {
+    pub role: String,
+    pub content: PromptContent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+/// Prompt Content.
+pub enum PromptContent {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "resource")]
+    Resource { resource: ReadResourceContent },
+}

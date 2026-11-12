@@ -1,8 +1,10 @@
 use super::transport::McpTransport;
 use super::types::{
-    CallToolParams, CallToolResult, ClientCapabilities, ClientInfo, InitializeParams,
-    InitializeResult, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, McpTool,
-    ResourcesCapability, ServerCapabilities, ServerInfo, ToolsCapability,
+    CallToolParams, CallToolResult, ClientCapabilities, ClientInfo, GetPromptParams,
+    GetPromptResult, InitializeParams, InitializeResult, JsonRpcNotification, JsonRpcRequest,
+    JsonRpcResponse, ListPromptsResult, ListResourcesResult, McpTool, PromptsCapability,
+    ReadResourceParams, ReadResourceResult, ResourcesCapability, ServerCapabilities, ServerInfo,
+    ToolsCapability,
 };
 use metrics::counter;
 use sisyphus_tools_core::ToolResult;
@@ -25,6 +27,7 @@ impl McpClient {
             server_capabilities: ServerCapabilities {
                 tools: None,
                 resources: None,
+                prompts: None,
             },
         }
     }
@@ -90,6 +93,9 @@ impl McpClient {
                 }),
                 resources: Some(ResourcesCapability {
                     subscribe: Some(false),
+                    list_changed: Some(false),
+                }),
+                prompts: Some(PromptsCapability {
                     list_changed: Some(false),
                 }),
             }),
@@ -198,6 +204,103 @@ impl McpClient {
         )
         .increment(1);
         Ok(result)
+    }
+
+    /// List resources available on the MCP server.
+    pub async fn list_resources(&mut self) -> ToolResult<ListResourcesResult> {
+        let resp = self.send_request("resources/list", None).await?;
+        if let Some(e) = resp.error {
+            return Err(sisyphus_tools_core::ToolError::TodoError(format!(
+                "list_resources error ({}): {}",
+                e.code, e.message
+            )));
+        }
+        let result = resp.result.ok_or_else(|| {
+            sisyphus_tools_core::ToolError::TodoError("list_resources: missing result".to_string())
+        })?;
+        let parsed: ListResourcesResult = serde_json::from_value(result).map_err(|e| {
+            sisyphus_tools_core::ToolError::TodoError(format!("deserialize resources: {e}"))
+        })?;
+        Ok(parsed)
+    }
+
+    /// Read a resource from the MCP server by URI.
+    pub async fn read_resource(&mut self, uri: &str) -> ToolResult<ReadResourceResult> {
+        let params = ReadResourceParams {
+            uri: uri.to_string(),
+        };
+        let resp = self
+            .send_request(
+                "resources/read",
+                Some(serde_json::to_value(params).map_err(|e| {
+                    sisyphus_tools_core::ToolError::TodoError(format!("serialize params: {e}"))
+                })?),
+            )
+            .await?;
+        if let Some(e) = resp.error {
+            return Err(sisyphus_tools_core::ToolError::TodoError(format!(
+                "read_resource error ({}): {}",
+                e.code, e.message
+            )));
+        }
+        let result = resp.result.ok_or_else(|| {
+            sisyphus_tools_core::ToolError::TodoError("read_resource: missing result".to_string())
+        })?;
+        let parsed: ReadResourceResult = serde_json::from_value(result).map_err(|e| {
+            sisyphus_tools_core::ToolError::TodoError(format!("deserialize resource: {e}"))
+        })?;
+        Ok(parsed)
+    }
+
+    /// List prompts available on the MCP server.
+    pub async fn list_prompts(&mut self) -> ToolResult<ListPromptsResult> {
+        let resp = self.send_request("prompts/list", None).await?;
+        if let Some(e) = resp.error {
+            return Err(sisyphus_tools_core::ToolError::TodoError(format!(
+                "list_prompts error ({}): {}",
+                e.code, e.message
+            )));
+        }
+        let result = resp.result.ok_or_else(|| {
+            sisyphus_tools_core::ToolError::TodoError("list_prompts: missing result".to_string())
+        })?;
+        let parsed: ListPromptsResult = serde_json::from_value(result).map_err(|e| {
+            sisyphus_tools_core::ToolError::TodoError(format!("deserialize prompts: {e}"))
+        })?;
+        Ok(parsed)
+    }
+
+    /// Get a prompt from the MCP server.
+    pub async fn get_prompt(
+        &mut self,
+        name: &str,
+        arguments: Option<std::collections::BTreeMap<String, String>>,
+    ) -> ToolResult<GetPromptResult> {
+        let params = GetPromptParams {
+            name: name.to_string(),
+            arguments,
+        };
+        let resp = self
+            .send_request(
+                "prompts/get",
+                Some(serde_json::to_value(params).map_err(|e| {
+                    sisyphus_tools_core::ToolError::TodoError(format!("serialize params: {e}"))
+                })?),
+            )
+            .await?;
+        if let Some(e) = resp.error {
+            return Err(sisyphus_tools_core::ToolError::TodoError(format!(
+                "get_prompt error ({}): {}",
+                e.code, e.message
+            )));
+        }
+        let result = resp.result.ok_or_else(|| {
+            sisyphus_tools_core::ToolError::TodoError("get_prompt: missing result".to_string())
+        })?;
+        let parsed: GetPromptResult = serde_json::from_value(result).map_err(|e| {
+            sisyphus_tools_core::ToolError::TodoError(format!("deserialize prompt: {e}"))
+        })?;
+        Ok(parsed)
     }
 
     /// Get the server info (available after initialize).

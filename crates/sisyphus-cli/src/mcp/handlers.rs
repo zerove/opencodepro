@@ -37,6 +37,7 @@ fn handle_initialize(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRp
         capabilities: crate::tools::ServerCapabilities {
             tools: Some(crate::tools::ToolsCapability { list_changed: None }),
             resources: None,
+            prompts: None,
         },
         server_info: Some(crate::tools::ServerInfo {
             name: "sisyphus-cli".into(),

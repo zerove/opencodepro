@@ -173,10 +173,10 @@ fn multiply_works() {
 RS
 }
 
-# s5：长上下文。lib.rs 有 600 个 helper（约 3.5k token），超过本地 provider 的
+# s5：长上下文。lib.rs 有 400 个 helper（约 2.3k token），超过本地 provider 的
 # 有效窗口（ollama 默认 num_ctx 较小）→ 引擎应检测并提示「prompt 被截断」。
 # 任务本身放在**文件末尾**（截断保留尾部，仍可完成），判定额外要求：
-# 600 个 helper **一个都不能少**（模型不得把长文件改残）。
+# 400 个 helper **一个都不能少**（模型不得把长文件改残）。
 reset_s5() {
   local d="$WORKDIR/s5"
   rm -rf "$d"; mkdir -p "$d/src" "$d/tests"
@@ -290,7 +290,7 @@ judge_s5() {
   local d="$WORKDIR/s5"
   # 1) 新函数存在
   grep -q "fn scale" "$d/src/lib.rs" || return 1
-  # 2) 600 个 helper 一个都不能少（长文件不得被改残）
+  # 2) 400 个 helper 一个都不能少（长文件不得被改残）
   local count
   count="$(grep -c "pub fn helper_" "$d/src/lib.rs" || true)"
   [ "$count" = "400" ] || return 1

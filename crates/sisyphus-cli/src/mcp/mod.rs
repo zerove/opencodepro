@@ -5,7 +5,9 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 mod client;
 mod handlers;
 
-pub use client::{run_call, run_info};
+pub use client::{
+    run_call, run_get_prompt, run_info, run_prompts, run_read_resource, run_resources,
+};
 
 /// MCP 工具处理器使用的全局 LLM 客户端。
 static LLM_CLIENT: std::sync::OnceLock<Arc<dyn crate::tools::metis::LlmClient>> =

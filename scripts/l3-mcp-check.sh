@@ -81,6 +81,17 @@ check "mcp call word_count = 3" '"text": "3"' "$wc_out"
 err_out="$(timeout 60 "$CLI" mcp call sum '{}' python3 "$SERVER" 2>&1)"
 check "mcp call 参数缺失返回 isError" '"isError": true' "$err_out"
 
+res_out="$(timeout 60 "$CLI" mcp resources python3 "$SERVER" 2>&1)"
+check "mcp resources 列出 2 个资源" '"memo://welcome"' "$res_out"
+check "mcp resources 包含 status" '"memo://status"' "$res_out"
+read_out="$(timeout 60 "$CLI" mcp read-resource 'memo://welcome' python3 "$SERVER" 2>&1)"
+check "mcp read-resource 返回文本内容" 'hello from mcp resource' "$read_out"
+prompts_out="$(timeout 60 "$CLI" mcp prompts python3 "$SERVER" 2>&1)"
+check "mcp prompts 列出 greet" '"greet"' "$prompts_out"
+check "mcp prompts 列出 summary" '"summary"' "$prompts_out"
+prompt_out="$(timeout 60 "$CLI" mcp get-prompt greet '{"name":"Sisyphus"}' python3 "$SERVER" 2>&1)"
+check "mcp get-prompt 返回渲染消息" 'Say hello to Sisyphus' "$prompt_out"
+
 # 客户端 ↔ 自家 MCP server（`sisyphus mcp serve`）：同一套协议的两端。
 # 这里同时守住「自家 server 不得回复 notification」——否则滞留在管道里的响应
 # 会被下一个请求读走，客户端报「list_tools: missing result」。
@@ -103,6 +114,14 @@ http_sum="$(timeout 60 "$CLI" mcp call sum '{"a":20,"b":22}' "$HTTP_URL" 2>&1)"
 check "HTTP 传输 mcp call sum(20,22) = 42" '"text": "42"' "$http_sum"
 http_err="$(timeout 60 "$CLI" mcp call sum '{}' "$HTTP_URL" 2>&1)"
 check "HTTP 传输参数缺失返回 isError" '"isError": true' "$http_err"
+http_res="$(timeout 60 "$CLI" mcp resources "$HTTP_URL" 2>&1)"
+check "HTTP 传输列出资源 memo://welcome" '"memo://welcome"' "$http_res"
+http_read="$(timeout 60 "$CLI" mcp read-resource 'memo://welcome' "$HTTP_URL" 2>&1)"
+check "HTTP 传输读取资源内容" 'hello from mcp resource' "$http_read"
+http_prompts="$(timeout 60 "$CLI" mcp prompts "$HTTP_URL" 2>&1)"
+check "HTTP 传输列出 prompts" '"greet"' "$http_prompts"
+http_prompt="$(timeout 60 "$CLI" mcp get-prompt greet '{"name":"Sisyphus"}' "$HTTP_URL" 2>&1)"
+check "HTTP 传输 get-prompt 渲染" 'Say hello to Sisyphus' "$http_prompt"
 
 # ── 级别 2：引擎（bridge）侧注册与调用 ───────────────────────
 if [ "$CLI_ONLY" -eq 1 ]; then
