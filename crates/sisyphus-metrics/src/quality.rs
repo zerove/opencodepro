@@ -99,6 +99,13 @@ pub struct QualityMetrics {
     /// 横向比较（至少要按版本分组后再比）。长度 = 0 说明所有样本都没带版本。
     #[serde(default)]
     pub engine_commits: Vec<String>,
+    /// **未携带**引擎版本信息的样本数。
+    ///
+    /// 这些样本无法归因到任何版本（字段引入前产出，或引擎源码目录已不存在）。
+    /// 必须单独计数：只看 `engine_commits` 会以为这批样本全都有版本，
+    /// 实际上有一部分是「未知」——那部分的比率同样不可归因。
+    #[serde(default)]
+    pub engine_unknown: usize,
 }
 
 /// 聚合任务记录。
@@ -167,6 +174,7 @@ pub fn aggregate(records: &[TaskRecord]) -> QualityMetrics {
         .collect();
     engine_commits.sort();
     engine_commits.dedup();
+    let engine_unknown = records.iter().filter(|r| r.engine_commit.is_none()).count();
 
     QualityMetrics {
         total,
@@ -181,6 +189,7 @@ pub fn aggregate(records: &[TaskRecord]) -> QualityMetrics {
         mean_completion_tokens,
         mean_total_tokens,
         engine_commits,
+        engine_unknown,
     }
 }
 
@@ -411,5 +420,16 @@ mod tests {
         let mut r = record("t1", TaskStatus::Pass, true, true, 0, false);
         r.engine_dirty = Some(true);
         assert!(aggregate(&[r]).engine_commits.is_empty());
+    }
+    #[test]
+    fn engine_unknown_counts_records_without_version() {
+        let mut known = record("t1", TaskStatus::Pass, true, true, 0, false);
+        known.engine_commit = Some("aaa111".to_string());
+        let unknown1 = record("t2", TaskStatus::Pass, true, true, 0, false);
+        let unknown2 = record("t3", TaskStatus::Fail, false, false, 1, false);
+
+        let metrics = aggregate(&[known, unknown1, unknown2]);
+        assert_eq!(metrics.engine_unknown, 2);
+        assert_eq!(metrics.engine_commits, vec!["aaa111"]);
     }
 }

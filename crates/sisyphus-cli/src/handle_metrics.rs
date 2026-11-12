@@ -113,6 +113,12 @@ fn print_engine_commits(metrics: &QualityMetrics) {
     if dirty > 0 {
         println!("  ↳ 其中 {dirty} 组为**脏工作区**产出（不对应任何已提交版本，仅供参考）");
     }
+    if metrics.engine_unknown > 0 {
+        println!(
+            "  ↳ 另有 {} 条样本**未携带版本信息**（无法归因，比率不可直接横向比较）",
+            metrics.engine_unknown
+        );
+    }
 }
 
 #[cfg(test)]
