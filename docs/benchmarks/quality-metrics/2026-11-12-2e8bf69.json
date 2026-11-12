@@ -1,0 +1,22 @@
+{
+  "collected_at": "2026-11-12T08:28:28.502295+00:00",
+  "commit": "2e8bf69",
+  "bridge_http": "http://127.0.0.1:15291",
+  "bridge_metrics_available": false,
+  "token_budget_usage": null,
+  "token_budget_capped": null,
+  "token_budget_exhausted": null,
+  "http_requests_total": null,
+  "records_dir": "docs/benchmarks/quality-metrics/records",
+  "task_total": 7,
+  "task_passed": 6,
+  "task_failed": 1,
+  "task_blocked": 0,
+  "task_success_rate": 0.8571428571428571,
+  "task_fix_rate": 0.6666666666666666,
+  "task_regression_rate": 0.0,
+  "task_cost_duration_ms_per_task": 65626.71428571429,
+  "task_cost_tokens_per_task": 1893.6666666666667,
+  "task_cost_prompt_tokens_per_task": 1453.3333333333333,
+  "task_cost_completion_tokens_per_task": 440.3333333333333
+}

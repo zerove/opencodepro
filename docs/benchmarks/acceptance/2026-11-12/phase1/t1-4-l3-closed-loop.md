@@ -101,17 +101,21 @@ phase1/
 
 | 场景 | 闸门命令 | 首轮 | 最终 | 闸门修复次数 | 耗时 | token（输入+输出） |
 |---|---|---|---|---|---|---|
-| s1 `diagnose-fix` | `cargo check` | PASS | PASS | 0 | 58.1s | 482 + 530 = 1012 |
-| s2 `quality-gate` | `cargo clippy -- -D warnings` | FAIL | PASS | 1 | 25.8s | 1042 + 227 = 1269 |
-| s3 `feature` | `cargo test` | PASS | PASS | 0 | 56.5s | 550 + 285 = 835 |
+| s1 `diagnose-fix` | `cargo check` | FAIL | PASS | 1 | 48.0s | 1082 + 310 = 1392 |
+| s2 `quality-gate` | `cargo clippy -- -D warnings` | FAIL | PASS | 1 | 35.9s | 1262 + 370 = 1632 |
+| s3 `feature` | `cargo test` | FAIL | **FAIL** | 2 | 140.0s | 2016 + 641 = 2657 |
 
-记录已归档到 `docs/benchmarks/quality-metrics/records/l3-s{1,2,3}-*.json`。
+这一轮**含失败样本**（s3 失败：3B 模型把函数当模块写 `pub mod multiply;`）。
+记录已归档到 `docs/benchmarks/quality-metrics/records/l3-s{1,2,3}-*.json`，
 与既有 4 条仓库 `verify` 记录合并后共 7 条，聚合结果：
 
 ```
-success_rate 1.0 / fix_rate 1.0 / regression_rate 0.0 / mean_duration 53.7s
-mean_total_tokens 1038.7（仅 3 条有 token 的记录参与；verify 记录为 null）
+success_rate 0.857 / fix_rate 0.667 / regression_rate 0.0 / mean_duration 65.6s
+mean_total_tokens 1893.7（仅 3 条有 token 的记录参与；verify 记录为 null）
 ```
+
+> 失败样本是成功率的分母 —— 只归档成功样本会让指标失真（上一版记录全是成功
+> 样本，聚合出来 1.0，看着比实际好）。
 
 token 来自 provider 上报的 usage（`prompt_tokens` / `completion_tokens`）：
 `dev` 链路自动写入记录，provider 未上报时留空而不是补 0，聚合时也不参与均值。

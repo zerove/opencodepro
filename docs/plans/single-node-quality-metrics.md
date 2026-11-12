@@ -10,11 +10,11 @@
 | 指标 | 定义 | 来源 | 状态 |
 |---|---|---|---|
 | L3 场景成功率 | 验收 PASS / 可解释 BLOCKED 的比例 | `docs/benchmarks/acceptance/<date>/phase1/runs/` 证据目录 | 已有本地模型数据（9/9）；样本量小，待更多真实仓库任务 |
-| 任务成功率 | `pass / (pass + fail)`（blocked 单独计数） | 任务记录目录（`TaskRecord`）聚合 | 已有 7 条真实样本（4 仓库 `verify` + 3 L3 `dev` 闭环），成功率 1.0 |
-| 任务修复率 | 初次验证失败且最终通过 / 初次验证失败 | 同上 | 修复率 1.0（2 条首轮失败样本均修复通过） |
-| 任务回归率 | 修复引入回归 / 执行过修复 | 同上 | 0.0（`verify` 链路采样；`dev` 链路不检测跨任务回归，恒 false） |
-| 单任务耗时 | 单任务端到端耗时 | 任务记录 `duration_ms` | 已有真实样本（7 条，均值 ~54s） |
-| 单任务 token 成本 | 单任务输入/输出 token 数 | 任务记录 `prompt_tokens` / `completion_tokens`（provider 上报的 usage；`dev` 链路自动写入） | 3 条 `dev` 记录有真实 token（均值 1039/任务）；`verify` 链路暂无（后端未暴露 usage） |
+| 任务成功率 | `pass / (pass + fail)`（blocked 单独计数） | 任务记录目录（`TaskRecord`）聚合 | 7 条真实样本（4 仓库 `verify` + 3 L3 `dev` 闭环，含 1 条失败样本）→ 成功率 0.857 |
+| 任务修复率 | 初次验证失败且最终通过 / 初次验证失败 | 同上 | 0.667（3 条首轮失败样本，2 条修复通过） |
+| 任务回归率 | 修复引入回归 / 执行过修复 | 同上 | 0.0（`dev` 链路现检测「公开 API 被删除」并写入 `regressed`；`verify` 链路仍恒 false） |
+| 单任务耗时 | 单任务端到端耗时 | 任务记录 `duration_ms` | 7 条样本，均值 ~65.6s |
+| 单任务 token 成本 | 单任务输入/输出 token 数 | 任务记录 `prompt_tokens` / `completion_tokens`（provider 上报的 usage；`dev` 链路自动写入） | 3 条 `dev` 记录有真实 token（均值 1894/任务）；`verify` 链路暂无（后端未暴露 usage） |
 | 全局 token 预算 | 进程级 LLM token 消耗估算 | bridge `/api/metrics`（`sisyphus_token_budget_usage` 等） | bridge 未运行时记 `null` |
 
 ## 2. 采集口径
@@ -76,7 +76,8 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records
 | `2026-11-11-a49b685.json` | **4 个真实仓库任务样本**（types / metrics / tools-build / tools-agent，均 `--max-warnings 0` PASS）→ 成功率 1.0、平均 58.9s |
 | `2026-11-11-6f1bcbd-fixture-samples.json` | **受控 fixture 样本**：3 个真实 `verify --fix` 运行（可自动修复 lint / 不可修复类型错误 / 干净代码）→ 成功率 0.667、修复率 0.5、回归率 0.0、平均 640ms |
 | `2026-11-12-a668479.json` | 7 条真实样本（4 仓库 `verify` + 3 L3 `dev` 闭环）→ 成功率 1.0、修复率 1.0、平均 45.4s（**无 token 维度**，采集时 token 采集尚未打通） |
-| `2026-11-12-a247771.json` | 同 7 条样本 + **token 成本维度**（provider 上报 usage → 任务记录）→ 成功率 1.0、修复率 1.0、平均 53.7s、**1038.7 token/任务** |
+| `2026-11-12-a247771.json` | 同 7 条样本 + **token 成本维度**（provider 上报 usage → 任务记录）→ 成功率 1.0、修复率 1.0、平均 53.7s、**1038.7 token/任务**（该轮样本全部成功，口径偏乐观） |
+| `2026-11-12-2e8bf69.json` | **含失败样本**的一轮真实 L3 运行（判定已加严）→ 成功率 0.857、修复率 0.667、平均 65.6s、**1893.7 token/任务**（失败样本是成功率的分母，只留成功样本会让指标失真） |
 | `fixture-samples/` | 上述 3 条任务记录原文（`sisyphus verify --record` 产出） |
 | `pipeline-demo-2026-11-11.json` | 最早的流程演示样本（2 个 fixture crate），保留作对照 |
 

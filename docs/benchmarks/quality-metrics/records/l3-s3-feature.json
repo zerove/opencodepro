@@ -1,13 +1,13 @@
 {
   "task_id": "l3-s3-feature",
   "scenario": "feature",
-  "status": "pass",
-  "initial_verify_passed": true,
-  "final_verify_passed": true,
-  "fix_attempts": 0,
+  "status": "fail",
+  "initial_verify_passed": false,
+  "final_verify_passed": false,
+  "fix_attempts": 2,
   "regressed": false,
-  "duration_ms": 56529,
-  "prompt_tokens": 550,
-  "completion_tokens": 285,
-  "recorded_at": "2026-11-12T03:39:31.285340886+00:00"
+  "duration_ms": 140000,
+  "prompt_tokens": 2016,
+  "completion_tokens": 641,
+  "recorded_at": "2026-11-12T08:27:34.953874795+00:00"
 }

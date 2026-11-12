@@ -69,9 +69,13 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records --jso
 | `repo-sisyphus-types.json` | 真实仓库任务 | 同上（`sisyphus-types`，PASS，19.782s） |
 | `repo-sisyphus-metrics.json` | 真实仓库任务 | 同上（`sisyphus-metrics`，PASS，46.028s） |
 | `repo-sisyphus-tools-agent.json` | 真实仓库任务 | 同上（`sisyphus-tools-agent`，PASS，90.770s） |
-| `l3-s1-diagnose-fix.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` 诊断修复场景（闸门 `cargo check`）：首轮即 PASS，0 修复，58.1s，1012 token |
-| `l3-s2-quality-gate.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` 质量门场景（闸门 `cargo clippy -- -D warnings`）：首轮 FAIL → 修复 1 次 → PASS，25.8s，1269 token |
-| `l3-s3-feature.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` TDD 跨文件场景（闸门 `cargo test`）：首轮即 PASS，0 修复，56.5s，835 token |
+| `l3-s1-diagnose-fix.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` 诊断修复场景（闸门 `cargo check`）：首轮 FAIL → 修复 1 次 → PASS，48.0s，1392 token |
+| `l3-s2-quality-gate.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` 质量门场景（闸门 `cargo clippy -- -D warnings`）：首轮 FAIL → 修复 1 次 → PASS，35.9s，1632 token |
+| `l3-s3-feature.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` TDD 跨文件场景（闸门 `cargo test`）：首轮 FAIL → 修复 2 次仍 FAIL，**失败样本**（3B 模型把函数当模块写），140.0s，2657 token |
+
+> 归档的是**一整轮真实运行**的结果，含失败样本 —— 失败样本是成功率的分母，
+> 只留成功样本会让指标失真。该轮的判定已加严（s3 还要求既有公开 API 保留，
+> 见 `phase1/t1-4-l3-closed-loop.md` §4.4b）。
 
 受控 fixture 样本（用于验证口径与链路，非仓库任务）单独放在
 `../fixture-samples/`，不混入本目录。
