@@ -206,22 +206,40 @@ impl McpClient {
         Ok(result)
     }
 
-    /// List resources available on the MCP server.
+    /// List resources available on the MCP server (auto-paginates).
     pub async fn list_resources(&mut self) -> ToolResult<ListResourcesResult> {
-        let resp = self.send_request("resources/list", None).await?;
-        if let Some(e) = resp.error {
-            return Err(sisyphus_tools_core::ToolError::TodoError(format!(
-                "list_resources error ({}): {}",
-                e.code, e.message
-            )));
+        let mut cursor: Option<String> = None;
+        let mut all_resources = Vec::new();
+        let mut all_templates = Vec::new();
+        loop {
+            let params = cursor.as_ref().map(|c| serde_json::json!({ "cursor": c }));
+            let resp = self.send_request("resources/list", params).await?;
+            if let Some(e) = resp.error {
+                return Err(sisyphus_tools_core::ToolError::TodoError(format!(
+                    "list_resources error ({}): {}",
+                    e.code, e.message
+                )));
+            }
+            let result = resp.result.ok_or_else(|| {
+                sisyphus_tools_core::ToolError::TodoError(
+                    "list_resources: missing result".to_string(),
+                )
+            })?;
+            let page: ListResourcesResult = serde_json::from_value(result).map_err(|e| {
+                sisyphus_tools_core::ToolError::TodoError(format!("deserialize resources: {e}"))
+            })?;
+            all_resources.extend(page.resources);
+            all_templates.extend(page.resource_templates);
+            cursor = page.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
         }
-        let result = resp.result.ok_or_else(|| {
-            sisyphus_tools_core::ToolError::TodoError("list_resources: missing result".to_string())
-        })?;
-        let parsed: ListResourcesResult = serde_json::from_value(result).map_err(|e| {
-            sisyphus_tools_core::ToolError::TodoError(format!("deserialize resources: {e}"))
-        })?;
-        Ok(parsed)
+        Ok(ListResourcesResult {
+            resources: all_resources,
+            resource_templates: all_templates,
+            next_cursor: None,
+        })
     }
 
     /// Read a resource from the MCP server by URI.
@@ -252,22 +270,37 @@ impl McpClient {
         Ok(parsed)
     }
 
-    /// List prompts available on the MCP server.
+    /// List prompts available on the MCP server (auto-paginates).
     pub async fn list_prompts(&mut self) -> ToolResult<ListPromptsResult> {
-        let resp = self.send_request("prompts/list", None).await?;
-        if let Some(e) = resp.error {
-            return Err(sisyphus_tools_core::ToolError::TodoError(format!(
-                "list_prompts error ({}): {}",
-                e.code, e.message
-            )));
+        let mut cursor: Option<String> = None;
+        let mut all_prompts = Vec::new();
+        loop {
+            let params = cursor.as_ref().map(|c| serde_json::json!({ "cursor": c }));
+            let resp = self.send_request("prompts/list", params).await?;
+            if let Some(e) = resp.error {
+                return Err(sisyphus_tools_core::ToolError::TodoError(format!(
+                    "list_prompts error ({}): {}",
+                    e.code, e.message
+                )));
+            }
+            let result = resp.result.ok_or_else(|| {
+                sisyphus_tools_core::ToolError::TodoError(
+                    "list_prompts: missing result".to_string(),
+                )
+            })?;
+            let page: ListPromptsResult = serde_json::from_value(result).map_err(|e| {
+                sisyphus_tools_core::ToolError::TodoError(format!("deserialize prompts: {e}"))
+            })?;
+            all_prompts.extend(page.prompts);
+            cursor = page.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
         }
-        let result = resp.result.ok_or_else(|| {
-            sisyphus_tools_core::ToolError::TodoError("list_prompts: missing result".to_string())
-        })?;
-        let parsed: ListPromptsResult = serde_json::from_value(result).map_err(|e| {
-            sisyphus_tools_core::ToolError::TodoError(format!("deserialize prompts: {e}"))
-        })?;
-        Ok(parsed)
+        Ok(ListPromptsResult {
+            prompts: all_prompts,
+            next_cursor: None,
+        })
     }
 
     /// Get a prompt from the MCP server.
@@ -616,5 +649,70 @@ mod tests {
         assert_eq!(result.description.as_deref(), Some("greeting"));
         assert_eq!(result.messages.len(), 1);
         assert_eq!(result.messages[0].role, "user");
+    }
+
+    #[tokio::test]
+    async fn test_list_resources_auto_paginates() {
+        let transport = MockTransport::new(vec![
+            mock_initialize_response_for_notification(),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "resources": [{ "uri": "memo://a", "name": "a" }],
+                    "resourceTemplates": [{ "uriTemplate": "memo://{id}", "name": "t1" }],
+                    "nextCursor": "c1"
+                }
+            })
+            .to_string(),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "result": {
+                    "resources": [{ "uri": "memo://b", "name": "b" }],
+                    "resourceTemplates": [{ "uriTemplate": "memo://{x}", "name": "t2" }]
+                }
+            })
+            .to_string(),
+        ]);
+        let mut client = McpClient::new(Box::new(transport));
+        client.initialize("test", "0.1").await.unwrap();
+        let result = client.list_resources().await.unwrap();
+        assert_eq!(result.resources.len(), 2);
+        assert_eq!(result.resource_templates.len(), 2);
+        assert_eq!(result.resources[0].uri, "memo://a");
+        assert_eq!(result.resources[1].uri, "memo://b");
+        assert!(result.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_list_prompts_auto_paginates() {
+        let transport = MockTransport::new(vec![
+            mock_initialize_response_for_notification(),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "prompts": [{ "name": "p1" }],
+                    "nextCursor": "c1"
+                }
+            })
+            .to_string(),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "result": {
+                    "prompts": [{ "name": "p2" }, { "name": "p3" }]
+                }
+            })
+            .to_string(),
+        ]);
+        let mut client = McpClient::new(Box::new(transport));
+        client.initialize("test", "0.1").await.unwrap();
+        let result = client.list_prompts().await.unwrap();
+        assert_eq!(result.prompts.len(), 3);
+        assert_eq!(result.prompts[0].name, "p1");
+        assert_eq!(result.prompts[2].name, "p3");
+        assert!(result.next_cursor.is_none());
     }
 }

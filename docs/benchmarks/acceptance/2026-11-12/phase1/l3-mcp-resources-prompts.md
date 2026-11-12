@@ -56,4 +56,4 @@ bash scripts/l3-mcp-check.sh              # CLI + 引擎级
 
 - 本文档是对历史 `l3-mcp-scenario.md`（2026-11-12，tools 17/17）的**增量补充**，
   不替代原始证据；覆盖范围已扩展到 bridge 引擎级目录快照与按需 `resources/read`/`prompts/get` 代理（stdio+HTTP）。
-- 结论基于本地独立 fixture 与 CLI/HTTP API 的外部可观察输出；`/api/mcp/resources`、`/api/mcp/prompts` 列表按需实时拉取并在失败时回退启动快照，`resources/read`、`prompts/get` 为按需代理调用。
+- 结论基于本地独立 fixture 与 CLI/HTTP API 的外部可观察输出；`/api/mcp/resources`、`/api/mcp/prompts` 列表按需实时拉取并在失败时回退启动快照，`resources/read`、`prompts/get` 为按需代理调用。`sisyphus-tools-mcp` 客户端对 resources/prompts 列表自动跟随 `nextCursor` 分页（`cargo test -p sisyphus-tools-mcp --lib` 覆盖），但本 fixture/验收脚本未提供分页响应。
