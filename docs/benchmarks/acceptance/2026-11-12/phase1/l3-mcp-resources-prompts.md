@@ -5,8 +5,8 @@
 在历史 MCP 场景（tools，CLI/引擎两级 17/17 PASS，证据 `l3-mcp-scenario.md`）基础上，
 补齐 MCP **resources/prompts** 的客户端能力、CLI 子命令、独立 fixture、bridge 引擎级资源/提示目录快照与验收：
 
-- `./scripts/l3-mcp-check.sh --cli-only`：**PASS=21 FAIL=0**
-- `./scripts/l3-mcp-check.sh`（CLI + 引擎）：**PASS=36 FAIL=0**
+- `./scripts/l3-mcp-check.sh --cli-only`：**PASS=29 FAIL=0**
+- `./scripts/l3-mcp-check.sh`（CLI + 引擎）：**PASS=48 FAIL=0**
 - 覆盖：stdio + HTTP 两种传输；tools 调用 + resources 列表/读取 + prompts 列表/获取；
   含自家 `sisyphus mcp serve` 互通校验。
 
@@ -19,9 +19,9 @@
 | CLI 子命令 | DONE | `sisyphus mcp resources` / `read-resource` / `prompts` / `get-prompt`；`mcp info` best-effort 展示 resources/prompts |
 | 自家 MCP server | PARTIAL | `mcp serve` 声明 resources/prompts capability 并返回空列表（`read/get` 对不存在项报错）；不提供业务资源/提示 |
 | 独立 fixture | DONE | `scripts/l3-mcp-server.py`（stdio）+ `scripts/l3-mcp-http-server.py`（HTTP，共用协议实现） |
-| CLI 级验收 | DONE | `scripts/l3-mcp-check.sh --cli-only`，21/21 PASS |
+| CLI 级验收 | DONE | `scripts/l3-mcp-check.sh --cli-only`，29/29 PASS（含分页自动合并/读取/获取） |
 | 引擎/bridge 级目录快照 | DONE | bridge 启动时采集 MCP resources/prompts，新增 `GET /api/mcp/resources`、`GET /api/mcp/prompts`（按 server prefix 聚合） |
-| 引擎/bridge 级 read/get 代理 | DONE | 新增 `GET /api/mcp/resources/read`、`POST /api/mcp/prompts/get`，按 server prefix 代理到已连接 MCP 执行器；`scripts/l3-mcp-check.sh` level 2 覆盖 stdio+HTTP 两 server 的按需读/取（**36/36 PASS**） |
+| 引擎/bridge 级 read/get 代理与分页 | DONE | 新增 `GET /api/mcp/resources/read`、`POST /api/mcp/prompts/get`；fixture 提供 `nextCursor` 分页，客户端/bridge/CLI 自动合并分页 resources/prompts，level 2 覆盖分页目录与按需读/取（**48/48 PASS**） |
 | OAuth / 分页 cursor / resource template 实读 | NOT DONE | 未覆盖 |
 
 ## 3. 复现与结果
@@ -33,8 +33,7 @@ bash scripts/l3-mcp-check.sh --cli-only   # CLI 级
 bash scripts/l3-mcp-check.sh              # CLI + 引擎级
 ```
 
-原始输出：`runs/mcp-rp/l3-mcp-check-cli.out`（**PASS=21 FAIL=0**）、
-`runs/mcp-rp/l3-mcp-check-full.out`（**PASS=36 FAIL=0**）。
+原始输出：`runs/mcp-rp/l3-mcp-check-full.out`（**PASS=48 FAIL=0**）。
 
 关键检查项（节选）：
 
@@ -50,10 +49,11 @@ bash scripts/l3-mcp-check.sh              # CLI + 引擎级
 - `009aa90` test(mcp): 补充 resources/prompts 客户端方法单测
 - `428a50c` fix(mcp): 自家 MCP server 支持空资源/提示列表并加固 L3 HTTP 检查
 - `c0fbf60` feat(bridge): 暴露 MCP resources/prompts 目录快照并扩展引擎级验收（32/32）
-- （本轮）bridge 增加 `GET /api/mcp/resources/read`、`POST /api/mcp/prompts/get` 按需代理，`l3-mcp-check.sh` 扩展至 **36/36 PASS**
+- `0319c91` bridge 增加 `GET /api/mcp/resources/read`、`POST /api/mcp/prompts/get` 按需代理，`l3-mcp-check.sh` 扩展至 **36/36 PASS**
+- （本轮）fixture/check 扩展 `nextCursor` 分页场景；客户端/CLI/bridge 自动合并分页并通过外部验收 **48/48 PASS**
 
 ## 5. 说明
 
 - 本文档是对历史 `l3-mcp-scenario.md`（2026-11-12，tools 17/17）的**增量补充**，
   不替代原始证据；覆盖范围已扩展到 bridge 引擎级目录快照与按需 `resources/read`/`prompts/get` 代理（stdio+HTTP）。
-- 结论基于本地独立 fixture 与 CLI/HTTP API 的外部可观察输出；`/api/mcp/resources`、`/api/mcp/prompts` 列表按需实时拉取并在失败时回退启动快照，`resources/read`、`prompts/get` 为按需代理调用。`sisyphus-tools-mcp` 客户端对 resources/prompts 列表自动跟随 `nextCursor` 分页（`cargo test -p sisyphus-tools-mcp --lib` 覆盖），但本 fixture/验收脚本未提供分页响应。
+- 结论基于本地独立 fixture 与 CLI/HTTP API 的外部可观察输出；`/api/mcp/resources`、`/api/mcp/prompts` 列表按需实时拉取并在失败时回退启动快照，`resources/read`、`prompts/get` 为按需代理调用。fixture 提供带 `nextCursor` 的分页响应，验收覆盖 CLI/HTTP/引擎目录自动合并及分页资源读取/分页提示获取（**48/48**）；客户端分页另有 `cargo test -p sisyphus-tools-mcp --lib` 单测佐证。

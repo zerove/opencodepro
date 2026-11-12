@@ -56,7 +56,7 @@ TOOLS = [
     },
 ]
 
-RESOURCES = [
+RESOURCES_PAGE1 = [
     {
         "uri": "memo://welcome",
         "name": "welcome",
@@ -71,7 +71,19 @@ RESOURCES = [
     },
 ]
 
-PROMPTS = [
+RESOURCES_PAGE2 = [
+    {
+        "uri": "memo://paged",
+        "name": "paged",
+        "description": "分页资源",
+        "mimeType": "text/plain",
+    },
+]
+
+# 兼容旧引用（如有）
+RESOURCES = RESOURCES_PAGE1 + RESOURCES_PAGE2
+
+PROMPTS_PAGE1 = [
     {
         "name": "greet",
         "description": "生成问候语",
@@ -85,6 +97,16 @@ PROMPTS = [
         "arguments": [],
     },
 ]
+
+PROMPTS_PAGE2 = [
+    {
+        "name": "paged_prompt",
+        "description": "分页提示",
+        "arguments": [],
+    },
+]
+
+PROMPTS = PROMPTS_PAGE1 + PROMPTS_PAGE2
 
 
 def call_tool(name, args):
@@ -132,12 +154,17 @@ def handle(msg):
         except ValueError as exc:
             result = {"content": [{"type": "text", "text": str(exc)}], "isError": True}
     elif method == "resources/list":
-        result = {"resources": RESOURCES}
+        cursor = params.get("cursor")
+        if cursor == "page2":
+            result = {"resources": RESOURCES_PAGE2}
+        else:
+            result = {"resources": RESOURCES_PAGE1, "nextCursor": "page2"}
     elif method == "resources/read":
         uri = params.get("uri")
         body = {
             "memo://welcome": "hello from mcp resource",
             "memo://status": "status: ok",
+            "memo://paged": "paged resource body",
         }.get(uri)
         if body is None:
             return {
@@ -151,7 +178,11 @@ def handle(msg):
             ]
         }
     elif method == "prompts/list":
-        result = {"prompts": PROMPTS}
+        cursor = params.get("cursor")
+        if cursor == "page2":
+            result = {"prompts": PROMPTS_PAGE2}
+        else:
+            result = {"prompts": PROMPTS_PAGE1, "nextCursor": "page2"}
     elif method == "prompts/get":
         name = params.get("name")
         args = params.get("arguments") or {}
@@ -173,6 +204,16 @@ def handle(msg):
                     {
                         "role": "user",
                         "content": {"type": "text", "text": "Summarize the context."},
+                    }
+                ],
+            }
+        elif name == "paged_prompt":
+            result = {
+                "description": "paged prompt",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": {"type": "text", "text": "Paged prompt message."},
                     }
                 ],
             }

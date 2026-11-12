@@ -85,15 +85,21 @@ err_out="$(timeout 60 "$CLI" mcp call sum '{}' python3 "$SERVER" 2>&1)"
 check "mcp call 参数缺失返回 isError" '"isError": true' "$err_out"
 
 res_out="$(timeout 60 "$CLI" mcp resources python3 "$SERVER" 2>&1)"
-check "mcp resources 列出 2 个资源" '"memo://welcome"' "$res_out"
+check "mcp resources 包含 welcome" '"memo://welcome"' "$res_out"
 check "mcp resources 包含 status" '"memo://status"' "$res_out"
+check "mcp resources 自动合并分页资源" '"memo://paged"' "$res_out"
 read_out="$(timeout 60 "$CLI" mcp read-resource 'memo://welcome' python3 "$SERVER" 2>&1)"
 check "mcp read-resource 返回文本内容" 'hello from mcp resource' "$read_out"
+read_paged_out="$(timeout 60 "$CLI" mcp read-resource 'memo://paged' python3 "$SERVER" 2>&1)"
+check "mcp read-resource 读取分页资源" 'paged resource body' "$read_paged_out"
 prompts_out="$(timeout 60 "$CLI" mcp prompts python3 "$SERVER" 2>&1)"
 check "mcp prompts 列出 greet" '"greet"' "$prompts_out"
 check "mcp prompts 列出 summary" '"summary"' "$prompts_out"
+check "mcp prompts 自动合并分页提示" '"paged_prompt"' "$prompts_out"
 prompt_out="$(timeout 60 "$CLI" mcp get-prompt greet '{"name":"Sisyphus"}' python3 "$SERVER" 2>&1)"
 check "mcp get-prompt 返回渲染消息" 'Say hello to Sisyphus' "$prompt_out"
+prompt_paged_out="$(timeout 60 "$CLI" mcp get-prompt paged_prompt '{}' python3 "$SERVER" 2>&1)"
+check "mcp get-prompt 获取分页提示" 'Paged prompt message.' "$prompt_paged_out"
 
 # 客户端 ↔ 自家 MCP server（`sisyphus mcp serve`）：同一套协议的两端。
 # 这里同时守住「自家 server 不得回复 notification」——否则滞留在管道里的响应
@@ -132,12 +138,18 @@ http_err="$(timeout 60 "$CLI" mcp call sum '{}' "$HTTP_URL" 2>&1)"
 check "HTTP 传输参数缺失返回 isError" '"isError": true' "$http_err"
 http_res="$(timeout 60 "$CLI" mcp resources "$HTTP_URL" 2>&1)"
 check "HTTP 传输列出资源 memo://welcome" '"memo://welcome"' "$http_res"
+check "HTTP 传输自动合并分页资源" '"memo://paged"' "$http_res"
 http_read="$(timeout 60 "$CLI" mcp read-resource 'memo://welcome' "$HTTP_URL" 2>&1)"
 check "HTTP 传输读取资源内容" 'hello from mcp resource' "$http_read"
+http_read_paged="$(timeout 60 "$CLI" mcp read-resource 'memo://paged' "$HTTP_URL" 2>&1)"
+check "HTTP 传输读取分页资源" 'paged resource body' "$http_read_paged"
 http_prompts="$(timeout 60 "$CLI" mcp prompts "$HTTP_URL" 2>&1)"
 check "HTTP 传输列出 prompts" '"greet"' "$http_prompts"
+check "HTTP 传输自动合并分页提示" '"paged_prompt"' "$http_prompts"
 http_prompt="$(timeout 60 "$CLI" mcp get-prompt greet '{"name":"Sisyphus"}' "$HTTP_URL" 2>&1)"
 check "HTTP 传输 get-prompt 渲染" 'Say hello to Sisyphus' "$http_prompt"
+http_prompt_paged="$(timeout 60 "$CLI" mcp get-prompt paged_prompt '{}' "$HTTP_URL" 2>&1)"
+check "HTTP 传输获取分页提示" 'Paged prompt message.' "$http_prompt_paged"
 
 # ── 级别 2：引擎（bridge）侧注册与调用 ───────────────────────
 if [ "$CLI_ONLY" -eq 1 ]; then
@@ -218,9 +230,11 @@ else
   mcp_res_out="$(curl -sf --max-time 10 "$BASE/api/mcp/resources" 2>&1)"
   check "引擎 /api/mcp/resources 含 l3 服务资源" '"server_prefix":"l3"' "$mcp_res_out"
   check "引擎 /api/mcp/resources 含 memo://welcome" '"memo://welcome"' "$mcp_res_out"
+  check "引擎 /api/mcp/resources 含分页资源 memo://paged" '"memo://paged"' "$mcp_res_out"
   check "引擎 /api/mcp/resources 含 l3http 服务资源" '"server_prefix":"l3http"' "$mcp_res_out"
   mcp_prompts_out="$(curl -sf --max-time 10 "$BASE/api/mcp/prompts" 2>&1)"
   check "引擎 /api/mcp/prompts 含 greet" '"greet"' "$mcp_prompts_out"
+  check "引擎 /api/mcp/prompts 含分页提示 paged_prompt" '"paged_prompt"' "$mcp_prompts_out"
   check "引擎 /api/mcp/prompts 含 l3http" '"server_prefix":"l3http"' "$mcp_prompts_out"
 
   mcp_read_out="$(curl -sf --max-time 15 -G "$BASE/api/mcp/resources/read" \
@@ -229,10 +243,17 @@ else
   mcp_read_http_out="$(curl -sf --max-time 15 -G "$BASE/api/mcp/resources/read" \
     --data-urlencode 'server=l3http' --data-urlencode 'uri=memo://status' 2>&1)"
   check "引擎代理 resources/read（HTTP MCP）返回状态" 'status: ok' "$mcp_read_http_out"
+  mcp_read_paged_out="$(curl -sf --max-time 15 -G "$BASE/api/mcp/resources/read" \
+    --data-urlencode 'server=l3' --data-urlencode 'uri=memo://paged' 2>&1)"
+  check "引擎代理 resources/read 读取分页资源" 'paged resource body' "$mcp_read_paged_out"
   mcp_get_prompt_out="$(curl -sf --max-time 15 -X POST "$BASE/api/mcp/prompts/get" \
     -H 'content-type: application/json' \
     -d '{"server":"l3","name":"greet","arguments":{"name":"Bridge"}}' 2>&1)"
   check "引擎代理 prompts/get 返回渲染消息" 'Say hello to Bridge' "$mcp_get_prompt_out"
+  mcp_get_prompt_paged_out="$(curl -sf --max-time 15 -X POST "$BASE/api/mcp/prompts/get" \
+    -H 'content-type: application/json' \
+    -d '{"server":"l3http","name":"paged_prompt","arguments":{}}' 2>&1)"
+  check "引擎代理 prompts/get 获取分页提示" 'Paged prompt message.' "$mcp_get_prompt_paged_out"
   mcp_get_prompt_http_out="$(curl -sf --max-time 15 -X POST "$BASE/api/mcp/prompts/get" \
     -H 'content-type: application/json' \
     -d '{"server":"l3http","name":"summary","arguments":{}}' 2>&1)"
