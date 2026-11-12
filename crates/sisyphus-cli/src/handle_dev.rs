@@ -127,7 +127,13 @@ pub(crate) async fn handle_dev(
                 None if report.overall_status
                     == sisyphus_cli::tools::developer::DevOverallStatus::Success =>
                 {
+                    // 没配客观闸门（--verify-cmd）时，成功是模型自评 —— 同样要明示，
+                    // 不能只打一个 ✅ 然后让自动化脚本按 0 退出。
                     println!("✅ Development completed successfully.");
+                    println!(
+                        "⚠️  No objective verification gate was configured (no --verify-cmd): \
+                         this result comes from the model's self-assessment."
+                    );
                 },
                 None => println!("⚠️  Development completed with issues."),
             }
