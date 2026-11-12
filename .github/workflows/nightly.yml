@@ -175,6 +175,8 @@ jobs:
           name: integration-test-log
           path: docs/benchmarks/
           retention-days: 30
+          # 该目录可能不存在（测试不产出 benchmark）→ 不要因此把 nightly 判红
+          if-no-files-found: ignore
 
   # ── HTTP client performance regression check (ADR-006 §J) ─────────
   # 跑 shared_http bench，与 `.sisyphus/eval-history/` 上次基线对比。
