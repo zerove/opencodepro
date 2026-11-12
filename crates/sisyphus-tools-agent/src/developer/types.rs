@@ -92,6 +92,24 @@ pub enum DevOverallStatus {
     Cancelled,
 }
 
+/// 客观验收门（`dev --verify-cmd`）的结果。
+///
+/// 步骤自带的 `verification` 是**模型自选**的，可能与用户目标不一致：例如目标是
+/// 「clippy -D warnings 通过」，模型却声明 `CargoCheck`（警告不是错误 → 通过），
+/// 于是「全部步骤成功」而目标其实没达成。最终闸门由用户指定命令，是唯一的
+/// 「成功」判据。
+#[derive(Debug, Clone, PartialEq)]
+pub struct FinalVerification {
+    /// 用户给定的验收命令。
+    pub command: String,
+    /// 最后一次运行是否通过。
+    pub passed: bool,
+    /// 已消耗的自动修复尝试次数（0 表示一次就过）。
+    pub fix_attempts: usize,
+    /// 最后一次运行的合并输出（stdout+stderr，已截断）。
+    pub output: String,
+}
+
 /// Full development report
 #[derive(Debug, Clone)]
 pub struct DevelopmentReport {
@@ -99,6 +117,8 @@ pub struct DevelopmentReport {
     pub overall_status: DevOverallStatus,
     pub steps: Vec<StepResult>,
     pub artifacts: Vec<String>,
+    /// 客观验收门结果（未配置 `--verify-cmd` 时为 `None`）。
+    pub final_verification: Option<FinalVerification>,
 }
 
 /// Checkpoint for resuming a development session after interruption.

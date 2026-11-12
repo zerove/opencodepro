@@ -296,6 +296,17 @@ pub enum Commands {
         ///从最后检查点恢复，跳过已完成步骤
         #[arg(short = 'r', long = "resume")]
         resume: bool,
+        ///整体超时（秒）；本地/慢速模型需要更长（默认 300）
+        #[arg(long = "timeout-secs", default_value_t = 300)]
+        timeout_secs: u64,
+        ///客观验收命令（例如 `cargo clippy -- -D warnings`）。
+        ///步骤自带的验证由模型自选，可能与目标不一致；该命令是唯一的成功判据：
+        ///未通过则整体判失败，并带着输出自动修复（次数见 --verify-fix-attempts）
+        #[arg(long = "verify-cmd")]
+        verify_cmd: Option<String>,
+        ///验收命令失败后的自动修复尝试次数（0 = 只判定不修复，默认 2）
+        #[arg(long = "verify-fix-attempts", default_value_t = 2)]
+        verify_fix_attempts: usize,
     },
 }
 

@@ -9,7 +9,7 @@ pub mod types;
 
 pub use types::{
     DevAction, DevCheckpoint, DevOverallStatus, DevStep, DevelopmentPlan, DevelopmentReport,
-    StepResult, StepStatus, VerificationMethod,
+    FinalVerification, StepResult, StepStatus, VerificationMethod,
 };
 
 use sisyphus_tools_llm::metis::LlmClient;
@@ -39,6 +39,15 @@ pub struct Developer {
     enable_wisdom: bool,
     interrupt: Arc<AtomicBool>,
     approver: Option<Arc<dyn DevApprover>>,
+    /// 客观验收命令（`dev --verify-cmd`）。
+    ///
+    /// 步骤的 `verification` 由**模型自选**，可能与用户目标不一致 —— 例如目标是
+    /// 「clippy -D warnings 通过」，模型却声明 `CargoCheck`（警告不是错误 → 通过），
+    /// 于是「全部步骤成功」而目标其实没达成。这里提供一条用户给定的命令作为最终闸门：
+    /// 未通过则带着输出重试有界次数，仍不通过则整体状态判 Failed。
+    final_verification: Option<String>,
+    /// 最终闸门的自动修复尝试次数（默认 2）。
+    final_fix_attempts: usize,
 }
 
 impl Developer {
@@ -50,6 +59,8 @@ impl Developer {
             enable_wisdom: false,
             interrupt: Arc::new(AtomicBool::new(false)),
             approver: None,
+            final_verification: None,
+            final_fix_attempts: 2,
         }
     }
 
@@ -77,6 +88,21 @@ impl Developer {
     /// Enable the approval gate: tool execution asks the approver before running.
     pub fn with_approval_handler(mut self, approver: Arc<dyn DevApprover>) -> Self {
         self.approver = Some(approver);
+        self
+    }
+
+    /// 设置客观验收命令（最终闸门），例如 `cargo clippy -- -D warnings`。
+    ///
+    /// 步骤的 `verification` 由模型自选，可能与用户目标不一致；该命令是唯一
+    /// 客观判据：未通过则整体判 [`DevOverallStatus::Failed`]。
+    pub fn with_final_verification(mut self, command: impl Into<String>) -> Self {
+        self.final_verification = Some(command.into());
+        self
+    }
+
+    /// 最终闸门失败后的自动修复尝试次数（默认 2，0 表示只判定不修复）。
+    pub fn with_final_fix_attempts(mut self, attempts: usize) -> Self {
+        self.final_fix_attempts = attempts;
         self
     }
 
@@ -213,8 +239,7 @@ Return ONLY the JSON object."#;
                     .chat(system_prompt, description, true)
                     .await
                     .map_err(|e| e.to_string())?;
-                let edits: Vec<EditRequest> =
-                    serde_json::from_str(&response).map_err(|e| e.to_string())?;
+                let edits = parse_edit_requests(&response)?;
 
                 let mut summary = Vec::new();
                 for edit in edits {
@@ -243,6 +268,26 @@ Return ONLY the JSON object."#;
     }
 
     /// Verify step.
+    /// 运行验证命令并返回 `(是否通过, 合并输出)`。
+    ///
+    /// 最终闸门需要把失败输出喂给修复环节，因此不能只返回 bool。
+    fn run_verification_output(command: &str) -> Result<(bool, String), String> {
+        let out = sisyphus_tools_core::process::run_command_blocking(
+            "sh",
+            ["-c", command],
+            sisyphus_tools_core::process::CommandOpts::default(),
+        )
+        .map_err(|e| e.to_string())?;
+        let mut combined = out.stdout.clone();
+        if !out.stderr.is_empty() {
+            if !combined.is_empty() {
+                combined.push('\n');
+            }
+            combined.push_str(&out.stderr);
+        }
+        Ok((out.exit_code == 0, combined))
+    }
+
     /// Run a verification command and report whether it exited cleanly.
     fn run_verification(command: &str) -> Result<bool, String> {
         let out = sisyphus_tools_core::process::run_command_blocking(
@@ -353,6 +398,77 @@ Return ONLY the JSON object."#;
         result
     }
 
+    /// 让 LLM 修复文件，接受两种输出形态（优先整文件重写）。
+    ///
+    /// 本地小模型很难精确复现 `old_string`（换行/缩进一错就 no match），而「输出
+    /// 完整文件」对它更自然。因此闸门修复同时接受 `{"files":[{path,content}]}`
+    /// 与 `[{path,old_string,new_string}]`，前者优先。
+    async fn repair_files(&self, prompt: &str) -> Result<String, String> {
+        const SYSTEM: &str = "You are a code fixer. Return ONLY JSON. Preferred: {\"files\":[{\"path\":\"...\",\"content\":\"<complete corrected file>\"}]}. Alternative: [{\"path\":\"...\",\"old_string\":\"...\",\"new_string\":\"...\"}].";
+        let response = self.llm.chat(SYSTEM, prompt, true).await.map_err(|e| e.to_string())?;
+        apply_repair_response(&response)
+    }
+
+    /// 运行客观验收门（用户通过 `--verify-cmd` 指定），失败时带着输出做有界自动修复。
+    ///
+    /// 与 `run_step_with_fix` 的区别：那里失败重试的是**模型自选的** `verification`，
+    /// 这里重试的是**用户给定的**命令。只有后者能回答「目标达成了吗」。
+    ///
+    /// 返回 `None` 表示没有配置验收门（行为与旧版一致）。
+    async fn run_final_verification(
+        &self,
+        goal: &str,
+        steps: &mut Vec<StepResult>,
+    ) -> Option<FinalVerification> {
+        let command = self.final_verification.clone()?;
+        let mut fix_attempts = 0usize;
+
+        loop {
+            let (passed, output) = match Self::run_verification_output(&command) {
+                Ok(v) => v,
+                // 命令跑不起来（例如工作目录里没有 Cargo.toml）也是「未通过」，
+                // 但绝不能当成通过 —— 否则闸门形同虚设。
+                Err(e) => (false, format!("failed to run `{command}`: {e}")),
+            };
+
+            if passed || fix_attempts >= self.final_fix_attempts {
+                return Some(FinalVerification {
+                    command,
+                    passed,
+                    fix_attempts,
+                    output: truncate_chars(&output, 4000),
+                });
+            }
+
+            fix_attempts += 1;
+            let file_context = gate_file_context(&output);
+            let prompt = format!(
+                "The objective verification command failed and MUST pass.\n\
+                 Goal: {goal}\n\
+                 Verification command: `{command}`\n\
+                 Verification output:\n{output}\n\
+                 {file_context}\n\
+                 Return ONLY JSON in ONE of these forms:\n\
+                 1) {{\"files\":[{{\"path\":\"src/lib.rs\",\"content\":\"<COMPLETE corrected file content>\"}}]}}\n\
+                 2) [{{\"path\":\"src/lib.rs\",\"old_string\":\"<exact current text>\",\"new_string\":\"<replacement>\"}}]\n\
+                 Prefer form 1 for small files. `content` must be the ENTIRE file with no omissions.\n\
+                 For form 2, `old_string` must be copied verbatim from the current content, preserving newlines and indentation."
+            );
+            let (status, repair_output) = match self.repair_files(&prompt).await {
+                Ok(summary) => (StepStatus::Success, summary),
+                // 修复环节自身失败（JSON 解析失败 / old_string 不匹配）不是「已修复」，
+                // 必须如实记录；循环仍会再跑一次命令，用实际状态决定下一步。
+                Err(e) => (StepStatus::Failed(e), String::new()),
+            };
+            steps.push(StepResult {
+                step_id: 9000 + fix_attempts,
+                status,
+                output: repair_output,
+                verification_output: Some(truncate_chars(&output, 2000)),
+            });
+        }
+    }
+
     /// Save a checkpoint after each completed step.
     fn save_checkpoint(
         &self,
@@ -444,7 +560,7 @@ Return ONLY the JSON object."#;
 
         if pending_steps.is_empty() && !existing_results.is_empty() {
             // All done from checkpoint
-            return Ok(build_report(goal, existing_results, artifacts));
+            return Ok(build_report(goal, existing_results, artifacts, None));
         }
 
         let mut step_results: Vec<StepResult> = existing_results;
@@ -549,7 +665,14 @@ Return ONLY the JSON object."#;
             }
         }
 
-        let mut report = build_report(goal, step_results, artifacts);
+        // --- 最终客观验收门（用户给定命令，优先于模型自选的 verification）---
+        let final_verification = if cancelled {
+            None
+        } else {
+            self.run_final_verification(goal, &mut step_results).await
+        };
+
+        let mut report = build_report(goal, step_results, artifacts, final_verification);
         if cancelled {
             report.overall_status = DevOverallStatus::Cancelled;
         }
@@ -604,6 +727,59 @@ fn dev_denied_message(action: &DevAction) -> String {
         .unwrap_or_else(|| "denied by user: unknown action".to_string())
 }
 
+/// 按字符截断（避免在多字节 UTF-8 边界上 panic）。
+fn truncate_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max).collect();
+    out.push_str("\n...[truncated]");
+    out
+}
+
+/// 从（clippy/rustc 的）验证输出里提取被点名的源文件并读回内容。
+///
+/// 弱模型在修复环节没有工具可用，只能靠 prompt 里的上下文；只给错误行不够，
+/// 它需要看到 `old_string` 要匹配的真实文本。这里按 `--> src/lib.rs:2:8`
+/// 之类的形式收集路径（也接受裸路径），最多 3 个文件。
+fn gate_file_context(output: &str) -> String {
+    let mut paths: Vec<String> = Vec::new();
+    for token in output.split_whitespace() {
+        let cleaned = token.trim_matches(|c: char| {
+            !c.is_alphanumeric() && c != '/' && c != '.' && c != '_' && c != '-'
+        });
+        let path = cleaned.split(':').next().unwrap_or(cleaned);
+        if !(path.ends_with(".rs") || path.ends_with(".toml")) {
+            continue;
+        }
+        if !std::path::Path::new(path).is_file() {
+            continue;
+        }
+        if paths.iter().any(|p| p == path) {
+            continue;
+        }
+        paths.push(path.to_string());
+        if paths.len() >= 3 {
+            break;
+        }
+    }
+
+    if paths.is_empty() {
+        return String::new();
+    }
+
+    let mut ctx = String::from("Current file contents (old_string must match exactly):\n");
+    for p in &paths {
+        if let Ok(content) = std::fs::read_to_string(p) {
+            ctx.push_str(&format!(
+                "--- {p} ---\n{}\n",
+                truncate_chars(&content, 4000)
+            ));
+        }
+    }
+    ctx
+}
+
 fn track_artifact(step: &DevStep, artifacts: &mut Vec<String>) {
     if let DevAction::CreateFile { path, .. } = &step.action {
         artifacts.push(path.clone());
@@ -616,16 +792,25 @@ fn build_report(
     goal: &str,
     step_results: Vec<StepResult>,
     artifacts: Vec<String>,
+    final_verification: Option<FinalVerification>,
 ) -> DevelopmentReport {
     let completed = step_results.iter().filter(|r| r.status == StepStatus::Success).count();
     let total = step_results.len();
 
-    let overall_status = if completed == total {
-        DevOverallStatus::Success
-    } else if completed > 0 {
-        DevOverallStatus::PartialFailure { completed, total }
-    } else {
-        DevOverallStatus::Failed("No steps succeeded".to_string())
+    // 配置了验收门时，「用户命令是否通过」是唯一的**目标**判据：
+    // - 未通过 → Failed，无论步骤自报多么成功（S2 的真实缺陷）；
+    // - 通过但仍有步骤失败 → PartialFailure（目标达成，但过程有失败，需如实展示）；
+    // - 通过且步骤全成功 → Success。
+    let overall_status = match &final_verification {
+        Some(gate) if !gate.passed => DevOverallStatus::Failed(format!(
+            "objective verification failed after {} fix attempt(s): `{}`",
+            gate.fix_attempts, gate.command
+        )),
+        Some(_) if completed == total => DevOverallStatus::Success,
+        Some(_) => DevOverallStatus::PartialFailure { completed, total },
+        None if completed == total => DevOverallStatus::Success,
+        None if completed > 0 => DevOverallStatus::PartialFailure { completed, total },
+        None => DevOverallStatus::Failed("No steps succeeded".to_string()),
     };
 
     DevelopmentReport {
@@ -633,6 +818,7 @@ fn build_report(
         overall_status,
         steps: step_results,
         artifacts,
+        final_verification,
     }
 }
 
@@ -650,6 +836,19 @@ pub fn format_report(report: &DevelopmentReport) -> String {
         },
         DevOverallStatus::Failed(e) => output.push_str(&format!("Overall Status: FAILED ({e})\n")),
         DevOverallStatus::Cancelled => output.push_str("Overall Status: CANCELLED\n"),
+    }
+
+    if let Some(gate) = &report.final_verification {
+        output.push_str(&format!(
+            "Objective verification: {} (`{}`, {} fix attempt(s))\n",
+            if gate.passed { "PASSED" } else { "FAILED" },
+            gate.command,
+            gate.fix_attempts
+        ));
+        if !gate.passed {
+            output.push_str(&format!("Verification output:\n{}\n", gate.output));
+        }
+        output.push_str("--------------------------------------------------\n");
     }
 
     output.push_str("--------------------------------------------------\n");
@@ -683,6 +882,127 @@ impl Developer {
             ..self
         }
     }
+}
+
+/// 解析「复杂变更」的编辑列表。
+///
+/// 理想输入是裸数组 `[{path, old_string, new_string}, ...]`，但弱模型（本地 3B/8B）
+/// 常给成：
+/// - 单个对象 `{...}`（把数组当元素）；
+/// - 包裹层 `{"edits": [...]}` / `{"changes": [...]}`；
+/// - 前后带 ```json 代码围栏。
+///
+/// 这些都不该让一次修复直接失败 —— 解析层接受它们，语义不变。
+fn parse_edit_requests(raw: &str) -> Result<Vec<EditRequest>, String> {
+    let value = parse_json_payload(raw)?;
+
+    let array = match value {
+        serde_json::Value::Array(items) => items,
+        obj @ serde_json::Value::Object(_) => {
+            // 包裹层：取第一个数组值（edits/changes/...）
+            let nested = obj.as_object().and_then(|m| m.values().find(|v| v.is_array()).cloned());
+            match nested {
+                Some(serde_json::Value::Array(items)) => items,
+                // 无数组值：按单个 edit 处理
+                _ => vec![obj],
+            }
+        },
+        _ => return Err("expected a JSON array or object of edits".to_string()),
+    };
+
+    array
+        .into_iter()
+        .map(|item| {
+            serde_json::from_value::<EditRequest>(item).map_err(|e| format!("invalid edit: {e}"))
+        })
+        .collect()
+}
+
+/// 去掉 ```json 围栏并解析 JSON。
+fn parse_json_payload(raw: &str) -> Result<serde_json::Value, String> {
+    let text = raw.trim();
+    let text =
+        text.strip_prefix("```json").or_else(|| text.strip_prefix("```")).map_or(text, |s| s);
+    let text = text.strip_suffix("```").unwrap_or(text).trim();
+    serde_json::from_str(text).map_err(|e| format!("invalid JSON: {e}"))
+}
+
+/// `{"path":..., "content":...}` —— 整文件重写请求。
+#[derive(serde::Deserialize)]
+struct FileRewrite {
+    path: String,
+    content: String,
+}
+
+/// 从响应中提取整文件重写请求（接受数组 / `{"files":[...]}` / 单个对象）。
+fn collect_rewrites(value: &serde_json::Value) -> Vec<FileRewrite> {
+    let items: Vec<&serde_json::Value> = match value {
+        serde_json::Value::Array(items) => items.iter().collect(),
+        serde_json::Value::Object(map) => match map.get("files") {
+            Some(serde_json::Value::Array(items)) => items.iter().collect(),
+            _ => vec![value],
+        },
+        _ => Vec::new(),
+    };
+
+    items
+        .into_iter()
+        .filter_map(|item| serde_json::from_value::<FileRewrite>(item.clone()).ok())
+        .collect()
+}
+
+/// 去掉模型包在**文件内容外面**的 markdown 围栏（```rust ... ```）。
+///
+/// 弱模型经常把「完整文件内容」也套进代码围栏；若原样落盘，围栏会变成源码，
+/// 编译必然失败（S2 实测：`error: expected one of ! or ::, found keyword pub`）。
+/// 只有首尾都是围栏时才剥离，避免破坏本来就以 ``` 开头的合法文件。
+fn strip_code_fence(content: &str) -> String {
+    let trimmed = content.trim();
+    if !trimmed.starts_with("```") || !trimmed.ends_with("```") || trimmed.chars().count() < 6 {
+        return content.to_string();
+    }
+    let rest = &trimmed[3..];
+    let inner = match rest.find('\n') {
+        Some(idx) => &rest[idx + 1..],
+        None => rest,
+    };
+    let inner = inner.strip_suffix("```").unwrap_or(inner);
+    format!("{}\n", inner.trim_end())
+}
+
+/// 应用一次修复响应：优先整文件重写，其次精确编辑。
+///
+/// 任一改写/编辑失败都返回 `Err` —— 闸门不能把「没改成」记成成功。
+fn apply_repair_response(raw: &str) -> Result<String, String> {
+    let value = parse_json_payload(raw)?;
+
+    let rewrites = collect_rewrites(&value);
+    if !rewrites.is_empty() {
+        let mut summary = Vec::new();
+        for rw in rewrites {
+            let content = strip_code_fence(&rw.content);
+            sisyphus_tools_system::file::write(Path::new(&rw.path), &content)
+                .map_err(|e| format!("rewrite failed for {}: {e}", rw.path))?;
+            summary.push(format!("Rewrote {}", rw.path));
+        }
+        return Ok(summary.join("\n"));
+    }
+
+    let edits = parse_edit_requests(raw)?;
+    if edits.is_empty() {
+        return Err("repair response contained no edits".to_string());
+    }
+    let mut summary = Vec::new();
+    for edit in edits {
+        sisyphus_tools_system::file::edit(
+            Path::new(&edit.path),
+            &edit.old_string,
+            &edit.new_string,
+        )
+        .map_err(|e| format!("edit failed for {}: {e}", edit.path))?;
+        summary.push(format!("Applied edit to {}", edit.path));
+    }
+    Ok(summary.join("\n"))
 }
 
 #[cfg(test)]

@@ -296,7 +296,22 @@ pub async fn dispatch(
             context,
             parallel,
             resume,
-        } => handle_dev::handle_dev(goal, context, *parallel, *resume, sisyphus_cfg).await?,
+            timeout_secs,
+            verify_cmd,
+            verify_fix_attempts,
+        } => {
+            handle_dev::handle_dev(
+                goal,
+                context,
+                *parallel,
+                *resume,
+                *timeout_secs,
+                verify_cmd,
+                *verify_fix_attempts,
+                sisyphus_cfg,
+            )
+            .await?
+        },
     }
 
     Ok(())
