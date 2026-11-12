@@ -137,6 +137,11 @@ if task_metrics:
     metrics["task_cost_tokens_per_task"] = task_metrics.get("mean_total_tokens")
     metrics["task_cost_prompt_tokens_per_task"] = task_metrics.get("mean_prompt_tokens")
     metrics["task_cost_completion_tokens_per_task"] = task_metrics.get("mean_completion_tokens")
+    # 样本归因：样本涉及的引擎版本 + 未携带版本的样本数。
+    # 没有这两项，归档快照里的成功率无法归因到具体引擎版本
+    # （不同版本的样本混在同一个 records/ 目录里聚合）。
+    metrics["task_engine_commits"] = task_metrics.get("engine_commits")
+    metrics["task_engine_unknown"] = task_metrics.get("engine_unknown")
 else:
     metrics["task_total"] = None
     metrics["task_passed"] = None
@@ -149,6 +154,8 @@ else:
     metrics["task_cost_tokens_per_task"] = None
     metrics["task_cost_prompt_tokens_per_task"] = None
     metrics["task_cost_completion_tokens_per_task"] = None
+    metrics["task_engine_commits"] = None
+    metrics["task_engine_unknown"] = None
 
 out_dir = "docs/benchmarks/quality-metrics"
 os.makedirs(out_dir, exist_ok=True)
