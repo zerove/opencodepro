@@ -106,16 +106,27 @@ phase1/
 | s3 `feature` | `cargo test` | FAIL | **FAIL** | 2 | 140.0s | 2016 + 641 = 2657 |
 
 这一轮**含失败样本**（s3 失败：3B 模型把函数当模块写 `pub mod multiply;`）。
-记录已归档到 `docs/benchmarks/quality-metrics/records/l3-s{1,2,3}-*.json`，
-与既有 4 条仓库 `verify` 记录合并后共 7 条，聚合结果：
+记录已归档到 `docs/benchmarks/quality-metrics/records/l3-s{1,2,3}-*.json`。
+该失败样本的根因后来被定位并修掉（§4.4c），修完后又跑了**两轮**完整 L3
+（6/6 PASS，记录归档为 `l3-run{2,3}-*.json`，且**携带引擎版本**
+`51503830c53b`）。
+
+当前记录目录共 13 条（4 仓库 `verify` + 9 L3 `dev` 闭环，含 1 条失败样本），
+聚合结果：
 
 ```
-success_rate 0.857 / fix_rate 0.667 / regression_rate 0.0 / mean_duration 65.6s
-mean_total_tokens 1893.7（仅 3 条有 token 的记录参与；verify 记录为 null）
+success_rate 0.923 / fix_rate 0.889 / regression_rate 0.0 / mean_duration 82.7s
+mean_total_tokens 1673.0（仅 9 条有 token 的记录参与；verify 记录为 null）
+engine_commits ["51503830c53b"] / engine_unknown 7
 ```
 
 > 失败样本是成功率的分母 —— 只归档成功样本会让指标失真（上一版记录全是成功
-> 样本，聚合出来 1.0，看着比实际好）。
+> 样本，聚合出来 1.0，看着比实际好）。它**保留在目录里**：既是分母，也是该缺陷
+> 存在过的证据。
+>
+> `engine_unknown: 7` 是另一层诚实性：13 条里有 7 条产出于「记录带引擎版本」
+> 这个字段引入之前，它们**无法归因**到任何版本。比率变化可能来自样本构成，
+> 而不是引擎变好 —— 所以字段引入前的样本不会被「猜」一个版本号。
 
 token 来自 provider 上报的 usage（`prompt_tokens` / `completion_tokens`）：
 `dev` 链路自动写入记录，provider 未上报时留空而不是补 0，聚合时也不参与均值。
@@ -171,7 +182,7 @@ Objective verification: PASSED (`cargo test`, 0 fix attempt(s))
 |---|---|
 | 修复前（同一严格判定） | 2/3，其中 1 次因 `pub mod multiply;` 失败 |
 | 单独复跑 4 次 | 4/4 PASS（101s / 84s / 88s / 96s） |
-| 完整轮次 ×2（s1+s2+s3） | 6/6 PASS（两轮均 3/3） |
+| 完整轮次 ×2（s1+s2+s3） | 6/6 PASS（两轮均 3/3，记录归档为 `l3-run{2,3}-*.json`） |
 
 单测（`developer_tests.rs`）：测试文件被读入、无测试目录时为空、非 `.rs` 被
 忽略、最多 2 个文件；外加一条**接线**断言（把 `ctx.push_str(&gate_test_context())`

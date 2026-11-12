@@ -86,21 +86,31 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records
 | `2026-11-12-a668479.json` | 7 条真实样本（4 仓库 `verify` + 3 L3 `dev` 闭环）→ 成功率 1.0、修复率 1.0、平均 45.4s（**无 token 维度**，采集时 token 采集尚未打通） |
 | `2026-11-12-a247771.json` | 同 7 条样本 + **token 成本维度**（provider 上报 usage → 任务记录）→ 成功率 1.0、修复率 1.0、平均 53.7s、**1038.7 token/任务**（该轮样本全部成功，口径偏乐观） |
 | `2026-11-12-2e8bf69.json` | **含失败样本**的一轮真实 L3 运行（判定已加严）→ 成功率 0.857、修复率 0.667、平均 65.6s、**1893.7 token/任务**（失败样本是成功率的分母，只留成功样本会让指标失真） |
+| `2026-11-12-5150383.json` | **13 条样本**（4 仓库 `verify` + 9 L3 `dev` 闭环，含 1 条失败样本；后 6 条 L3 记录带引擎版本归因）→ 成功率 0.923、修复率 0.889、平均 82.7s、**1673.0 token/任务**；`task_engine_commits: ["51503830c53b"]`、`task_engine_unknown: 7` |
 | `fixture-samples/` | 上述 3 条任务记录原文（`sisyphus verify --record` 产出） |
 | `pipeline-demo-2026-11-11.json` | 最早的流程演示样本（2 个 fixture crate），保留作对照 |
 
 **样本性质说明**：`fixture-samples/` 下的记录来自**受控 fixture crate** 的真实
 `sisyphus verify --fix` 运行（真实 cargo check / clippy / cargo clippy --fix 执行），
 用于验证指标口径与聚合链路；**不是**仓库真实开发任务的样本。
-仓库真实任务样本目录为 `records/`，现已含 7 条真实样本：
+仓库真实任务样本目录为 `records/`，现已含 13 条真实样本：
 
 - 4 条仓库 `verify` 任务（`repo-sisyphus-{tools-build,types,metrics,tools-agent}.json`）；
 - 3 条 L3 开发闭环（`l3-s{1,2,3}-*.json`，`dev --record` 产出，本地 ollama
-  `qwen2.5-coder:3b`：s1/s2 首轮闸门失败 → 修复 1 次通过，s3 一次通过）。
+  `qwen2.5-coder:3b`：s1/s2 首轮闸门失败 → 修复 1 次通过；**s3 失败** ——
+  3B 把函数写成模块，根因是闸门修复上下文缺测试文件，已修（见
+  `phase1/t1-4-l3-closed-loop.md` §4.4c）；
+- 6 条 L3 开发闭环（`l3-run{2,3}-s{1,2,3}-*.json`，修复后重跑两轮，6/6 PASS，
+  **携带引擎版本** `51503830c53b`）。
 
-最新聚合产物 `docs/benchmarks/quality-metrics/2026-11-12-a668479.json`
-（成功率 1.0 / 修复率 1.0 / 回归率 0.0 / 平均 45.4s）。样本量仍小，且 L3 样本来自
-本地 3B 模型，不代表云端大模型能力；后续以真实仓库开发任务继续扩充。
+最新聚合产物 `docs/benchmarks/quality-metrics/2026-11-12-5150383.json`
+（13 条样本：成功率 0.923 / 修复率 0.889 / 回归率 0.0 / 平均 82.7s /
+**1673.0 token/任务**）。样本量仍小，且 L3 样本来自本地 3B 模型，不代表云端
+大模型能力；后续以真实仓库开发任务继续扩充。
+
+**版本归因**：13 条样本中 6 条带引擎版本（`engine_commit: 51503830c53b`），
+7 条产出于版本字段引入之前（`engine_unknown: 7`）。前者可归因，后者**不可**——
+比率变化可能来自样本构成而非引擎本身。
 
 ## 5. 关联
 

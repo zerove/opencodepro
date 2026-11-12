@@ -92,6 +92,25 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records --jso
 > 这条失败记录**保留在目录里**：它是失败样本、是成功率的分母，也是该缺陷存在过
 > 的证据；删掉它只会让指标更好看。
 
+### 第二、三轮（带引擎版本归因）
+
+修复落地后重跑两轮完整 L3（s1+s2+s3），6/6 PASS。这 6 条记录**携带引擎版本**
+（`engine_commit: 51503830c53b` / `engine_dirty: false`），可用于按版本归因；
+前面 7 条（4 仓库 `verify` + 3 条旧 L3）产出于版本字段引入之前，没有版本信息，
+聚合时单列为「未携带版本信息」。
+
+| 文件 | 来源 | 说明 |
+|---|---|---|
+| `l3-run2-s1-diagnose-fix.json` | L3 第二轮 | `dev` 诊断修复（闸门 `cargo check`）：首轮 FAIL → 修复 1 次 → PASS，1403 token |
+| `l3-run2-s2-quality-gate.json` | L3 第二轮 | `dev` 质量门（闸门 `cargo clippy -- -D warnings`）：PASS，1638 token |
+| `l3-run2-s3-feature.json` | L3 第二轮 | `dev` TDD 跨文件（闸门 `cargo test`）：PASS，1860 token |
+| `l3-run3-s1-diagnose-fix.json` | L3 第三轮 | 同上，PASS，1392 token |
+| `l3-run3-s2-quality-gate.json` | L3 第三轮 | 同上，PASS，1374 token |
+| `l3-run3-s3-feature.json` | L3 第三轮 | 同上，PASS，1709 token |
+
+> 目录内**多轮同名场景并存**是刻意的：每条记录是一次独立执行，聚合时各算一个
+> 样本。同一文件名的后一轮会覆盖前一轮，所以归档时用 `run2` / `run3` 后缀区分。
+
 > 归档的是**一整轮真实运行**的结果，含失败样本 —— 失败样本是成功率的分母，
 > 只留成功样本会让指标失真。该轮的判定已加严（s3 还要求既有公开 API 保留，
 > 见 `phase1/t1-4-l3-closed-loop.md` §4.4b）。

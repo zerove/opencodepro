@@ -1,0 +1,15 @@
+{
+  "task_id": "l3-s1-diagnose-fix",
+  "scenario": "diagnose-fix",
+  "status": "pass",
+  "initial_verify_passed": false,
+  "final_verify_passed": true,
+  "fix_attempts": 1,
+  "regressed": false,
+  "duration_ms": 50088,
+  "prompt_tokens": 1082,
+  "completion_tokens": 321,
+  "engine_commit": "51503830c53b",
+  "engine_dirty": false,
+  "recorded_at": "2026-11-12T17:31:12.597041551+00:00"
+}
