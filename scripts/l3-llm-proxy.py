@@ -15,6 +15,7 @@ T1.4 要求 L3 证据包含「请求/响应/trace/耗时/成本」。直接问�
 """
 
 import argparse
+import itertools
 import json
 import time
 import urllib.error
@@ -25,6 +26,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 class Config:
     upstream = ""
     log_path = ""
+    seq = itertools.count(1)
 
 
 def _now() -> str:
@@ -42,7 +44,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         length = int(self.headers.get("content-length") or 0)
         raw = self.rfile.read(length) if length else b""
-        trace_id = self.headers.get("x-trace-id") or self.headers.get("x-request-id")
+        # CLI 目前不发 trace 头；缺失时生成序号 id，保证归档内每次调用可关联。
+        seq = next(Config.seq)
+        trace_id = (
+            self.headers.get("x-trace-id")
+            or self.headers.get("x-request-id")
+            or f"l3-{seq:03d}"
+        )
 
         try:
             payload = json.loads(raw or b"{}")
@@ -52,6 +60,7 @@ class Handler(BaseHTTPRequestHandler):
         started = time.time()
         record = {
             "ts": _now(),
+            "seq": seq,
             "trace_id": trace_id,
             "path": self.path,
             "model": payload.get("model"),

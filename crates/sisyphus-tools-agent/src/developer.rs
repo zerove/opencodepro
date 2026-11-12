@@ -442,12 +442,15 @@ Return ONLY the JSON object."#;
 
             fix_attempts += 1;
             let file_context = gate_file_context(&output);
+            let change_diff = gate_change_diff();
             let prompt = format!(
                 "The objective verification command failed and MUST pass.\n\
                  Goal: {goal}\n\
                  Verification command: `{command}`\n\
                  Verification output:\n{output}\n\
+                 {change_diff}\
                  {file_context}\n\
+                 Do NOT regress unrelated behavior: keep existing `pub` visibility and public API.\n\
                  Return ONLY JSON in ONE of these forms:\n\
                  1) {{\"files\":[{{\"path\":\"src/lib.rs\",\"content\":\"<COMPLETE corrected file content>\"}}]}}\n\
                  2) [{{\"path\":\"src/lib.rs\",\"old_string\":\"<exact current text>\",\"new_string\":\"<replacement>\"}}]\n\
@@ -735,6 +738,28 @@ fn truncate_chars(s: &str, max: usize) -> String {
     let mut out: String = s.chars().take(max).collect();
     out.push_str("\n...[truncated]");
     out
+}
+
+/// 收集工作区相对 HEAD 的改动（若在 git 仓库内），供闸门修复参考。
+///
+/// 实测失败模式：3B 模型把 `pub fn` 改成私有函数触发 `dead_code`，修复环节
+/// 只看当前文件，看不到自己引入的回归，于是一遍遍输出同样的私有版本。
+/// diff 让它看到「这一步改了什么」，才有机会撤销回归。
+fn gate_change_diff() -> String {
+    let out = sisyphus_tools_core::process::run_command_blocking(
+        "git",
+        ["diff", "--no-color", "--", "."],
+        sisyphus_tools_core::process::CommandOpts::default(),
+    );
+    match out {
+        Ok(o) if o.exit_code == 0 && !o.stdout.trim().is_empty() => {
+            format!(
+                "Changes made so far (git diff):\n{}\n",
+                truncate_chars(&o.stdout, 3000)
+            )
+        },
+        _ => String::new(),
+    }
 }
 
 /// 从（clippy/rustc 的）验证输出里提取被点名的源文件并读回内容。

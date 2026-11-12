@@ -156,6 +156,18 @@ fn multiply_works() {
 RS
 }
 
+# 记录基线：闸门修复会读取 git diff 判断「这一步改了什么」。
+git_baseline() {
+  local d="$1"
+  (
+    cd "$d" || exit 0
+    printf '/target\n' > .gitignore
+    git init -q 2>/dev/null || exit 0
+    git add -A 2>/dev/null
+    git -c user.email=l3@local -c user.name=l3 commit -qm baseline 2>/dev/null
+  )
+}
+
 # ── 判定 ─────────────────────────────────────────────────────
 judge_s1() {
   ( cd "$WORKDIR/s1" && env -u RUSTUP_TOOLCHAIN cargo check >/dev/null 2>&1 )
@@ -221,6 +233,7 @@ for s in "${SCENARIOS[@]}"; do
   case "$s" in
     s1)
       reset_s1
+      git_baseline "$WORKDIR/s1"
       run_case s1 "修复 src/main.rs 的编译错误，使 cargo check 通过" \
 "项目是单文件 Rust bin crate。src/main.rs 当前内容（注意 let total 这一行缺少分号）：
 fn main() {
@@ -234,6 +247,7 @@ fn add(a: i32, b: i32) -> i32 {
       ;;
     s2)
       reset_s2
+      git_baseline "$WORKDIR/s2"
       run_case s2 "消除 src/lib.rs 的 clippy 告警，使 cargo clippy -- -D warnings 通过" \
 "项目是单文件 Rust lib crate。src/lib.rs 当前内容：
 pub fn is_ready(flag: bool) -> bool {
@@ -247,6 +261,7 @@ clippy 报 bool_comparison 与 needless_bool。" "cargo clippy -- -D warnings"
       ;;
     s3)
       reset_s3
+      git_baseline "$WORKDIR/s3"
       run_case s3 "实现 src/lib.rs 中缺失的 multiply，使 cargo test 通过" \
 "项目是 Rust lib crate。src/lib.rs 当前内容：
 pub fn add(a: i32, b: i32) -> i32 {
