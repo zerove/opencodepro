@@ -58,7 +58,8 @@
   `task_success_rate` / `task_fix_rate` / `task_regression_rate` /
   `task_cost_duration_ms_per_task` / `task_cost_tokens_per_task` /
   `task_cost_prompt_tokens_per_task` / `task_cost_completion_tokens_per_task`
-  （由 `sisyphus metrics quality` 聚合；无记录时 `null`）。
+  （由 `sisyphus metrics quality` 聚合；无记录时 `null`）；
+- `task_engine_commits` / `task_engine_unknown`（样本版本归因；无记录时 `null`）。
 
 ## 4. 运行
 
