@@ -69,7 +69,7 @@
 | T1.2 | 验证-修复循环 | 基于 `scenario_diagnose_fix_verify_template`，失败时携带诊断上下文重试（有界次数）；记录每次尝试 | 一次真实“失败→修复→通过”记录（含耗时/次数）；无 LLM 时走确定性路径 | M |
 | T1.3 | 执行进度事件 | `/api/execute/goal/{id}/stream` 增加 `step_started/step_finished/tool_call/token_usage` 事件（向后兼容） | SSE 事件契约文档 + 消费端展示；旧客户端不受影响 | M |
 | T1.4 | L3 真实闭环证据 | 在具备 LLM/凭据环境执行 ≥3 个场景（诊断修复、质量门、功能新增），归档请求/响应/trace/耗时/成本 | `docs/benchmarks/acceptance/<date>-l3/` 完整证据；`summary.md` 判定 | M |
-| T1.4 状态（执行） | DONE（本地真实模型）/ 云端外部后置 | 用本机 ollama `qwen2.5-coder:3b` 跑三场景 × 3 轮 = 9/9 PASS；每场景判定由外部 `cargo` 命令决定；归档请求/响应/token/耗时/trace（`phase1/runs/`）；过程中新增 `dev --verify-cmd` 客观闸门并修复 4 个真实缺陷；**云端 provider 首次真实调用仍未验证**（无有效云端凭据），MCP/多文件重构未覆盖 | 证据 `docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md`；复现 `bash scripts/l3-run-scenarios.sh s1 s2 s3` |
+| T1.4 状态（执行） | DONE（本地真实模型）/ 云端外部后置 | 用本机 ollama `qwen2.5-coder:3b` 跑三场景 × 3 轮 = 9/9 PASS；每场景判定由外部 `cargo` 命令决定；归档请求/响应/token/耗时/trace（`phase1/runs/`）；过程中新增 `dev --verify-cmd` 客观闸门并修复 5 个真实缺陷；**云端 provider 首次真实调用仍未验证**（无有效云端凭据），MCP/多文件重构未覆盖 | 证据 `docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md`；复现 `bash scripts/l3-run-scenarios.sh s1 s2 s3` |
 
 **阶段 1 完成标准**：至少 1 个真实任务形成“改文件 → 验证失败 → 修复 → 验证通过”的完整记录；其余场景有可解释结果或明确 `BLOCKED`。
 

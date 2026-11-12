@@ -62,7 +62,7 @@
 - T2.2（权限规则与审批审计）：CLI 层已 DONE，TUI 弹窗审批未完成。T2.1 的 dev 循环审批与 T2.2 的 TUI 弹窗审批共用同一「pending 审批 + 应答」通道，S3 落地后 T2.2 可直接复用，剩 T2.2 仅需把 `require_tool` 的 Ask 分支接到同一应答通道。
 - T3.3（启动分段）：bridge 侧已落地，TUI 首帧 PTY 测量待续，与 T2.1 无耦合。
 - T4.3（evals 子集入 CI）：已 DONE；T2.1 完成后可把新增 mock 单测并入 evals 稳定子集。
-- T1.4 / T3.2：仍 BLOCKED（缺 LLM 凭据环境），T2.1 全链路使用 mock，不依赖其解除。
+- T1.4 / T3.2：均已用本地真实 provider 解阻（T3.2 见 phase3 证据；T1.4 见 phase1 证据）；T2.1 仍全链路使用 mock，不依赖其解除。
 
 ## 7. 状态更新规则
 
