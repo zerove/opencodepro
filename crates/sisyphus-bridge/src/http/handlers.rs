@@ -1559,35 +1559,49 @@ pub(super) async fn list_tools_handler(State(state): State<RestApiState>) -> imp
 pub(super) async fn list_mcp_resources_handler(
     State(state): State<RestApiState>,
 ) -> impl IntoResponse {
-    let catalog = state.bridge.mcp_catalog().as_ref().clone();
-    let servers: Vec<serde_json::Value> = catalog
-        .into_iter()
-        .map(|s| {
-            serde_json::json!({
-                "server_prefix": s.server_prefix,
-                "label": s.label,
-                "resources": s.resources,
-                "resource_templates": s.resource_templates,
-            })
-        })
-        .collect();
+    let snapshot = state.bridge.mcp_catalog().as_ref().clone();
+    let executors = state.bridge.mcp_executors();
+    let mut servers: Vec<serde_json::Value> = Vec::with_capacity(snapshot.len());
+    for s in snapshot {
+        let (resources, resource_templates) = if let Some(ex) = executors.get(&s.server_prefix) {
+            match ex.list_resources().await {
+                Ok(r) => (r.resources, r.resource_templates),
+                Err(_) => (s.resources, s.resource_templates),
+            }
+        } else {
+            (s.resources, s.resource_templates)
+        };
+        servers.push(serde_json::json!({
+            "server_prefix": s.server_prefix,
+            "label": s.label,
+            "resources": resources,
+            "resource_templates": resource_templates,
+        }));
+    }
     (StatusCode::OK, Json(servers))
 }
 
 pub(super) async fn list_mcp_prompts_handler(
     State(state): State<RestApiState>,
 ) -> impl IntoResponse {
-    let catalog = state.bridge.mcp_catalog().as_ref().clone();
-    let servers: Vec<serde_json::Value> = catalog
-        .into_iter()
-        .map(|s| {
-            serde_json::json!({
-                "server_prefix": s.server_prefix,
-                "label": s.label,
-                "prompts": s.prompts,
-            })
-        })
-        .collect();
+    let snapshot = state.bridge.mcp_catalog().as_ref().clone();
+    let executors = state.bridge.mcp_executors();
+    let mut servers: Vec<serde_json::Value> = Vec::with_capacity(snapshot.len());
+    for s in snapshot {
+        let prompts = if let Some(ex) = executors.get(&s.server_prefix) {
+            match ex.list_prompts().await {
+                Ok(p) => p.prompts,
+                Err(_) => s.prompts,
+            }
+        } else {
+            s.prompts
+        };
+        servers.push(serde_json::json!({
+            "server_prefix": s.server_prefix,
+            "label": s.label,
+            "prompts": prompts,
+        }));
+    }
     (StatusCode::OK, Json(servers))
 }
 
