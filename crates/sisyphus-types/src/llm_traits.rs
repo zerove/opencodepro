@@ -6,6 +6,28 @@
 //! re-exports them so existing paths keep resolving (ADR-014 phase 3).
 
 use crate::{CircuitBreaker, HttpClientStats, TypesError};
+use serde::{Deserialize, Serialize};
+
+/// Token usage accumulated by an LLM client.
+///
+/// Only counted when the provider reports actual usage; estimates are **not**
+/// mixed in, so a `None` usage means "unknown", never "zero".
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LlmTokenUsage {
+    /// 输入（prompt）token 数。
+    pub prompt_tokens: u64,
+    /// 输出（completion）token 数。
+    pub completion_tokens: u64,
+    /// 上报过 usage 的调用次数。
+    pub calls: u64,
+}
+
+impl LlmTokenUsage {
+    /// 输入 + 输出 token 总数。
+    pub fn total_tokens(&self) -> u64 {
+        self.prompt_tokens + self.completion_tokens
+    }
+}
 
 /// Run chat completions.
 ///
@@ -44,6 +66,15 @@ pub trait LlmClient: Send + Sync {
     /// every crate that only needs the trait. `None` when the implementation
     /// owns no shared client (mocks, hand-built registries).
     fn http_stats(&self) -> Option<HttpClientStats> {
+        None
+    }
+
+    /// Token usage accumulated by this client, if it tracks any.
+    ///
+    /// Defaults to `None` so implementations that do not observe provider
+    /// usage need not change. Callers must treat `None` as "unknown" rather
+    /// than "zero" — a fabricated 0 would silently distort cost metrics.
+    fn token_usage(&self) -> Option<LlmTokenUsage> {
         None
     }
 }
@@ -103,6 +134,15 @@ mod tests {
         assert!(
             c.http_stats().is_none(),
             "implementations without a shared client report None"
+        );
+    }
+
+    #[tokio::test]
+    async fn default_token_usage_is_none() {
+        let c: Box<dyn LlmClient> = Box::new(Stub);
+        assert!(
+            c.token_usage().is_none(),
+            "implementations that do not track usage report None"
         );
     }
 

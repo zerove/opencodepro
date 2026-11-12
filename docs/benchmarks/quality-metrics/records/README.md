@@ -19,9 +19,14 @@
   "fix_attempts": 1,
   "regressed": false,
   "duration_ms": 188,
+  "prompt_tokens": 1024,
+  "completion_tokens": 256,
   "recorded_at": "2026-11-11T00:00:00Z"
 }
 ```
+
+`prompt_tokens` / `completion_tokens` 只在 provider 真的上报 usage 时存在
+（`dev` 链路自动写入）；缺失表示「未知」，聚合时该记录不参与 token 均值。
 
 ## 生成方式
 
@@ -64,9 +69,9 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records --jso
 | `repo-sisyphus-types.json` | 真实仓库任务 | 同上（`sisyphus-types`，PASS，19.782s） |
 | `repo-sisyphus-metrics.json` | 真实仓库任务 | 同上（`sisyphus-metrics`，PASS，46.028s） |
 | `repo-sisyphus-tools-agent.json` | 真实仓库任务 | 同上（`sisyphus-tools-agent`，PASS，90.770s） |
-| `l3-s1-diagnose-fix.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` 诊断修复场景（闸门 `cargo check`）：首轮 FAIL → 修复 1 次 → PASS，34.6s |
-| `l3-s2-quality-gate.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` 质量门场景（闸门 `cargo clippy -- -D warnings`）：首轮 FAIL → 修复 1 次 → PASS，22.9s |
-| `l3-s3-feature.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` TDD 跨文件场景（闸门 `cargo test`）：首轮即 PASS，0 修复，24.6s |
+| `l3-s1-diagnose-fix.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` 诊断修复场景（闸门 `cargo check`）：首轮即 PASS，0 修复，58.1s，1012 token |
+| `l3-s2-quality-gate.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` 质量门场景（闸门 `cargo clippy -- -D warnings`）：首轮 FAIL → 修复 1 次 → PASS，25.8s，1269 token |
+| `l3-s3-feature.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` TDD 跨文件场景（闸门 `cargo test`）：首轮即 PASS，0 修复，56.5s，835 token |
 
 受控 fixture 样本（用于验证口径与链路，非仓库任务）单独放在
 `../fixture-samples/`，不混入本目录。

@@ -6,6 +6,8 @@
   "final_verify_passed": true,
   "fix_attempts": 0,
   "regressed": false,
-  "duration_ms": 24590,
-  "recorded_at": "2026-11-12T02:44:30.429550781+00:00"
+  "duration_ms": 56529,
+  "prompt_tokens": 550,
+  "completion_tokens": 285,
+  "recorded_at": "2026-11-12T03:39:31.285340886+00:00"
 }

@@ -37,6 +37,42 @@ pub struct DynamicLlmClient {
     /// window expires. An unreachable model degrades quickly while others
     /// remain usable.
     fast_fail_until: Arc<ParkingRwLock<HashMap<String, std::time::Instant>>>,
+    /// provider 上报的 token 用量（仅统计真实上报值，不混估算）。
+    token_usage: Arc<TokenUsageCounters>,
+}
+
+/// provider 上报的 token 计数（原子累加）。
+#[derive(Debug, Default)]
+struct TokenUsageCounters {
+    prompt_tokens: std::sync::atomic::AtomicU64,
+    completion_tokens: std::sync::atomic::AtomicU64,
+    calls: std::sync::atomic::AtomicU64,
+}
+
+impl TokenUsageCounters {
+    fn record(&self, prompt: Option<u64>, completion: Option<u64>) {
+        use std::sync::atomic::Ordering;
+        // 只有一个字段上报时也算一次有效上报：宁少不少，但不伪造。
+        if prompt.is_none() && completion.is_none() {
+            return;
+        }
+        if let Some(v) = prompt {
+            self.prompt_tokens.fetch_add(v, Ordering::Relaxed);
+        }
+        if let Some(v) = completion {
+            self.completion_tokens.fetch_add(v, Ordering::Relaxed);
+        }
+        self.calls.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn snapshot(&self) -> sisyphus_types::LlmTokenUsage {
+        use std::sync::atomic::Ordering;
+        sisyphus_types::LlmTokenUsage {
+            prompt_tokens: self.prompt_tokens.load(Ordering::Relaxed),
+            completion_tokens: self.completion_tokens.load(Ordering::Relaxed),
+            calls: self.calls.load(Ordering::Relaxed),
+        }
+    }
 }
 
 impl DynamicLlmClient {
@@ -68,6 +104,7 @@ impl DynamicLlmClient {
             current_category: Arc::new(RwLock::new(None)),
             provider_registry,
             fast_fail_until: Arc::new(ParkingRwLock::new(HashMap::new())),
+            token_usage: Arc::new(TokenUsageCounters::default()),
         }
     }
 
@@ -280,6 +317,7 @@ impl LlmClient for DynamicLlmClient {
                         // Record cost via router
                         let token_estimate = (response.content.len() / 4).max(1) as u64;
                         self.router.record_usage(&response.model, 0.0, token_estimate);
+                        self.token_usage.record(response.input_tokens, response.output_tokens);
                         self.clear_fast_fail(&model);
                         return Ok(response.content);
                     },
@@ -426,6 +464,11 @@ impl LlmClient for DynamicLlmClient {
         if let Some(text) = content {
             self.breaker.on_success(&model);
             self.clear_fast_fail(&model);
+            // provider 上报的 usage 才是真实值；缺失时保持「未知」而不是补 0。
+            self.token_usage.record(
+                response_json["usage"]["prompt_tokens"].as_u64(),
+                response_json["usage"]["completion_tokens"].as_u64(),
+            );
             let token_estimate = (text.len() / 4).max(1) as u64;
             let actual_cost = (token_estimate as f64 / 1000.0) * 0.01;
             self.router.record_usage(&model, 0.0, token_estimate);
@@ -481,6 +524,12 @@ impl LlmClient for DynamicLlmClient {
     /// 返回 None 表示 ProviderRegistry 未配置（开发模式）。
     fn http_stats(&self) -> Option<sisyphus_types::HttpClientStats> {
         self.provider_registry.as_ref().and_then(|reg| reg.shared_http()).map(|c| c.stats())
+    }
+
+    /// provider 上报的 token 用量；从未上报过则返回 `None`（未知 ≠ 0）。
+    fn token_usage(&self) -> Option<sisyphus_types::LlmTokenUsage> {
+        let snapshot = self.token_usage.snapshot();
+        (snapshot.calls > 0).then_some(snapshot)
     }
 }
 
@@ -576,5 +625,58 @@ mod tests {
 
         let out = client.chat("", "hi", false).await.expect("6s 慢响应应在 10s 超时内成功");
         assert_eq!(out, "PONG");
+    }
+
+    /// 起一个只回一次响应的本地 mock server，返回给定 body。
+    fn mock_server_once(body: &'static str) -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("绑定回环端口");
+        let addr = listener.local_addr().expect("读取本地地址");
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+        format!("http://{addr}/v1/chat/completions")
+    }
+
+    #[tokio::test]
+    async fn token_usage_records_provider_reported_tokens() {
+        let endpoint = mock_server_once(
+            r#"{"model":"m","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":120,"completion_tokens":34}}"#,
+        );
+        let mut cfg = Config::default();
+        cfg.llm.endpoint = endpoint;
+        let client = DynamicLlmClient::new(Arc::new(RwLock::new(cfg)));
+
+        client.chat("", "hi", false).await.expect("mock 响应应成功");
+
+        let usage = client.token_usage().expect("provider 上报了 usage");
+        assert_eq!(usage.prompt_tokens, 120);
+        assert_eq!(usage.completion_tokens, 34);
+        assert_eq!(usage.calls, 1);
+        assert_eq!(usage.total_tokens(), 154);
+    }
+
+    #[tokio::test]
+    async fn token_usage_is_unknown_when_provider_omits_usage() {
+        // 没有 usage 字段时必须报「未知」（None），而不是补 0 ——
+        // 补 0 会把「未上报」混进成本均值里。
+        let endpoint =
+            mock_server_once(r#"{"model":"m","choices":[{"message":{"content":"ok"}}]}"#);
+        let mut cfg = Config::default();
+        cfg.llm.endpoint = endpoint;
+        let client = DynamicLlmClient::new(Arc::new(RwLock::new(cfg)));
+
+        client.chat("", "hi", false).await.expect("mock 响应应成功");
+
+        assert!(client.token_usage().is_none(), "未上报 usage 时应为 None");
     }
 }

@@ -96,23 +96,27 @@ phase1/
 ### 4.4 同一闭环进入质量指标（T4.1）
 
 `dev --record <path>` 把一次闭环落成 `TaskRecord`，使 L3 结果不只是日志，
-而是可聚合的样本。本节数据来自一次独立的记录运行（2026-11-12，同一模型与场景）：
+而是可聚合的样本。下表为一次独立的记录运行（2026-11-12，同一模型与场景，
+3/3 PASS）：
 
-| 场景 | 闸门命令 | 首轮 | 最终 | 闸门修复次数 | 耗时 |
-|---|---|---|---|---|---|
-| s1 `diagnose-fix` | `cargo check` | FAIL | PASS | 1 | 34.6s |
-| s2 `quality-gate` | `cargo clippy -- -D warnings` | FAIL | PASS | 1 | 22.9s |
-| s3 `feature` | `cargo test` | PASS | PASS | 0 | 24.6s |
+| 场景 | 闸门命令 | 首轮 | 最终 | 闸门修复次数 | 耗时 | token（输入+输出） |
+|---|---|---|---|---|---|---|
+| s1 `diagnose-fix` | `cargo check` | PASS | PASS | 0 | 58.1s | 482 + 530 = 1012 |
+| s2 `quality-gate` | `cargo clippy -- -D warnings` | FAIL | PASS | 1 | 25.8s | 1042 + 227 = 1269 |
+| s3 `feature` | `cargo test` | PASS | PASS | 0 | 56.5s | 550 + 285 = 835 |
 
 记录已归档到 `docs/benchmarks/quality-metrics/records/l3-s{1,2,3}-*.json`。
 与既有 4 条仓库 `verify` 记录合并后共 7 条，聚合结果：
 
 ```
-success_rate 1.0 / fix_rate 1.0 / regression_rate 0.0 / mean_duration 45.4s
+success_rate 1.0 / fix_rate 1.0 / regression_rate 0.0 / mean_duration 53.7s
+mean_total_tokens 1038.7（仅 3 条有 token 的记录参与；verify 记录为 null）
 ```
 
-产物 `docs/benchmarks/quality-metrics/2026-11-12-a668479.json`
-（bridge 未运行，token/http 指标为 `null`，不伪造）。
+token 来自 provider 上报的 usage（`prompt_tokens` / `completion_tokens`）：
+`dev` 链路自动写入记录，provider 未上报时留空而不是补 0，聚合时也不参与均值。
+产物见 `docs/benchmarks/quality-metrics/` 下最新快照（bridge 未运行时
+token/http 全局指标为 `null`，不伪造）。
 
 口径说明：
 

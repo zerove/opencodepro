@@ -43,6 +43,12 @@ pub struct TaskRecord {
     pub regressed: bool,
     /// 任务耗时（毫秒）。
     pub duration_ms: u64,
+    /// 输入（prompt）token 数；provider 未上报时为 `None`（未知 ≠ 0）。
+    #[serde(default)]
+    pub prompt_tokens: Option<u64>,
+    /// 输出（completion）token 数；provider 未上报时为 `None`。
+    #[serde(default)]
+    pub completion_tokens: Option<u64>,
     /// 记录时间（RFC3339）。
     pub recorded_at: String,
 }
@@ -66,6 +72,12 @@ pub struct QualityMetrics {
     pub regression_rate: Option<f64>,
     /// 平均单任务耗时（毫秒；无样本时 `None`）。
     pub mean_duration_ms: Option<f64>,
+    /// 平均单任务输入 token（仅有 token 样本时 `None`）。
+    pub mean_prompt_tokens: Option<f64>,
+    /// 平均单任务输出 token（仅有 token 样本时 `None`）。
+    pub mean_completion_tokens: Option<f64>,
+    /// 平均单任务 token 总量（输入+输出；仅有 token 样本时 `None`）。
+    pub mean_total_tokens: Option<f64>,
 }
 
 /// 聚合任务记录。
@@ -99,6 +111,28 @@ pub fn aggregate(records: &[TaskRecord]) -> QualityMetrics {
         sum as f64 / total as f64
     });
 
+    // token 维度只在「provider 真的上报过 usage」的记录上统计；
+    // 没有 token 的记录不参与均值（否则会把它算成 0，拉低均值）。
+    let token_samples: Vec<&TaskRecord> = records
+        .iter()
+        .filter(|r| r.prompt_tokens.is_some() || r.completion_tokens.is_some())
+        .collect();
+    let mean_prompt_tokens = (!token_samples.is_empty()).then(|| {
+        let sum: u64 = token_samples.iter().map(|r| r.prompt_tokens.unwrap_or(0)).sum();
+        sum as f64 / token_samples.len() as f64
+    });
+    let mean_completion_tokens = (!token_samples.is_empty()).then(|| {
+        let sum: u64 = token_samples.iter().map(|r| r.completion_tokens.unwrap_or(0)).sum();
+        sum as f64 / token_samples.len() as f64
+    });
+    let mean_total_tokens = (!token_samples.is_empty()).then(|| {
+        let sum: u64 = token_samples
+            .iter()
+            .map(|r| r.prompt_tokens.unwrap_or(0) + r.completion_tokens.unwrap_or(0))
+            .sum();
+        sum as f64 / token_samples.len() as f64
+    });
+
     QualityMetrics {
         total,
         passed,
@@ -108,6 +142,9 @@ pub fn aggregate(records: &[TaskRecord]) -> QualityMetrics {
         fix_rate,
         regression_rate,
         mean_duration_ms,
+        mean_prompt_tokens,
+        mean_completion_tokens,
+        mean_total_tokens,
     }
 }
 
@@ -132,6 +169,8 @@ mod tests {
             fix_attempts,
             regressed,
             duration_ms: 100,
+            prompt_tokens: None,
+            completion_tokens: None,
             recorded_at: "2026-11-11T00:00:00Z".to_string(),
         }
     }
@@ -144,6 +183,52 @@ mod tests {
         assert_eq!(metrics.fix_rate, None);
         assert_eq!(metrics.regression_rate, None);
         assert_eq!(metrics.mean_duration_ms, None);
+    }
+
+    #[test]
+    fn token_metrics_are_null_without_token_samples() {
+        let records = vec![record("t1", TaskStatus::Pass, true, true, 0, false)];
+        let metrics = aggregate(&records);
+        assert_eq!(metrics.mean_prompt_tokens, None);
+        assert_eq!(metrics.mean_completion_tokens, None);
+        assert_eq!(metrics.mean_total_tokens, None);
+    }
+
+    #[test]
+    fn token_metrics_average_only_token_samples() {
+        let mut with_tokens = record("t1", TaskStatus::Pass, true, true, 0, false);
+        with_tokens.prompt_tokens = Some(100);
+        with_tokens.completion_tokens = Some(50);
+        let mut other = record("t2", TaskStatus::Pass, true, true, 0, false);
+        other.prompt_tokens = Some(300);
+        other.completion_tokens = Some(100);
+        // 无 token 的记录不参与均值（否则会被当作 0 拉低均值）
+        let no_tokens = record("t3", TaskStatus::Pass, true, true, 0, false);
+
+        let metrics = aggregate(&[with_tokens, other, no_tokens]);
+        assert_eq!(metrics.total, 3);
+        assert_eq!(metrics.mean_prompt_tokens, Some(200.0));
+        assert_eq!(metrics.mean_completion_tokens, Some(75.0));
+        assert_eq!(metrics.mean_total_tokens, Some(275.0));
+    }
+
+    #[test]
+    fn record_without_token_fields_still_deserializes() {
+        // 旧记录（无 token 字段）必须仍可解析：缺失即「未知」，不是 0。
+        let raw = r#"{
+            "task_id": "old",
+            "scenario": "diagnose-fix",
+            "status": "pass",
+            "initial_verify_passed": true,
+            "final_verify_passed": true,
+            "fix_attempts": 0,
+            "regressed": false,
+            "duration_ms": 188,
+            "recorded_at": "2026-11-11T00:00:00Z"
+        }"#;
+        let parsed: TaskRecord = serde_json::from_str(raw).expect("旧记录应可解析");
+        assert_eq!(parsed.prompt_tokens, None);
+        assert_eq!(parsed.completion_tokens, None);
     }
 
     #[test]

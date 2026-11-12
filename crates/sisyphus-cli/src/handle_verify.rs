@@ -204,6 +204,10 @@ fn write_task_record(path: &PathBuf, report: &VerifyFixReport) -> Result<()> {
         // 回归判定需要跨任务对比，由聚合阶段负责。
         regressed: false,
         duration_ms: report.total_duration_ms as u64,
+        // verify 链路目前拿不到 provider 上报的 usage（后端抽象未暴露），
+        // 留空表示「未知」，不伪造 0。
+        prompt_tokens: None,
+        completion_tokens: None,
         recorded_at: chrono::Utc::now().to_rfc3339(),
     };
 

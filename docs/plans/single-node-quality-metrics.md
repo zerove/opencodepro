@@ -1,10 +1,9 @@
 # 单机质量指标与采集（T4.1）
 
 > 对应计划任务：T4.1「质量指标定义与采集」。
-> 指标口径与采集链路已落地；**仓库真实任务样本**仍需在真实仓库任务上采集。
-> L3 场景已用本地真实模型解阻（三场景 × 3 轮 9/9 PASS，见
-> `docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md`），
-> 但最小 crate 场景尚未转成 `TaskRecord` 写入记录目录。
+> 指标口径与采集链路已落地，L3 场景已用本地真实模型解阻（三场景 × 3 轮 9/9 PASS，
+> 见 `docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md`），
+> 并经 `sisyphus dev --record` 转成 `TaskRecord` 写入记录目录。
 
 ## 1. 指标定义
 
@@ -14,16 +13,23 @@
 | 任务成功率 | `pass / (pass + fail)`（blocked 单独计数） | 任务记录目录（`TaskRecord`）聚合 | 已有 7 条真实样本（4 仓库 `verify` + 3 L3 `dev` 闭环），成功率 1.0 |
 | 任务修复率 | 初次验证失败且最终通过 / 初次验证失败 | 同上 | 修复率 1.0（2 条首轮失败样本均修复通过） |
 | 任务回归率 | 修复引入回归 / 执行过修复 | 同上 | 0.0（`verify` 链路采样；`dev` 链路不检测跨任务回归，恒 false） |
-| 单任务耗时/token 成本 | 单任务端到端耗时、LLM token 用量 | 任务记录 `duration_ms` + bridge `/api/metrics`（`sisyphus_token_budget_usage` 等） | 链路已就绪（bridge 未运行时记 `null`） |
+| 单任务耗时 | 单任务端到端耗时 | 任务记录 `duration_ms` | 已有真实样本（7 条，均值 ~54s） |
+| 单任务 token 成本 | 单任务输入/输出 token 数 | 任务记录 `prompt_tokens` / `completion_tokens`（provider 上报的 usage；`dev` 链路自动写入） | 3 条 `dev` 记录有真实 token（均值 1039/任务）；`verify` 链路暂无（后端未暴露 usage） |
+| 全局 token 预算 | 进程级 LLM token 消耗估算 | bridge `/api/metrics`（`sisyphus_token_budget_usage` 等） | bridge 未运行时记 `null` |
 
 ## 2. 采集口径
 
-- **任务记录**：`sisyphus verify --record <path>` 每次执行落一条 JSON 记录
+- **任务记录**：`sisyphus verify --record <path>`（验证-修复循环）或
+  `sisyphus dev --record <path>`（LLM 闭环）每次执行落一条 JSON 记录
   （`task_id` / `scenario` / `status` / `initial_verify_passed` / `final_verify_passed` /
-  `fix_attempts` / `regressed` / `duration_ms` / `recorded_at`），记录目录约定为
-  `docs/benchmarks/quality-metrics/records/`（格式说明见该目录 `README.md`）。
+  `fix_attempts` / `regressed` / `duration_ms` / `prompt_tokens` / `completion_tokens` /
+  `recorded_at`），记录目录约定为 `docs/benchmarks/quality-metrics/records/`
+  （格式说明见该目录 `README.md`）。
+- **token 口径**：只统计 provider **实际上报**的 usage；provider 未返回 usage 时
+  字段留空（`null`），聚合时该记录**不参与** token 均值（避免把「未上报」当 0 拉低均值）。
+  `verify` 链路目前拿不到后端 usage，恒为 `null`。
 - **聚合**：`sisyphus metrics quality --records <dir> [--json]` → 成功率 / 修复率 /
-  回归率 / 平均耗时；无记录时各比率为 `null`（不伪造 0 值）。
+  回归率 / 平均耗时 / 平均 token；无记录时各比率为 `null`（不伪造 0 值）。
 - **Bridge 指标**：`GET /api/metrics` → Prometheus 文本。当前采集的**真实**指标名：
   `sisyphus_token_budget_usage`（LLM 阶段 token 消耗估算，gauge）、
   `sisyphus_token_budget_capped`、`sisyphus_token_budget_exhausted`、
@@ -42,7 +48,9 @@
   （bridge 未运行时为 `null`，不伪造值）；
 - `task_total` / `task_passed` / `task_failed` / `task_blocked` /
   `task_success_rate` / `task_fix_rate` / `task_regression_rate` /
-  `task_cost_duration_ms_per_task`（由 `sisyphus metrics quality` 聚合；无记录时 `null`）。
+  `task_cost_duration_ms_per_task` / `task_cost_tokens_per_task` /
+  `task_cost_prompt_tokens_per_task` / `task_cost_completion_tokens_per_task`
+  （由 `sisyphus metrics quality` 聚合；无记录时 `null`）。
 
 ## 4. 运行
 

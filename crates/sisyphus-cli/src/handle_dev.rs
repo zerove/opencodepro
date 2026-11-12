@@ -5,6 +5,7 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use sisyphus_cli::tools::developer::DevelopmentReport;
 use sisyphus_metrics::quality::{TaskRecord, TaskStatus};
+use sisyphus_types::{LlmClient, LlmTokenUsage};
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_dev(
@@ -29,8 +30,10 @@ pub(crate) async fn handle_dev(
     println!();
 
     let config = Arc::new(std::sync::RwLock::new(sisyphus_cfg.clone()));
+    // 保留一份 Arc：闭环结束后要读 provider 上报的 token 用量（质量指标的
+    // token 成本维度）。`Developer` 只拿到 trait object，读不到用量。
     let llm = Arc::new(sisyphus_cli::tools::llm::DynamicLlmClient::new(config));
-    let mut developer = sisyphus_cli::tools::developer::Developer::new(llm);
+    let mut developer = sisyphus_cli::tools::developer::Developer::new(llm.clone());
     if let Some(cmd) = verify_cmd {
         println!("Objective verification: `{cmd}` (fix attempts: {verify_fix_attempts})");
         developer = developer
@@ -47,12 +50,14 @@ pub(crate) async fn handle_dev(
     {
         Ok(Ok(report)) => {
             let duration_ms = started.elapsed().as_millis() as u64;
+            // provider 上报了 usage 才有值；否则为「未知」而不是 0。
+            let token_usage = llm.token_usage();
             println!("{}", sisyphus_cli::tools::developer::format_report(&report));
 
             // T4.1：闸门失败也要落记录（失败样本是成功率的分母），
             // 因此写在 bail 之前。
             if let Some(path) = record {
-                write_dev_task_record(path, scenario, &report, duration_ms)?;
+                write_dev_task_record(path, scenario, &report, duration_ms, token_usage)?;
                 println!("📝 Task record: {}", path.display());
             }
 
@@ -120,6 +125,7 @@ fn write_dev_task_record(
     scenario: &str,
     report: &DevelopmentReport,
     duration_ms: u64,
+    token_usage: Option<LlmTokenUsage>,
 ) -> Result<()> {
     let gate =
         report.final_verification.as_ref().context("--record 需要闸门结果，但报告中不存在")?;
@@ -142,6 +148,9 @@ fn write_dev_task_record(
         fix_attempts: gate.fix_attempts as u32,
         regressed: false,
         duration_ms,
+        // provider 未上报 usage 时留空（未知 ≠ 0），避免污染 token 均值。
+        prompt_tokens: token_usage.map(|u| u.prompt_tokens),
+        completion_tokens: token_usage.map(|u| u.completion_tokens),
         recorded_at: chrono::Utc::now().to_rfc3339(),
     };
 
@@ -191,7 +200,8 @@ mod tests {
             output: "clippy output".to_string(),
         };
 
-        write_dev_task_record(&path, "quality-gate", &report(Some(gate)), 12_345).expect("写入");
+        write_dev_task_record(&path, "quality-gate", &report(Some(gate)), 12_345, None)
+            .expect("写入");
 
         let raw = std::fs::read_to_string(&path).expect("读取");
         let record: TaskRecord = serde_json::from_str(&raw).expect("解析");
@@ -217,7 +227,7 @@ mod tests {
             output: "error".to_string(),
         };
 
-        write_dev_task_record(&path, "diagnose-fix", &report(Some(gate)), 1).expect("写入");
+        write_dev_task_record(&path, "diagnose-fix", &report(Some(gate)), 1, None).expect("写入");
         let record: TaskRecord =
             serde_json::from_str(&std::fs::read_to_string(&path).expect("读取")).expect("解析");
         assert_eq!(record.status, TaskStatus::Fail);
@@ -225,9 +235,35 @@ mod tests {
     }
 
     #[test]
+    fn record_carries_provider_token_usage() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("tokens.json");
+        let gate = FinalVerification {
+            command: "cargo test".to_string(),
+            initial_passed: true,
+            passed: true,
+            fix_attempts: 0,
+            output: "ok".to_string(),
+        };
+        let usage = LlmTokenUsage {
+            prompt_tokens: 900,
+            completion_tokens: 120,
+            calls: 2,
+        };
+
+        write_dev_task_record(&path, "feature", &report(Some(gate)), 10, Some(usage))
+            .expect("写入");
+
+        let raw = std::fs::read_to_string(&path).expect("读取");
+        let record: TaskRecord = serde_json::from_str(&raw).expect("解析");
+        assert_eq!(record.prompt_tokens, Some(900));
+        assert_eq!(record.completion_tokens, Some(120));
+    }
+
+    #[test]
     fn record_without_gate_is_an_error() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("no-gate.json");
-        assert!(write_dev_task_record(&path, "dev", &report(None), 1).is_err());
+        assert!(write_dev_task_record(&path, "dev", &report(None), 1, None).is_err());
     }
 }

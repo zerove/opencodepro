@@ -110,8 +110,9 @@ sisyphus verify --lang node -p web -C ./frontend
 
 ### metrics — 任务级质量指标聚合
 
-从任务记录目录汇总成功率 / 修复率 / 回归率 / 平均单任务耗时。记录由
-`sisyphus verify --record <path>` 产生；无记录时各比率为 `null`（不伪造 0 值）。
+从任务记录目录汇总成功率 / 修复率 / 回归率 / 平均单任务耗时 / 平均单任务 token。记录由
+`sisyphus verify --record <path>` 或 `sisyphus dev --record <path>` 产生；
+无记录时各比率为 `null`（不伪造 0 值）。
 
 ```bash
 # 聚合查看（人类可读）
@@ -125,6 +126,9 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records --jso
 |---|---|
 | `--records <dir>` | 任务记录目录（每个 `.json` 一条记录）；默认 `docs/benchmarks/quality-metrics/records` |
 | `--json` | 输出结构化指标 |
+
+token 维度只在 provider 上报了 usage 的记录上统计（`dev` 链路自动写入
+`prompt_tokens` / `completion_tokens`）；没有 token 样本时该指标为 `null`。
 
 指标口径与记录格式见 `docs/plans/single-node-quality-metrics.md`。
 

@@ -2,10 +2,12 @@
   "task_id": "l3-s1-diagnose-fix",
   "scenario": "diagnose-fix",
   "status": "pass",
-  "initial_verify_passed": false,
+  "initial_verify_passed": true,
   "final_verify_passed": true,
-  "fix_attempts": 1,
+  "fix_attempts": 0,
   "regressed": false,
-  "duration_ms": 34613,
-  "recorded_at": "2026-11-12T02:43:41.805497679+00:00"
+  "duration_ms": 58093,
+  "prompt_tokens": 482,
+  "completion_tokens": 530,
+  "recorded_at": "2026-11-12T03:38:08.120596740+00:00"
 }

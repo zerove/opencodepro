@@ -5,8 +5,9 @@
 # 来源：
 #   - bridge /api/metrics（sisyphus_llm_requests_total / sisyphus_llm_tokens_total），
 #     未运行时记 null（不伪造）
-#   - 任务级指标（成功率/修复率/回归率/单任务耗时）：由 `sisyphus metrics quality`
-#     从任务记录目录聚合（记录由 `sisyphus verify --record <path>` 产生）；
+#   - 任务级指标（成功率/修复率/回归率/单任务耗时/token 成本）：由
+#     `sisyphus metrics quality` 从任务记录目录聚合（记录由
+#     `sisyphus verify --record <path>` 或 `sisyphus dev --record <path>` 产生）；
 #     无记录时各比率为 null（不伪造 0）
 set -euo pipefail
 
@@ -132,6 +133,10 @@ if task_metrics:
     metrics["task_fix_rate"] = task_metrics.get("fix_rate")
     metrics["task_regression_rate"] = task_metrics.get("regression_rate")
     metrics["task_cost_duration_ms_per_task"] = task_metrics.get("mean_duration_ms")
+    # token 成本维度：只有 provider 真的上报 usage 的记录才参与（无样本为 null）
+    metrics["task_cost_tokens_per_task"] = task_metrics.get("mean_total_tokens")
+    metrics["task_cost_prompt_tokens_per_task"] = task_metrics.get("mean_prompt_tokens")
+    metrics["task_cost_completion_tokens_per_task"] = task_metrics.get("mean_completion_tokens")
 else:
     metrics["task_total"] = None
     metrics["task_passed"] = None
@@ -141,6 +146,9 @@ else:
     metrics["task_fix_rate"] = None
     metrics["task_regression_rate"] = None
     metrics["task_cost_duration_ms_per_task"] = None
+    metrics["task_cost_tokens_per_task"] = None
+    metrics["task_cost_prompt_tokens_per_task"] = None
+    metrics["task_cost_completion_tokens_per_task"] = None
 
 out_dir = "docs/benchmarks/quality-metrics"
 os.makedirs(out_dir, exist_ok=True)

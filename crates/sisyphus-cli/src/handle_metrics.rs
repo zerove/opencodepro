@@ -83,6 +83,15 @@ fn print_human(metrics: &QualityMetrics, records_dir: &Path) {
         Some(duration) => println!("平均单任务耗时: {:.0}ms", duration),
         None => println!("平均单任务耗时: 无样本"),
     }
+    match metrics.mean_total_tokens {
+        Some(total) => println!(
+            "平均单任务 token: {:.0}（输入 {:.0} / 输出 {:.0}）",
+            total,
+            metrics.mean_prompt_tokens.unwrap_or(0.0),
+            metrics.mean_completion_tokens.unwrap_or(0.0)
+        ),
+        None => println!("平均单任务 token: 无样本"),
+    }
 }
 
 #[cfg(test)]
