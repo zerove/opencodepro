@@ -81,22 +81,48 @@ fn test_write_empty_content() {
 
 #[test]
 fn test_exec_echo() {
-    let stdout = run_cli_success(&["exec", "echo hello"]);
+    // `--yes`：测试进程没有 tty，危险命令默认 fail-safe 拒绝（非交互自动化
+    // 必须显式放行 —— 见 book「会执行命令的入口」）。
+    let stdout = run_cli_success(&["exec", "echo hello", "--yes"]);
     assert!(stdout.contains("hello"));
     assert!(stdout.contains("Exit: 0"));
 }
 
 #[test]
+fn test_exec_non_interactive_is_denied_without_yes() {
+    // 回归：stdin 无输入时**不能**当成同意（此前 fail-open，`exec` 会静默执行）。
+    let out = run_cli(&["exec", "echo should-not-run"]);
+    assert!(!out.status.success(), "非交互且无 --yes 时必须失败");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("should-not-run"),
+        "命令不应被执行: {stdout}"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("No interactive input available"),
+        "应给出明确原因: {stderr}"
+    );
+}
+
+#[test]
 fn test_exec_with_workdir() {
     let dir = tempfile::tempdir().unwrap();
-    let stdout = run_cli_success(&["exec", "pwd", "--dir", dir.path().to_str().unwrap()]);
+    let stdout = run_cli_success(&[
+        "exec",
+        "pwd",
+        "--dir",
+        dir.path().to_str().unwrap(),
+        "--yes",
+    ]);
     let pwd = stdout.lines().next().unwrap_or("");
     assert_eq!(pwd, dir.path().to_str().unwrap());
 }
 
 #[test]
 fn test_exec_failure() {
-    let out = run_cli(&["exec", "exit 42"]);
+    // `--yes`：否则失败原因会是权限拒绝，而不是命令本身的退出码。
+    let out = run_cli(&["exec", "exit 42", "--yes"]);
     assert!(!out.status.success(), "expected failure, got success");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!stderr.is_empty(), "expected error output");
@@ -777,14 +803,14 @@ fn test_skill_help() {
 
 #[test]
 fn test_delegate_inline_single_command() {
-    let stdout = run_cli_success(&["delegate", "inline", "echo hello_delegate"]);
+    let stdout = run_cli_success(&["delegate", "inline", "echo hello_delegate", "--yes"]);
     assert!(stdout.contains("hello_delegate"));
     assert!(stdout.contains("Done:"));
 }
 
 #[test]
 fn test_delegate_inline_multiple_commands() {
-    let stdout = run_cli_success(&["delegate", "inline", "echo first", "echo second"]);
+    let stdout = run_cli_success(&["delegate", "inline", "echo first", "echo second", "--yes"]);
     assert!(stdout.contains("first"));
     assert!(stdout.contains("second"));
     assert!(stdout.contains("Done: 2/2"));
@@ -800,7 +826,7 @@ fn test_delegate_run_from_file() {
     ]);
     std::fs::write(&task_file, serde_json::to_string(&tasks).unwrap()).unwrap();
 
-    let stdout = run_cli_success(&["delegate", "run", task_file.to_str().unwrap()]);
+    let stdout = run_cli_success(&["delegate", "run", task_file.to_str().unwrap(), "--yes"]);
     assert!(stdout.contains("echo_first"));
     assert!(stdout.contains("echo_second"));
     assert!(stdout.contains("Done: 2/2"));
