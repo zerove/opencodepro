@@ -110,8 +110,11 @@ impl Developer {
 
     /// Approval gate for a step action (T2.1 MVP).
     ///
-    /// Returns `Ok(true)` to execute, `Ok(false)` to deny. LLM-internal
-    /// actions (`ComplexChange`) bypass the gate in MVP.
+    /// Returns `Ok(true)` to execute, `Ok(false)` to deny.
+    ///
+    /// 所有动作都经 `dev_tool_id` 映射到统一权限体系的 tool_id，**没有例外**：
+    /// `ComplexChange` 曾因映射不到而整体绕过审批闸（deny 规则拦不住它），
+    /// 现在映射为 `builtin:file_edit`，与普通编辑走同一套规则。
     async fn approve_step(&self, step: &DevStep) -> Result<bool, String> {
         let Some(approver) = self.approver.as_ref() else {
             return Ok(true);
@@ -1086,18 +1089,29 @@ pub fn format_report(report: &DevelopmentReport) -> String {
         DevOverallStatus::Cancelled => output.push_str("Overall Status: CANCELLED\n"),
     }
 
-    if let Some(gate) = &report.final_verification {
-        output.push_str(&format!(
-            "Objective verification: {} (`{}`, {} fix attempt(s))\n",
-            if gate.passed { "PASSED" } else { "FAILED" },
-            gate.command,
-            gate.fix_attempts
-        ));
-        if !gate.passed {
-            output.push_str(&format!("Verification output:\n{}\n", gate.output));
-        }
-        output.push_str("--------------------------------------------------\n");
+    match &report.final_verification {
+        Some(gate) => {
+            output.push_str(&format!(
+                "Objective verification: {} (`{}`, {} fix attempt(s))\n",
+                if gate.passed { "PASSED" } else { "FAILED" },
+                gate.command,
+                gate.fix_attempts
+            ));
+            if !gate.passed {
+                output.push_str(&format!("Verification output:\n{}\n", gate.output));
+            }
+        },
+        None => {
+            // 没配闸门时，结论只是**模型自评**。必须显式说明，否则这份报告与
+            // 「闸门已通过」的报告长得一样 —— 而 CLI 的历史已经证明模型自选的
+            // verification 会报 SUCCESS 而实际 clippy 仍失败。
+            // TUI 的 /dev 路径目前也不设闸门，这个区分对它尤其重要。
+            output.push_str(
+                "Objective verification: NOT CONFIGURED —— 本结论来自**模型自评**，未经客观闸门判定\n",
+            );
+        },
     }
+    output.push_str("--------------------------------------------------\n");
 
     output.push_str("--------------------------------------------------\n");
     for step in &report.steps {

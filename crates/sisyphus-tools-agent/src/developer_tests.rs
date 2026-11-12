@@ -420,6 +420,40 @@ async fn test_format_report() {
     assert!(formatted.contains("SUCCESS"));
     assert!(formatted.contains("Step 1"));
     assert!(formatted.contains("file.txt"));
+    // 没配闸门时必须显式说明「结论来自模型自评」—— 否则这份报告与
+    // 「闸门已通过」的报告长得一样，而模型自选的 verification 会报 SUCCESS
+    // 而实际 clippy 仍失败（CLI 历史缺陷）。TUI 的 /dev 路径不设闸门。
+    assert!(
+        formatted.contains("Objective verification: NOT CONFIGURED"),
+        "无闸门时报告必须声明结论未经客观判定: {formatted}"
+    );
+}
+
+#[tokio::test]
+async fn test_format_report_states_the_objective_gate_when_present() {
+    let report = DevelopmentReport {
+        goal: "Test Goal".to_string(),
+        overall_status: DevOverallStatus::Success,
+        steps: vec![],
+        artifacts: vec![],
+        final_verification: Some(FinalVerification {
+            command: "cargo test".to_string(),
+            passed: true,
+            fix_attempts: 0,
+            initial_passed: true,
+            output: String::new(),
+        }),
+    };
+
+    let formatted = format_report(&report);
+    assert!(
+        formatted.contains("Objective verification: PASSED (`cargo test`"),
+        "配了闸门时必须报出闸门命令: {formatted}"
+    );
+    assert!(
+        !formatted.contains("NOT CONFIGURED"),
+        "配了闸门就不该再声明「未配置」: {formatted}"
+    );
 }
 
 #[tokio::test]
