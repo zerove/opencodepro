@@ -5,7 +5,8 @@
 # 两处实现都偏离规范，导致连不上任何合规 MCP 服务器。本脚本用真实协议服务器
 # 做端到端验收：
 #
-#   级别 1（CLI）：sisyphus mcp info / mcp call —— 校验握手、工具列表、工具调用
+#   级别 1（CLI）：sisyphus mcp info / mcp call / resources / prompts ——
+#                 校验握手、工具列表与调用、资源列表与读取、提示列表与获取
 #                 （stdio 与 HTTP 两种传输各跑一遍）
 #   级别 2（引擎）：启动 bridge（同时挂 stdio 与 HTTP 两个 MCP 服务器），校验
 #                   /api/tools 出现 MCP 工具，并经 /api/tools/execute 真正调用一次

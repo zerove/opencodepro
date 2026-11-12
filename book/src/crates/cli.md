@@ -412,6 +412,10 @@ sisyphus dev "<目标>" \
 | `--scenario` | 记录里的场景标签（默认 `dev-closed-loop`），如 `diagnose-fix` / `quality-gate` / `feature` |
 | `--yes` | 自动放行「需要人工确认」的命令。默认：交互式终端问 `[Y/n]`，**非交互环境直接拒绝**（fail-safe） |
 
+> **TUI `/dev` 最小出口**：TUI 交互路径不提供 `--verify-cmd` 参数时，可通过环境变量注入客观闸门（未设置则保持模型自评）：
+> - `SISYPHUS_DEV_VERIFY_CMD`：客观验收命令（非空生效，语义同 `--verify-cmd`）
+> - `SISYPHUS_DEV_VERIFY_FIX_ATTEMPTS`：闸门失败后的自动修复次数（正整数生效，语义同 `--verify-fix-attempts`）
+
 ### 为什么需要 `--verify-cmd`
 
 每个步骤自带 `verification`，由**模型在计划里自选**，可能与用户目标不一致。实测：目标是
