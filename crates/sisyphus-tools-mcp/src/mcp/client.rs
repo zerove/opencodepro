@@ -71,7 +71,8 @@ impl McpClient {
         let msg = serde_json::to_string(&notification).map_err(|e| {
             sisyphus_tools_core::ToolError::TodoError(format!("serialize notification: {e}"))
         })?;
-        self.transport.request(&msg).await?;
+        // 通知不会收到响应：必须走 notify（只写不读），否则会阻塞到超时。
+        self.transport.notify(&msg).await?;
         Ok(())
     }
 
@@ -221,13 +222,21 @@ mod tests {
     /// Mock transport that returns pre-defined responses.
     struct MockTransport {
         responses: Arc<Mutex<Vec<String>>>,
+        /// 收到的通知（不消费响应队列）。
+        notifications: Arc<Mutex<Vec<String>>>,
     }
 
     impl MockTransport {
         fn new(responses: Vec<String>) -> Self {
             Self {
                 responses: Arc::new(Mutex::new(responses)),
+                notifications: Arc::new(Mutex::new(Vec::new())),
             }
+        }
+
+        /// 克隆通知记录的句柄（transport 会被移动进 client，需要在外部观察）。
+        fn notifications_arc(&self) -> Arc<Mutex<Vec<String>>> {
+            Arc::clone(&self.notifications)
         }
     }
 
@@ -244,6 +253,12 @@ mod tests {
             }
         }
 
+        /// 通知只记录，不消费响应队列（与协议一致）。
+        async fn notify(&mut self, message: &str) -> ToolResult<()> {
+            self.notifications.lock().unwrap().push(message.to_string());
+            Ok(())
+        }
+
         async fn close(&mut self) -> ToolResult<()> {
             Ok(())
         }
@@ -254,12 +269,12 @@ mod tests {
             "jsonrpc": "2.0",
             "id": 1,
             "result": {
-                "protocol_version": "2025-03-26",
+                "protocolVersion": "2025-03-26",
                 "capabilities": {
-                    "tools": { "list_changed": true },
-                    "resources": { "subscribe": false, "list_changed": false }
+                    "tools": { "listChanged": true },
+                    "resources": { "subscribe": false, "listChanged": false }
                 },
-                "server_info": { "name": "test-server", "version": "1.0.0" }
+                "serverInfo": { "name": "test-server", "version": "1.0.0" }
             }
         })
         .to_string()
@@ -271,8 +286,8 @@ mod tests {
             "id": 2,
             "result": {
                 "tools": [
-                    { "name": "echo", "description": "Echo input back", "input_schema": { "type": "object", "properties": { "text": { "type": "string" } } } },
-                    { "name": "add", "description": "Add two numbers", "input_schema": { "type": "object", "properties": { "a": { "type": "number" }, "b": { "type": "number" } } } }
+                    { "name": "echo", "description": "Echo input back", "inputSchema": { "type": "object", "properties": { "text": { "type": "string" } } } },
+                    { "name": "add", "description": "Add two numbers", "inputSchema": { "type": "object", "properties": { "a": { "type": "number" }, "b": { "type": "number" } } } }
                 ]
             }
         }).to_string()
@@ -284,7 +299,7 @@ mod tests {
             "id": 3,
             "result": {
                 "content": [{ "type": "text", "text": "hello back" }],
-                "is_error": false
+                "isError": false
             }
         })
         .to_string()
@@ -295,9 +310,9 @@ mod tests {
             "jsonrpc": "2.0",
             "id": 1,
             "result": {
-                "protocol_version": "2025-03-26",
+                "protocolVersion": "2025-03-26",
                 "capabilities": { "tools": null, "resources": null },
-                "server_info": { "name": "test", "version": "0.1" }
+                "serverInfo": { "name": "test", "version": "0.1" }
             }
         })
         .to_string()
@@ -305,7 +320,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_initialize() {
-        let transport = MockTransport::new(vec![mock_initialize_response(), "{}".to_string()]);
+        let transport = MockTransport::new(vec![mock_initialize_response()]);
         let mut client = McpClient::new(Box::new(transport));
         let result = client.initialize("test-client", "0.1.0").await.unwrap();
         assert_eq!(result.protocol_version, "2025-03-26");
@@ -328,7 +343,6 @@ mod tests {
     async fn test_list_tools() {
         let transport = MockTransport::new(vec![
             mock_initialize_response_for_notification(),
-            "{}".to_string(),
             mock_tools_list_response(),
         ]);
         let mut client = McpClient::new(Box::new(transport));
@@ -343,7 +357,6 @@ mod tests {
     async fn test_call_tool() {
         let transport = MockTransport::new(vec![
             mock_initialize_response_for_notification(),
-            "{}".to_string(),
             mock_tool_call_response(),
         ]);
         let mut client = McpClient::new(Box::new(transport));
@@ -358,7 +371,6 @@ mod tests {
     async fn test_call_tool_error() {
         let transport = MockTransport::new(vec![
             mock_initialize_response_for_notification(),
-            "{}".to_string(),
             json!({
                 "jsonrpc": "2.0", "id": 3,
                 "error": { "code": -32001, "message": "execution failed" }
@@ -372,8 +384,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_initialize_sends_notification_without_consuming_response() {
+        // 回归：通知是 fire-and-forget。旧实现用 request() 发通知，会一直等
+        // 服务器回应（合规 MCP 服务器不会回），实测卡满 120s 才报错。
+        let transport = MockTransport::new(vec![mock_initialize_response()]);
+        let notifications = transport.notifications_arc();
+        let mut client = McpClient::new(Box::new(transport));
+        client.initialize("test", "0.1").await.unwrap();
+
+        let sent = notifications.lock().unwrap().clone();
+        assert_eq!(sent.len(), 1, "应发出 1 条通知: {sent:?}");
+        let msg: serde_json::Value = serde_json::from_str(&sent[0]).expect("通知应为 JSON");
+        assert_eq!(msg["method"], "notifications/initialized");
+        assert!(msg.get("id").is_none(), "通知不应带 id: {sent:?}");
+    }
+
+    #[tokio::test]
     async fn test_server_info() {
-        let transport = MockTransport::new(vec![mock_initialize_response(), "{}".to_string()]);
+        let transport = MockTransport::new(vec![mock_initialize_response()]);
         let mut client = McpClient::new(Box::new(transport));
         assert!(client.server_info().is_none());
         client.initialize("test", "0.1").await.unwrap();

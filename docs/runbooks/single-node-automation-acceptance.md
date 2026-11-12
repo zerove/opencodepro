@@ -172,6 +172,20 @@ bash scripts/l3-run-scenarios.sh s1 s2 s3   # 诊断修复 / 质量门 / TDD 功
   当前无法完成（会返回非零），该场景用于覆盖缺口与发现缺陷，不计入默认通过率；
   详见证据文档 §4.5。
 
+### 7.3 MCP 场景（不需要 LLM）
+
+MCP 用一个**独立实现**的 MCP 服务器验证协议互通性（仓库内 `scripts/l3-mcp-server.py`，
+按规范自实现，不复用本仓代码）：
+
+```bash
+bash scripts/l3-mcp-check.sh            # CLI 级 + 引擎级（需要 bridge 二进制）
+bash scripts/l3-mcp-check.sh --cli-only # 只跑 CLI 级
+```
+
+覆盖：握手 / 工具列表 / 工具调用 / 工具错误路径，以及 bridge 侧 `/api/tools`
+注册与 `/api/tools/execute` 调用。说明与证据：
+`docs/benchmarks/acceptance/2026-11-12/phase1/l3-mcp-scenario.md`。
+
 **阻塞记录（环境缺失时）**：明确缺失的 LLM/凭据/MCP/工具；保留请求与响应证据；以 `BLOCKED` 标注 L3，不替代 L2 结论。
 
 ## 8. L4 性能与稳定性采样

@@ -1,0 +1,20 @@
+[2m2026-11-12T04:06:00.198541Z[0m [32m INFO[0m [2msisyphus_bridge[0m[2m:[0m Cluster peer protocol disabled (set [cluster].enabled = true to enable) [3mstatic_peers[0m[2m=[0m0
+[2m2026-11-12T04:06:00.216041Z[0m [33m WARN[0m [2msisyphus_bridge::bridge_service[0m[2m:[0m Embedding provider is not "openai"; using DummyEmbeddingClient (hash-based pseudo-vectors, NO semantic quality). Semantic experience recall is degraded. Set [llm.embedding] allow_dummy_embeddings = false and provider = "openai" for production use. [3mprovider[0m[2m=[0mdummy
+[2m2026-11-12T04:06:00.216983Z[0m [32m INFO[0m [2msisyphus_mem::experience_bank[0m[2m:[0m resumed local experience sequence from store [3mrecovered_seq[0m[2m=[0m11
+[2m2026-11-12T04:06:00.218428Z[0m [32m INFO[0m [2msisyphus_sandbox::plugin_manager[0m[2m:[0m Plugin hot-reload polling loop started (interval: 5s)
+[2m2026-11-12T04:06:00.275594Z[0m [32m INFO[0m [2msisyphus_bridge::bridge_service[0m[2m:[0m Connected MCP server 'l3' via stdio: python3 /home/zeron/dev/opencodepro/scripts/l3-mcp-server.py (3 tools)
+[2m2026-11-12T04:06:00.283878Z[0m [32m INFO[0m [2msisyphus_bridge::bridge_service[0m[2m:[0m Successfully migrated 0 SOPs to structured storage [3mcount[0m[2m=[0m0
+[2m2026-11-12T04:06:00.286271Z[0m [32m INFO[0m [2msisyphus_core::strategic_manager[0m[2m:[0m Cognitive loop config applied [3mmax_iterations[0m[2m=[0m10 [3mconvergence_threshold[0m[2m=[0m0.15 [3minitial_budget[0m[2m=[0m2.0 [3mdecay[0m[2m=[0m0.3 [3manomaly_fuel_threshold[0m[2m=[0m2.0 [3manomaly_duration_threshold[0m[2m=[0m3.0 [3manomaly_error_rate_threshold[0m[2m=[0m0.3 [3mtoken_budget_cap[0m[2m=[0mNone [3mtoken_budget_reserve[0m[2m=[0m0.1
+[2m2026-11-12T04:06:00.286640Z[0m [32m INFO[0m [2msisyphus_bridge::bridge_service[0m[2m:[0m Tool registry initialized with 40 tools
+[2m2026-11-12T04:06:00.287080Z[0m [32m INFO[0m [2msisyphus_bridge::bridge_service[0m[2m:[0m Agent registry initialized with 8 agents
+[2m2026-11-12T04:06:00.288520Z[0m [32m INFO[0m [2msisyphus_bridge::bridge_service[0m[2m:[0m Successfully migrated 0 projects to structured storage [3mcount[0m[2m=[0m0
+[2m2026-11-12T04:06:00.307914Z[0m [32m INFO[0m [2msisyphus_bridge[0m[2m:[0m startup_phase bridge_ms=116
+[2m2026-11-12T04:06:00.311425Z[0m [32m INFO[0m [2msisyphus_bridge[0m[2m:[0m Starting HTTP REST API server on 127.0.0.1:15391
+[2m2026-11-12T04:06:00.318973Z[0m [32m INFO[0m [2msisyphus_bridge[0m[2m:[0m startup_phase grpc_listening_ms=127
+[2m2026-11-12T04:06:00.319034Z[0m [32m INFO[0m [2msisyphus_bridge[0m[2m:[0m Starting gRPC server on 127.0.0.1:15361
+[2m2026-11-12T04:06:00.320492Z[0m [32m INFO[0m [2msisyphus_bridge[0m[2m:[0m startup_phase http_listening_ms=129
+[2m2026-11-12T04:06:01.255717Z[0m [32m INFO[0m [2msisyphus_bridge[0m[2m:[0m Received SIGTERM
+[2m2026-11-12T04:06:01.255894Z[0m [32m INFO[0m [2msisyphus_bridge[0m[2m:[0m gRPC graceful shutdown initiated (waiting up to 5s for in-flight RPCs)
+[2m2026-11-12T04:06:01.255889Z[0m [32m INFO[0m [2msisyphus_bridge[0m[2m:[0m HTTP graceful shutdown initiated (waiting up to 5s for in-flight requests)
+[2m2026-11-12T04:06:06.258039Z[0m [32m INFO[0m [2msisyphus_bridge[0m[2m:[0m Bridge shutdown signal received, calling bridge.shutdown(5s)
+[2m2026-11-12T04:06:06.258411Z[0m [32m INFO[0m [2msisyphus_bridge[0m[2m:[0m Bridge shutdown complete

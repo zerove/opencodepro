@@ -53,6 +53,7 @@ fn default_jsonrpc() -> String {
 // ── MCP Protocol Types ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Initialize Params.
 pub struct InitializeParams {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -64,6 +65,7 @@ pub struct InitializeParams {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Client Capabilities.
 pub struct ClientCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -73,6 +75,7 @@ pub struct ClientCapabilities {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Tools Capability.
 pub struct ToolsCapability {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -80,6 +83,7 @@ pub struct ToolsCapability {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Resources Capability.
 pub struct ResourcesCapability {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -89,6 +93,7 @@ pub struct ResourcesCapability {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Client Info.
 pub struct ClientInfo {
     pub name: String,
@@ -96,6 +101,7 @@ pub struct ClientInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Initialize Result.
 pub struct InitializeResult {
     pub protocol_version: String,
@@ -105,6 +111,7 @@ pub struct InitializeResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Server Capabilities.
 pub struct ServerCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -114,6 +121,7 @@ pub struct ServerCapabilities {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Server Info.
 pub struct ServerInfo {
     pub name: String,
@@ -121,6 +129,7 @@ pub struct ServerInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Mcp Tool.
 pub struct McpTool {
     pub name: String,
@@ -349,6 +358,65 @@ mod tests {
     }
 
     #[test]
+    fn test_wire_format_is_camel_case() {
+        // MCP 协议规定线上字段是 camelCase（protocolVersion / serverInfo /
+        // inputSchema / listChanged / isError）。旧实现用 snake_case，
+        // 结果是连不上任何**合规**的 MCP 服务器（自家 mock 往返测试掩盖了它）。
+        let params = InitializeParams {
+            protocol_version: Some("2025-03-26".into()),
+            capabilities: Some(ClientCapabilities {
+                tools: Some(ToolsCapability {
+                    list_changed: Some(true),
+                }),
+                resources: None,
+            }),
+            client_info: Some(ClientInfo {
+                name: "sisyphus".into(),
+                version: "0.1".into(),
+            }),
+        };
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(
+            json.contains("\"protocolVersion\""),
+            "应为 camelCase: {json}"
+        );
+        assert!(json.contains("\"clientInfo\""), "应为 camelCase: {json}");
+        assert!(json.contains("\"listChanged\""), "应为 camelCase: {json}");
+        assert!(
+            !json.contains("protocol_version"),
+            "不应出现 snake_case: {json}"
+        );
+
+        let tool = McpTool {
+            name: "sum".into(),
+            description: None,
+            input_schema: Some(serde_json::json!({"type": "object"})),
+        };
+        let json = serde_json::to_string(&tool).unwrap();
+        assert!(json.contains("\"inputSchema\""), "应为 camelCase: {json}");
+
+        let result = CallToolResult {
+            content: vec![ToolContent::Text { text: "5".into() }],
+            is_error: Some(false),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"isError\""), "应为 camelCase: {json}");
+    }
+
+    #[test]
+    fn test_deserializes_camel_case_from_spec_server() {
+        // 真实服务器发回的 initialize 结果（camelCase）必须能解析。
+        let raw = r#"{
+            "protocolVersion": "2025-03-26",
+            "capabilities": { "tools": { "listChanged": true } },
+            "serverInfo": { "name": "spec-server", "version": "1.2.3" }
+        }"#;
+        let parsed: InitializeResult = serde_json::from_str(raw).expect("camelCase 应可解析");
+        assert_eq!(parsed.protocol_version, "2025-03-26");
+        assert_eq!(parsed.server_info.unwrap().name, "spec-server");
+    }
+
+    #[test]
     fn test_mcp_error_code_constants() {
         assert_eq!(MCP_ERROR_PARSE, -32700);
         assert_eq!(MCP_ERROR_INVALID_REQUEST, -32600);
@@ -361,6 +429,7 @@ mod tests {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Call Tool Params.
 pub struct CallToolParams {
     pub name: String,
@@ -369,6 +438,7 @@ pub struct CallToolParams {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Call Tool Result.
 pub struct CallToolResult {
     pub content: Vec<ToolContent>,
@@ -387,6 +457,7 @@ pub enum ToolContent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 /// Resource Content.
 pub struct ResourceContent {
     pub uri: String,

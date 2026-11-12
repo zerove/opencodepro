@@ -35,6 +35,25 @@ sisyphus mcp serve
 
 > 具体参数与子命令以 `sisyphus mcp <subcommand> --help`、`sisyphus tool <subcommand> --help` 为准；不同子命令可能需要服务器地址、配置文件或环境变量。
 
+可直接跑通的例子（仓库内自带一个按 MCP 规范实现的测试服务器）：
+
+```bash
+# 查看服务器信息与工具
+sisyphus mcp info python3 scripts/l3-mcp-server.py
+
+# 调用工具（位置参数：工具名 → JSON 参数 → 连接方式）
+sisyphus mcp call sum '{"a":2,"b":3}' python3 scripts/l3-mcp-server.py
+# → { "content": [ { "type": "text", "text": "5" } ], "isError": false }
+```
+
+一条命令跑完整验收（CLI 级 + bridge 引擎级）：
+
+```bash
+bash scripts/l3-mcp-check.sh
+```
+
+说明与证据：`docs/benchmarks/acceptance/2026-11-12/phase1/l3-mcp-scenario.md`。
+
 ### 1.3 Bridge 侧技能/工具（需 bridge）
 
 ```bash

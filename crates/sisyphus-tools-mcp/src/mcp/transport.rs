@@ -10,6 +10,16 @@ use tokio::process::{Child, Command};
 pub trait McpTransport: Send + 'static {
     /// Send a JSON-RPC message and receive the response.
     async fn request(&mut self, message: &str) -> ToolResult<String>;
+    /// Send a JSON-RPC **notification**（按协议不会收到响应）。
+    ///
+    /// 默认实现仍然走 `request`，对「任何消息都回一行」的传输是安全的；
+    /// stdio/http 必须覆写：MCP 通知是 fire-and-forget，若同步等响应会一直
+    /// 阻塞到超时（实测 `initialize` 的 `notifications/initialized` 会卡满
+    /// 120s 才报错，合规服务器根本不会回它）。
+    async fn notify(&mut self, message: &str) -> ToolResult<()> {
+        let _ = self.request(message).await?;
+        Ok(())
+    }
     /// Close the transport connection.
     async fn close(&mut self) -> ToolResult<()>;
 }
@@ -115,6 +125,17 @@ impl McpTransport for StdioTransport {
         Ok(line.trim_end().to_string())
     }
 
+    /// 通知：不读响应（协议规定服务器不会回）。
+    async fn notify(&mut self, message: &str) -> ToolResult<()> {
+        self.writer
+            .write_all(message.as_bytes())
+            .await
+            .map_err(sisyphus_tools_core::ToolError::Io)?;
+        self.writer.write_all(b"\n").await.map_err(sisyphus_tools_core::ToolError::Io)?;
+        self.writer.flush().await.map_err(sisyphus_tools_core::ToolError::Io)?;
+        Ok(())
+    }
+
     async fn close(&mut self) -> ToolResult<()> {
         self.child.kill().await.map_err(sisyphus_tools_core::ToolError::Io)?;
         self.child.wait().await.map_err(sisyphus_tools_core::ToolError::Io)?;
@@ -156,6 +177,18 @@ impl McpTransport for HttpTransport {
             .map_err(|e| sisyphus_tools_core::ToolError::WebError(e.to_string()))?;
 
         Ok(body)
+    }
+
+    /// 通知：POST 出去即可，不等响应体（协议规定无响应）。
+    async fn notify(&mut self, message: &str) -> ToolResult<()> {
+        self.client
+            .post(&self.base_url)
+            .header("Content-Type", "application/json")
+            .body(message.to_string())
+            .send()
+            .await
+            .map_err(|e| sisyphus_tools_core::ToolError::WebError(e.to_string()))?;
+        Ok(())
     }
 
     async fn close(&mut self) -> ToolResult<()> {

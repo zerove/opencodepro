@@ -1,0 +1,15 @@
+cli:     /home/zeron/dev/opencodepro/target/debug/sisyphus
+server:  /home/zeron/dev/opencodepro/scripts/l3-mcp-server.py
+
+PASS  mcp info 握手并列出 3 个工具
+PASS  mcp info 工具名 sum
+PASS  mcp info 工具名 word_count
+PASS  mcp call sum(2,3) = 5
+PASS  mcp call word_count = 3
+PASS  mcp call 参数缺失返回 isError
+PASS  引擎 /api/tools 含 MCP 工具 l3:sum
+PASS  引擎 /api/tools 标注来源为 mcp
+PASS  引擎调用 MCP 工具 l3:sum(40,2)
+PASS  引擎调用返回 SUCCESS
+
+PASS=10 FAIL=0

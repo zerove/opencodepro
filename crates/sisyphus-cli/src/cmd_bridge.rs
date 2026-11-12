@@ -226,7 +226,11 @@ pub enum McpCommands {
         ///JSON 参数（可选，例如 '{"text":"hello"}'）
         args: Option<String>,
         ///服务器连接：`<url>` 或 `<command>` `[args...]`
-        #[arg(required = true)]
+        ///
+        /// 不能标 `required`：`args` 是可选位置参数，而 clap 要求必需位置参数
+        /// 排在可选位置参数**之前**（`tool` < `args` < `connect` 违反该规则，
+        /// debug 构建会在启动时直接 panic）。缺失时由 `resolve_client` 给出
+        /// 明确报错。
         connect: Vec<String>,
     },
     /// 启动通过 stdio 暴露 Sisyphus 代理工具的 MCP 服务器
