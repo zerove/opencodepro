@@ -75,6 +75,8 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records
 | `2026-11-11-d4a6ef0.json` | 首个真实仓库任务样本（`sisyphus-tools-build`）→ PASS |
 | `2026-11-11-a49b685.json` | **4 个真实仓库任务样本**（types / metrics / tools-build / tools-agent，均 `--max-warnings 0` PASS）→ 成功率 1.0、平均 58.9s |
 | `2026-11-11-6f1bcbd-fixture-samples.json` | **受控 fixture 样本**：3 个真实 `verify --fix` 运行（可自动修复 lint / 不可修复类型错误 / 干净代码）→ 成功率 0.667、修复率 0.5、回归率 0.0、平均 640ms |
+| `2026-11-12-a668479.json` | 7 条真实样本（4 仓库 `verify` + 3 L3 `dev` 闭环）→ 成功率 1.0、修复率 1.0、平均 45.4s（**无 token 维度**，采集时 token 采集尚未打通） |
+| `2026-11-12-a247771.json` | 同 7 条样本 + **token 成本维度**（provider 上报 usage → 任务记录）→ 成功率 1.0、修复率 1.0、平均 53.7s、**1038.7 token/任务** |
 | `fixture-samples/` | 上述 3 条任务记录原文（`sisyphus verify --record` 产出） |
 | `pipeline-demo-2026-11-11.json` | 最早的流程演示样本（2 个 fixture crate），保留作对照 |
 
