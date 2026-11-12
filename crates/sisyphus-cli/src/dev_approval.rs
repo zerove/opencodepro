@@ -107,6 +107,11 @@ impl crate::tools::developer::DevApprover for CliDevApprover {
                         self.perms.record_decision(tool_id, &decision, "asked-unanswered");
                         Ok(false)
                     },
+                    // `Ok(0)` = stdin EOF：没有应答，不能当成「回车同意」。
+                    Ok(0) => {
+                        self.perms.record_decision(tool_id, &decision, "asked-unanswered");
+                        Ok(false)
+                    },
                     Ok(_) => {
                         let answer = buf.trim().to_lowercase();
                         let approved = answer.is_empty() || answer == "y" || answer == "yes";

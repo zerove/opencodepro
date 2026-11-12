@@ -303,20 +303,56 @@ pub fn require_tool(perms: &CliPermission, tool: &str) -> Result<()> {
             let _ = std::io::stderr().flush();
             let mut buf = String::new();
             let read = std::io::stdin().read_line(&mut buf);
-            if read.is_err() {
-                perms.record_decision(tool, &decision, "asked-unanswered");
-                anyhow::bail!("No interactive input available to approve {tool}");
+            match parse_approval(read, &buf) {
+                Approval::Approved => {
+                    perms.record_decision(tool, &decision, "asked-approved");
+                    Ok(())
+                },
+                Approval::Denied => {
+                    perms.record_decision(tool, &decision, "asked-denied");
+                    if tool == "exec" {
+                        anyhow::bail!("Shell execution denied by user");
+                    }
+                    anyhow::bail!("{tool} denied by user");
+                },
+                Approval::Unanswered => {
+                    perms.record_decision(tool, &decision, "asked-unanswered");
+                    anyhow::bail!(
+                        "No interactive input available to approve {tool} (stdin reached EOF)"
+                    );
+                },
             }
+        },
+    }
+}
+
+/// 一次审批应答的判定结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Approval {
+    /// 同意（显式 y/yes，或直接回车 —— 提示是 `[Y/n]`，默认同意）。
+    Approved,
+    /// 明确拒绝（n / no / 其它文本）。
+    Denied,
+    /// 没有可用的应答（读取出错，或 stdin 已 EOF）。
+    Unanswered,
+}
+
+/// 把「读 stdin 的结果 + 读到的内容」解析成审批结论。
+///
+/// 关键点：**EOF（读到 0 字节）不等于「回车同意」**。stdin 已结束时 `buf` 为空串，
+/// 若按「空 = 同意」处理，`sisyphus exec "..." < /dev/null` 这类非交互调用会
+/// **静默放行**危险命令。EOF 必须 fail-safe 拒绝。
+pub fn parse_approval(read: std::io::Result<usize>, buf: &str) -> Approval {
+    match read {
+        Err(_) => Approval::Unanswered,
+        Ok(0) => Approval::Unanswered,
+        Ok(_) => {
             let answer = buf.trim().to_lowercase();
-            if !answer.is_empty() && answer != "y" && answer != "yes" {
-                perms.record_decision(tool, &decision, "asked-denied");
-                if tool == "exec" {
-                    anyhow::bail!("Shell execution denied by user");
-                }
-                anyhow::bail!("{tool} denied by user");
+            if answer.is_empty() || answer == "y" || answer == "yes" {
+                Approval::Approved
+            } else {
+                Approval::Denied
             }
-            perms.record_decision(tool, &decision, "asked-approved");
-            Ok(())
         },
     }
 }
@@ -486,6 +522,31 @@ mod tests {
         let dir = TempDir::new().expect("tmpdir");
         let entries = read_audit(&dir.path().join("nope.jsonl"), 5).expect("缺失文件不应报错");
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn parse_approval_treats_eof_as_unanswered() {
+        // 回归：stdin EOF（读到 0 字节）**不能**当成「回车同意」，
+        // 否则 `sisyphus exec "..." < /dev/null` 会静默放行危险命令。
+        assert_eq!(
+            parse_approval(Ok(0), ""),
+            Approval::Unanswered,
+            "EOF 必须 fail-safe"
+        );
+        assert_eq!(
+            parse_approval(Err(std::io::Error::other("boom")), ""),
+            Approval::Unanswered
+        );
+    }
+
+    #[test]
+    fn parse_approval_distinguishes_enter_from_eof() {
+        // 真的回车（读到换行）= 默认同意；显式 n = 拒绝。
+        assert_eq!(parse_approval(Ok(1), "\n"), Approval::Approved);
+        assert_eq!(parse_approval(Ok(3), "y\n"), Approval::Approved);
+        assert_eq!(parse_approval(Ok(3), "yes"), Approval::Approved);
+        assert_eq!(parse_approval(Ok(2), "n\n"), Approval::Denied);
+        assert_eq!(parse_approval(Ok(4), "no\n"), Approval::Denied);
     }
 
     #[test]

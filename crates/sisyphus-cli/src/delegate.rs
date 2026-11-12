@@ -14,7 +14,15 @@ struct TaskDef {
 }
 
 /// Run tasks.
-pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
+/// 执行任务文件里的命令。
+///
+/// 每条命令都先过**统一权限体系**（与 `exec` 同一口径）：危险命令默认需要人工
+/// 确认，非交互环境直接拒绝。此前这里完全绕过权限闸。
+pub async fn run_tasks(
+    file: PathBuf,
+    max_concurrent: usize,
+    perms: &crate::permission::CliPermission,
+) -> Result<()> {
     let content = std::fs::read_to_string(&file)
         .with_context(|| format!("read task file: {}", file.display()))?;
     let tasks: Vec<TaskDef> = serde_json::from_str(&content)
@@ -23,6 +31,12 @@ pub async fn run_tasks(file: PathBuf, max_concurrent: usize) -> Result<()> {
     if tasks.is_empty() {
         println!("No tasks defined.");
         return Ok(());
+    }
+
+    // 每条命令单独判定并写审计（deny → 直接拒绝，不执行任何命令）。
+    for t in &tasks {
+        crate::permission::require_tool(perms, "exec")
+            .with_context(|| format!("任务 {} 的命令被权限策略拒绝", t.id))?;
     }
 
     let units: Vec<crate::tools::WorkUnit> = tasks
@@ -238,7 +252,20 @@ pub async fn run_team_with_config(
 }
 
 /// Run inline.
-pub async fn run_inline(commands: &[String], max_concurrent: usize) -> Result<()> {
+/// 内联执行命令列表。
+///
+/// 每条命令都先过**统一权限体系**（与 `exec` 同一口径）。
+pub async fn run_inline(
+    commands: &[String],
+    max_concurrent: usize,
+    perms: &crate::permission::CliPermission,
+) -> Result<()> {
+    // 每条命令单独判定并写审计（deny → 直接拒绝，不执行任何命令）。
+    for cmd in commands {
+        crate::permission::require_tool(perms, "exec")
+            .with_context(|| format!("命令被权限策略拒绝: {cmd}"))?;
+    }
+
     let units: Vec<crate::tools::WorkUnit> = commands
         .iter()
         .enumerate()

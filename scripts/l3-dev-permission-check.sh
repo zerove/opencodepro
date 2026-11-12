@@ -164,6 +164,61 @@ fi
 check "deny 规则优先于 --yes（输出说明）" "已拒绝" "$(cat "$WORKDIR/dev3.out")"
 check "deny 规则优先于 --yes（审计 denied）" '"resolved":"denied"' "$(cat "$AUDIT_PATH" 2>/dev/null)"
 
+# ── 4) exec 入口：stdin EOF 必须 fail-safe（不得当成「回车同意」）────────
+rm -f "$MARKER"
+( cd "$WORKDIR" && timeout 60 "$CLI" --config "$CFG" --data-dir "$DATA_DIR" \
+    exec "touch $MARKER" < /dev/null ) >"$WORKDIR/exec-eof.out" 2>&1
+if [ -f "$MARKER" ]; then
+  printf 'FAIL  exec 在 stdin EOF 时不应执行（fail-open）\n'
+  FAIL=$((FAIL + 1))
+else
+  printf 'PASS  exec 在 stdin EOF 时未执行\n'
+  PASS=$((PASS + 1))
+fi
+check "exec 在 stdin EOF 时给出明确错误" "stdin reached EOF" "$(cat "$WORKDIR/exec-eof.out")"
+
+# ── 5) exec 入口：显式 y 仍然放行（向后兼容）────────────────────────
+rm -f "$MARKER"
+( cd "$WORKDIR" && echo y | timeout 60 "$CLI" --config "$CFG" --data-dir "$DATA_DIR" \
+    exec "touch $MARKER" ) >"$WORKDIR/exec-yes.out" 2>&1
+if [ -f "$MARKER" ]; then
+  printf 'PASS  exec 显式 y 仍放行\n'
+  PASS=$((PASS + 1))
+else
+  printf 'FAIL  exec 显式 y 应放行\n---\n%s\n---\n' "$(cat "$WORKDIR/exec-yes.out")"
+  FAIL=$((FAIL + 1))
+fi
+
+# ── 6) delegate inline：执行命令前也要过权限闸 ─────────────────────
+rm -f "$MARKER"
+( cd "$WORKDIR" && timeout 60 "$CLI" --config "$CFG" --data-dir "$DATA_DIR" \
+    delegate inline "touch $MARKER" < /dev/null ) >"$WORKDIR/delegate.out" 2>&1
+if [ -f "$MARKER" ]; then
+  printf 'FAIL  delegate inline 在未获授权时不应执行\n'
+  FAIL=$((FAIL + 1))
+else
+  printf 'PASS  delegate inline 在未获授权时未执行\n'
+  PASS=$((PASS + 1))
+fi
+check "delegate inline 被权限策略拒绝" "权限策略拒绝" "$(cat "$WORKDIR/delegate.out")"
+
+# ── 7) delegate run（任务文件）：每条命令都要过权限闸 ─────────────────
+cat > "$WORKDIR/tasks.json" <<JSON
+[
+  { "id": "t1", "name": "touch marker", "command": "touch $MARKER" }
+]
+JSON
+rm -f "$MARKER"
+( cd "$WORKDIR" && timeout 60 "$CLI" --config "$CFG" --data-dir "$DATA_DIR" \
+    delegate run tasks.json < /dev/null ) >"$WORKDIR/delegate-run.out" 2>&1
+if [ -f "$MARKER" ]; then
+  printf 'FAIL  delegate run 在未获授权时不应执行\n'
+  FAIL=$((FAIL + 1))
+else
+  printf 'PASS  delegate run 在未获授权时未执行\n'
+  PASS=$((PASS + 1))
+fi
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

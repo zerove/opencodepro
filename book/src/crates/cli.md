@@ -433,7 +433,10 @@ fi
 | 危险命令默认 `ask` | 交互式终端问 `[Y/n]`；**非交互环境直接拒绝** |
 
 每次判定都写审计 `<data-dir>/audit/permissions.jsonl`
-（`allowed` / `denied` / `asked-approved` / `asked-denied`）。
+（`allowed` / `denied` / `asked-approved` / `asked-denied` / `asked-unanswered`）。
+
+stdin **已 EOF**（`< /dev/null`、CI 里没有 tty）时判为「无法确认」并**拒绝** ——
+不会把「没读到输入」当成同意；要显式放行请 `echo y | sisyphus exec ...`。
 
 自动化场景（脚本 / CI）必须显式 `--yes`，否则模型无法执行命令 —— 这是刻意的
 fail-safe：静默执行模型提出的任意命令是自动化入口最危险的行为。

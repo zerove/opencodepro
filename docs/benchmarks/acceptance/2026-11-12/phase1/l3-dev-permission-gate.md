@@ -51,6 +51,11 @@ async fn approve_step(&self, step: &DevStep) -> Result<bool, String> {
 - 提示与审计都带命令文本（截断 300 字符），人能看懂拒绝了什么。
 
 CLI 侧新增 `--yes`（别名 `--auto-approve`）。
+- `delegate inline` / `delegate run`：**每条**命令执行前过闸（deny → 一条都不执行）。
+- `require_tool` 与 `CliDevApprover`：stdin EOF（读到 0 字节）判为
+  `asked-unanswered` → **拒绝**；真正回车（读到换行）仍是默认同意，显式
+  `echo y | sisyphus exec ...` 继续可用（向后兼容）。
+  解析逻辑抽成可测的 `parse_approval(read_result, buf)`。
 
 ## 4. 验收方法
 
@@ -60,12 +65,16 @@ CLI 侧新增 `--yes`（别名 `--auto-approve`）。
 
 | # | 场景 | 期望 | 结果 |
 |---|---|---|---|
-| 1 | 非交互、无 `--yes` | 命令**未执行** + 输出说明 + 审计 `asked-denied` | PASS |
-| 2 | 非交互、`--yes` | 命令**已执行** + 审计 `asked-approved` | PASS |
-| 3 | 权限规则 `deny` + `--yes` | 命令**未执行** + 审计 `denied` | PASS |
+| 1 | `dev` 非交互、无 `--yes` | 命令**未执行** + 输出说明 + 审计 `asked-denied` | PASS |
+| 2 | `dev` 非交互、`--yes` | 命令**已执行** + 审计 `asked-approved` | PASS |
+| 3 | `dev` 权限规则 `deny` + `--yes` | 命令**未执行** + 审计 `denied` | PASS |
+| 4 | `exec` stdin EOF | 命令**未执行** + 明确错误（`stdin reached EOF`） | PASS |
+| 5 | `exec` 显式 `echo y` | 命令**已执行**（向后兼容） | PASS |
+| 6 | `delegate inline` 未获授权 | 命令**未执行** + 「权限策略拒绝」 | PASS |
+| 7 | `delegate run`（任务文件）未获授权 | 命令**未执行** | PASS |
 
-原始输出：`runs/dev-permission-check.out`（`PASS=8 FAIL=0`；8 项含每项的
-命令执行/未执行与审计断言）。
+原始输出：`runs/dev-permission-check.out`（`PASS=14 FAIL=0`；每项都断言
+「命令是否真的执行」与审计记录）。
 
 复现：
 
@@ -93,4 +102,4 @@ bash scripts/l3-dev-permission-check.sh
 - 只覆盖了 `RunCommand` 一类危险动作；`CreateFile` / `EditFile` / `ReadFile`
   在权限体系里默认 `allow`（非危险工具），`ComplexChange` 目前不经过审批。
 - 交互式 `[Y/n]` 分支未做自动化断言（需要伪终端），逻辑与 `require_tool`
-  一致；非交互分支、显式 deny、`--yes` 三条路径均有断言。
+  一致；非交互分支、显式 deny、`--yes`、stdin EOF、显式 `y` 五条路径均有断言。

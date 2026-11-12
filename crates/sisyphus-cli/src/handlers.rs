@@ -179,7 +179,7 @@ pub async fn dispatch(
         Commands::Lsp(sub) => handle_lsp::handle_lsp(sub).await?,
 
         // ── 委托 ────────────────────────────────────
-        Commands::Delegate(sub) => handle_delegate::handle_delegate(sub).await?,
+        Commands::Delegate(sub) => handle_delegate::handle_delegate(sub, cli_perms).await?,
 
         // ── MCP ─────────────────────────────────────────
         Commands::Mcp(sub) => handle_mcp::handle_mcp(sub, llm_client.clone()).await?,
