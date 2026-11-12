@@ -41,7 +41,7 @@ pub(super) async fn handle_request(
 
 fn handle_initialize(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRpcResponse {
     let result = crate::tools::InitializeResult {
-        protocol_version: "2024-11-05".into(),
+        protocol_version: "2025-03-26".into(),
         capabilities: crate::tools::ServerCapabilities {
             tools: Some(crate::tools::ToolsCapability { list_changed: None }),
             resources: Some(crate::tools::ResourcesCapability {
