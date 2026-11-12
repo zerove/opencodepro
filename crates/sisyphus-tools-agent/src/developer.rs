@@ -254,23 +254,61 @@ Goal (repeat): {goal}\n\n{PLAN_SCHEMA_REMINDER}\n\nPlan this goal."
                 } else {
                     0
                 };
-                sisyphus_tools_system::file::write(Path::new(path), content)
-                    .map(|()| {
-                        if existed {
-                            format!("Overwrote existing file: {path} (was {previous_len} bytes)")
-                        } else {
-                            format!("Created file: {path}")
-                        }
-                    })
-                    .map_err(|e| e.to_string())?
+                // 整文件重写最常见的副作用：顺手把不相关的公开函数删掉
+                // （实测 s3 里 `pub fn add` 被删，而闸门只测新函数所以照样 PASS）。
+                // 这里把**遗漏的公开 API 补回去**，并如实报告补了什么。
+                let before = if existed {
+                    std::fs::read_to_string(path).ok()
+                } else {
+                    None
+                };
+                let (merged, restored) = match before.as_deref() {
+                    Some(original) => merge_missing_public_apis(original, content),
+                    None => (content.clone(), Vec::new()),
+                };
+                sisyphus_tools_system::file::write(Path::new(path), &merged)
+                    .map_err(|e| e.to_string())?;
+                let base = if existed {
+                    format!("Overwrote existing file: {path} (was {previous_len} bytes)")
+                } else {
+                    format!("Created file: {path}")
+                };
+                if restored.is_empty() {
+                    base
+                } else {
+                    format!(
+                        "{base}\n   （已补回 {} 处被遗漏的既有公开 API：{}）",
+                        restored.len(),
+                        restored.join(", ")
+                    )
+                }
             },
             DevAction::EditFile {
                 path,
                 old_string,
                 new_string,
-            } => sisyphus_tools_system::file::edit(Path::new(path), old_string, new_string)
-                .map(|()| format!("Edited file: {path}"))
-                .map_err(|e| e.to_string())?,
+            } => {
+                let before = std::fs::read_to_string(path).ok();
+                sisyphus_tools_system::file::edit(Path::new(path), old_string, new_string)
+                    .map_err(|e| e.to_string())?;
+                let after = std::fs::read_to_string(path).unwrap_or_default();
+                // 编辑若删掉了既有公开 API → 补回去（与整文件重写同一条防线）。
+                let (merged, restored) = match before.as_deref() {
+                    Some(original) => merge_missing_public_apis(original, &after),
+                    None => (after.clone(), Vec::new()),
+                };
+                if !restored.is_empty() {
+                    sisyphus_tools_system::file::write(Path::new(path), &merged)
+                        .map_err(|e| e.to_string())?;
+                    format!(
+                        "Edited file: {path}\n   （已补回 {} 处被遗漏的既有公开 API：{}）",
+                        restored.len(),
+                        restored.join(", ")
+                    )
+                } else {
+                    format!("Edited file: {path}")
+                }
+            },
             DevAction::RunCommand { command, dir } => {
                 let mut opts = sisyphus_tools_core::process::CommandOpts::default();
                 if let Some(d) = dir {
@@ -1244,8 +1282,13 @@ fn apply_repair_response(raw: &str, repair_context: &str) -> Result<String, Stri
             summary.push(format!("Rewrote {}", rw.path));
         }
 
-        if let Some(violation) = rollback_if_public_api_removed(&snapshots, repair_context) {
-            return Err(violation);
+        let restored = merge_back_missing_public_apis(&snapshots, repair_context);
+        if !restored.is_empty() {
+            summary.push(format!(
+                "restored {} existing public API item(s) dropped by the repair: {}",
+                restored.len(),
+                restored.join(", ")
+            ));
         }
         return Ok(summary.join("\n"));
     }
@@ -1272,8 +1315,13 @@ fn apply_repair_response(raw: &str, repair_context: &str) -> Result<String, Stri
         summary.push(format!("Applied edit to {}", edit.path));
     }
 
-    if let Some(violation) = rollback_if_public_api_removed(&snapshots, repair_context) {
-        return Err(violation);
+    let restored = merge_back_missing_public_apis(&snapshots, repair_context);
+    if !restored.is_empty() {
+        summary.push(format!(
+            "restored {} existing public API item(s) dropped by the repair: {}",
+            restored.len(),
+            restored.join(", ")
+        ));
     }
     Ok(summary.join("\n"))
 }
@@ -1301,50 +1349,91 @@ fn api_identifier(signature: &str) -> Option<String> {
     }
 }
 
-/// 若本次改动删除了公开 API，回滚到改动前的内容并返回错误说明。
+/// 从旧内容里抽出某个公开 API 的**完整代码块**（按大括号配平）。
+fn extract_api_block(content: &str, signature: &str) -> Option<String> {
+    let lines: Vec<&str> = content.lines().collect();
+    let start = lines
+        .iter()
+        .position(|line| line.trim() == signature || line.trim().starts_with(signature))?;
+    let mut depth = 0i32;
+    let mut block = Vec::new();
+    for line in &lines[start..] {
+        block.push(*line);
+        depth += line.matches('{').count() as i32;
+        depth -= line.matches('}').count() as i32;
+        if depth <= 0 {
+            // 没有大括号的声明（`pub const X: u32 = 1;`）单行即完整
+            break;
+        }
+    }
+    Some(block.join("\n"))
+}
+
+/// 若新内容**遗漏**了既有公开 API，把它们从旧内容里**补回去**。
 ///
-/// 例外：**闸门自己要求删掉**该 API 时允许删除（验证输出里点名了它）。
+/// 返回 (合并后的内容, 补回的 API 列表)。
+///
+/// 背景：弱模型做「加一个函数」时习惯**整文件重写**，而重写常常只保留它新写
+/// 的部分 —— 既有公开函数被顺手删掉。闸门只检查被测行为，发现不了（实测 s3 里
+/// `pub fn add` 被删，`cargo test` 照样 PASS）。这里把遗漏的公开 API 补回，
+/// 既保住用户的代码，也让任务能真正完成。
+pub fn merge_missing_public_apis(before: &str, after: &str) -> (String, Vec<String>) {
+    let deleted = deleted_public_apis(before, after);
+    if deleted.is_empty() {
+        return (after.to_string(), Vec::new());
+    }
+    let mut merged = after.to_string();
+    if !merged.ends_with('\n') {
+        merged.push('\n');
+    }
+    let mut restored = Vec::new();
+    for signature in &deleted {
+        if let Some(block) = extract_api_block(before, signature) {
+            merged.push_str(&block);
+            merged.push('\n');
+            restored.push(signature.clone());
+        }
+    }
+    (merged, restored)
+}
+
+/// 闸门修复若**遗漏**了既有公开 API → 把它补回去（闸门自己点名要删的除外）。
 ///
 /// 闸门修复的目标是「让命令通过」，不是「重构用户的 API」。实测弱模型会在
 /// 全文件重写时顺手删掉不相关的公开函数，而客观闸门（只检查被测行为）照样
-/// 通过 —— 破坏就此静默发生。
-fn rollback_if_public_api_removed(
+/// 通过 —— 破坏就此静默发生。补回而不是拒绝：拒绝会让「加个函数」这类任务
+/// 在弱模型下永远做不成（实测 s3）。
+///
+/// 例外：**闸门自己要求删掉**该 API 时允许删除（验证输出里点名了它）。
+///
+/// 返回补回了哪些 API（空 = 无事发生）。
+fn merge_back_missing_public_apis(
     snapshots: &[(PathBuf, Option<String>)],
     verification_output: &str,
-) -> Option<String> {
-    let mut violations: Vec<String> = Vec::new();
+) -> Vec<String> {
+    let mut restored: Vec<String> = Vec::new();
     for (path, before) in snapshots {
         let Some(before) = before else { continue };
         let Ok(after) = std::fs::read_to_string(path) else {
             continue;
         };
-        let deleted: Vec<String> = deleted_public_apis(before, &after)
+        // 闸门点名要删的 API → 允许删（否则「删除某个函数」类任务永远做不成）。
+        let requested: Vec<String> = deleted_public_apis(before, &after)
             .into_iter()
             .filter(|sig| {
-                // 闸门点名要删的 API → 允许删（否则「删除某个函数」类任务永远做不成）。
-                let requested = api_identifier(sig)
-                    .map(|name| verification_output.contains(&name))
-                    .unwrap_or(false);
-                !requested
+                api_identifier(sig).map(|name| verification_output.contains(&name)).unwrap_or(false)
             })
             .collect();
-        if !deleted.is_empty() {
-            violations.push(format!("{}: {}", path.display(), deleted.join(", ")));
+        let (merged, mut added) = merge_missing_public_apis(before, &after);
+        added.retain(|sig| !requested.contains(sig));
+        if added.is_empty() {
+            continue;
+        }
+        if sisyphus_tools_system::file::write(path, &merged).is_ok() {
+            restored.extend(added);
         }
     }
-    if violations.is_empty() {
-        return None;
-    }
-    // 回滚：把文件恢复成改动前的内容。
-    for (path, before) in snapshots {
-        if let Some(content) = before {
-            let _ = sisyphus_tools_system::file::write(path, content);
-        }
-    }
-    Some(format!(
-        "repair removed public API (rolled back): {}",
-        violations.join("; ")
-    ))
+    restored
 }
 
 #[cfg(test)]

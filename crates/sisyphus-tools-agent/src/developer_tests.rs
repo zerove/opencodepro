@@ -131,9 +131,9 @@ fn public_api_kept_is_not_a_deletion() {
 }
 
 #[test]
-fn repair_rolls_back_when_public_api_removed() {
-    // 修复把用户已有的公开函数删了 → 必须回滚并如实报错（闸门只检查被测
-    // 行为，删掉别的公开 API 它照样 PASS）。
+fn repair_restores_public_api_it_dropped() {
+    // 修复把用户已有的公开函数删了 → 补回并如实报告（闸门只检查被测行为，
+    // 删掉别的公开 API 它照样 PASS）。
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("lib.rs");
     std::fs::write(
@@ -146,14 +146,15 @@ fn repair_rolls_back_when_public_api_removed() {
         "{{\"files\":[{{\"path\":\"{}\",\"content\":\"pub fn mul(a: i32, b: i32) -> i32 {{ a * b }}\\n\"}}]}}",
         path.display()
     );
-    let err = apply_repair_response(&raw, "").expect_err("删除公开 API 的修复必须失败");
-    assert!(err.contains("removed public API"), "错误应说明原因: {err}");
+    let summary = apply_repair_response(&raw, "").expect("修复应成功并补回公开 API");
+    assert!(summary.contains("restored"), "应如实报告: {summary}");
 
     let after = std::fs::read_to_string(&path).expect("读取");
     assert!(
         after.contains("pub fn add"),
-        "必须回滚到修复前的内容: {after}"
+        "既有公开 API 必须保住: {after}"
     );
+    assert!(after.contains("pub fn mul"), "修复内容必须保留: {after}");
 }
 
 #[test]
@@ -184,6 +185,44 @@ fn repair_may_remove_api_the_gate_asked_for() {
         "闸门要求删时应真的删掉: {after}"
     );
     assert!(after.contains("pub fn mul"), "其余内容应保留: {after}");
+}
+
+#[tokio::test]
+async fn create_file_that_drops_public_api_gets_it_restored() {
+    // 整文件覆盖最常见的副作用：顺手把不相关的公开函数删掉（实测 s3 里
+    // `pub fn add` 被删，而闸门只测新函数所以照样 PASS）。
+    // 现在**补回**被遗漏的公开 API（而不是拒绝）—— 拒绝会让「加个函数」这类
+    // 任务在弱模型下永远做不成。
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    std::fs::write(&path, "pub fn add(a: i32, b: i32) -> i32 { a + b }\n").unwrap();
+
+    let step = DevStep {
+        id: 1,
+        description: "覆盖文件".to_string(),
+        action: DevAction::CreateFile {
+            path: path.to_string_lossy().to_string(),
+            content: "pub fn multiply(a: i32, b: i32) -> i32 { a * b }\n".to_string(),
+        },
+        expected_outcome: "写入".to_string(),
+        verification: VerificationMethod::None,
+        status: StepStatus::Pending,
+    };
+
+    let dev = Developer::new(Arc::new(DummyLlmClient));
+    let result = dev.execute_step(&step).await.expect("应成功并补回公开 API");
+    assert!(
+        result.output.contains("补回"),
+        "应如实报告补回了什么: {}",
+        result.output
+    );
+
+    let after = std::fs::read_to_string(&path).expect("读取");
+    assert!(
+        after.contains("pub fn add"),
+        "既有公开 API 必须保住: {after}"
+    );
+    assert!(after.contains("pub fn multiply"), "新内容必须写入: {after}");
 }
 
 #[tokio::test]
@@ -787,4 +826,24 @@ fn apply_repair_response_strips_fence_in_rewrite_content() {
     );
     apply_repair_response(&raw, "").expect("应成功");
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "pub fn ok() {}\n");
+}
+
+#[test]
+fn merge_missing_public_apis_restores_block() {
+    let before = "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n\npub fn other() {}\n";
+    let after = "pub fn multiply(a: i32, b: i32) -> i32 { a * b }\n";
+    let (merged, restored) = merge_missing_public_apis(before, after);
+    assert_eq!(restored.len(), 2, "应补回两个 API: {restored:?}");
+    assert!(merged.contains("pub fn multiply"));
+    assert!(merged.contains("pub fn add"));
+    assert!(merged.contains("pub fn other"));
+}
+
+#[test]
+fn merge_missing_public_apis_is_noop_when_nothing_dropped() {
+    let before = "pub fn add(a: i32, b: i32) -> i32 { a + b }\n";
+    let after = "pub fn add(a: i32, b: i32) -> i32 { a + b }\n";
+    let (merged, restored) = merge_missing_public_apis(before, after);
+    assert!(restored.is_empty());
+    assert_eq!(merged, after);
 }
