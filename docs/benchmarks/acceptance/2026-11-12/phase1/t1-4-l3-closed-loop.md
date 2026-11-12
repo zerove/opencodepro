@@ -217,6 +217,45 @@ bash scripts/l3-run-scenarios.sh s4     # 不在默认集合内
 **结论**：s4 目前用作「缺口覆盖 + 缺陷发现器」，不计入通过率；
 MCP 场景仍未覆盖。
 
+### 4.6 长上下文场景（s5）与静默截断实测
+
+`s5` 是长上下文**探索**场景，位于默认集合之外（opt-in）：
+
+```bash
+bash scripts/l3-run-scenarios.sh s5     # 不在默认集合内
+```
+
+判定（`judge_s5`）：
+
+1. `src/lib.rs` 须含追加函数 `fn scale`；
+2. `pub fn helper_` 必须恰好 **400** 个（模型不得把长文件改残）；
+3. `cargo test` 必须真的跑过 ≥1 个测试。
+
+任务背景：lib.rs 内有 400 个 helper（约 2.3k token，超出本地 provider 有效窗口），
+上下文含全文 + 任务说明（任务说明放在上下文**尾部**——provider 截断保留尾部，
+所以任务必须落在尾部才不会被裁掉）。
+
+真实运行（本地 ollama `qwen2.5-coder:3b`，同一严格口径）与结果归档在
+`phase1/runs/l3-s5*` 与任务记录 `phase1/runs/s5-exploratory/l3-s5-long-context.json`：
+
+- s5 全轮 FAIL（典型失败形态：规划解析 `missing field 'goal'` → 重试后截断提示
+  「provider 截断了 prompt」→ 目标被裁掉 → 失败）；
+- 任务记录 `l3-s5-long-context.json`：`status=fail`、`initial_verify_passed=false`、
+  `final_verify_passed=false`、`fix_attempts=2`、`regressed=true`、
+  `duration_ms=151995`、`prompt_tokens=4771`、`completion_tokens=619`。
+
+**「FAIL + rc=0」现象**：s5 的两轮输出里出现 `s5 FAIL rc=0`（58s / 27s，`llm_calls=1`）。
+态势其实自洽：CLI 客观闸门 `cargo test` **PASS**（rc=0，修复后目标达成）、
+结构断言 `judge_s5` **FAIL**（模型整文件重写 `Overwrote existing file: src/lib.rs
+(was 17877 bytes)`，删除了 400 个 helper）。闸门只检查行为、不检查结构，所以
+「删除全部 helper 却加对函数」能让闸门通过 —— 这正是 5.11/5.12 一类缺陷的精准验证。
+`regressed=true` 也被写入任务记录（`dev` 现在会用 git diff 检删除的公开 API）。
+
+**静默截断实测**（见 §5.11）：本地 provider 把约 37KB 的 prompt 裁到 **2050 token**
+（保留尾部、丢开头、且**不报错**）。引擎侧已补：截断检测（估算 vs provider 上报
+>30% → 判定截断）、CLI 双路径提示、目标前后重复、尾部精简 schema 提醒（描述式，
+非可照抄样例）。
+
 ## 5. 过程中发现并修复的缺陷（均来自真实运行）
 
 ### 5.1 成功标准由模型自选 → 假 SUCCESS（核心缺陷）
@@ -402,7 +441,9 @@ sisyphus --config <bad-model> dev "do nothing" --timeout-secs 60
   样本量也小，该数字不构成通过率保证。
 - 场景工作区是最小 Rust crate，不是 sisyphus 仓库自身的任务；多文件重构已由
   s4 探索场景覆盖（3B FAIL，见 §4.5）；**MCP 已由独立实现的标准服务器覆盖**
-  （CLI + 引擎两级 10/10 PASS，见 `l3-mcp-scenario.md`）；长上下文仍未覆盖。
+  （CLI + 引擎两级 17/17 PASS，见 `l3-mcp-scenario.md`）；长上下文已由 s5 探索
+  场景覆盖（opt-in，FAIL 为主，见 §4.6 —— 闸门 PASS 与结构断言 FAIL 并存，正是
+  客观闸门与结构断言的边界体现）。
 - §4 的 9/9 归档来自修复前代码；本轮产品修复后已重跑 s1–s3 = 3/3 PASS
   （`s1` 122s / `s2` 29s / `s3` 69s），未替换已归档记录。
 - 所有判定均来自外部 `cargo` 命令退出码；CLI 自报状态仅作对照，不作证据。
