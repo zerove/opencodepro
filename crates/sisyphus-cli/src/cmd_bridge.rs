@@ -246,6 +246,9 @@ pub enum DelegateCommands {
         ///最大并发任务数（0 = 不限）
         #[arg(short = 'c', long = "concurrent", default_value = "4")]
         max_concurrent: usize,
+        /// 非交互环境下自动放行（跳过人工确认；显式 deny 规则仍然拒绝）
+        #[arg(long = "yes", alias = "auto-approve")]
+        yes: bool,
     },
     /// 直接运行命令（内联模式）
     Inline {
@@ -255,6 +258,9 @@ pub enum DelegateCommands {
         ///最大并发任务数（0 = 不限）
         #[arg(short = 'c', long = "concurrent", default_value = "4")]
         max_concurrent: usize,
+        /// 非交互环境下自动放行（跳过人工确认；显式 deny 规则仍然拒绝）
+        #[arg(long = "yes", alias = "auto-approve")]
+        yes: bool,
     },
     /// 运行代理团队完成复杂目标
     Team {

@@ -7,10 +7,11 @@ use anyhow::Result;
 pub async fn handle_exec(
     command: &str,
     dir: &Option<PathBuf>,
+    yes: bool,
     cli_perms: &sisyphus_cli::permission::CliPermission,
 ) -> Result<()> {
     // 权限检查（与自定义命令共用同一套审批与审计口径）
-    sisyphus_cli::permission::require_tool(cli_perms, "exec")?;
+    sisyphus_cli::permission::require_tool_with(cli_perms, "exec", yes)?;
     let dir_ref = dir.as_deref();
     let output = sisyphus_cli::tools::bash::execute(command, dir_ref, 30000).await?;
     if !output.stdout.is_empty() {

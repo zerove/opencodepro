@@ -9,8 +9,10 @@ PASS  deny 规则优先于 --yes（审计 denied）
 PASS  exec 在 stdin EOF 时未执行
 PASS  exec 在 stdin EOF 时给出明确错误
 PASS  exec 显式 y 仍放行
+PASS  exec --yes 在非交互下放行
+PASS  delegate inline --yes 放行
 PASS  delegate inline 在未获授权时未执行
 PASS  delegate inline 被权限策略拒绝
 PASS  delegate run 在未获授权时未执行
 
-PASS=14 FAIL=0
+PASS=16 FAIL=0

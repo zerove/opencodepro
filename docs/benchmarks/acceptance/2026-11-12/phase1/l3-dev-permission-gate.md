@@ -50,7 +50,9 @@ async fn approve_step(&self, step: &DevStep) -> Result<bool, String> {
   `resolved` 取值口径（`allowed` / `denied` / `asked-approved` / `asked-denied`）。
 - 提示与审计都带命令文本（截断 300 字符），人能看懂拒绝了什么。
 
-CLI 侧新增 `--yes`（别名 `--auto-approve`）。
+CLI 侧新增 `--yes`（别名 `--auto-approve`）：`dev` / `exec` / `command run --exec` /
+`delegate inline|run` 都有 —— **非交互自动化必须有显式出口**，否则 fail-safe
+拒绝会把脚本直接打断（修复 EOF fail-open 后的必要配套）。
 - `delegate inline` / `delegate run`：**每条**命令执行前过闸（deny → 一条都不执行）。
 - `require_tool` 与 `CliDevApprover`：stdin EOF（读到 0 字节）判为
   `asked-unanswered` → **拒绝**；真正回车（读到换行）仍是默认同意，显式
@@ -70,10 +72,12 @@ CLI 侧新增 `--yes`（别名 `--auto-approve`）。
 | 3 | `dev` 权限规则 `deny` + `--yes` | 命令**未执行** + 审计 `denied` | PASS |
 | 4 | `exec` stdin EOF | 命令**未执行** + 明确错误（`stdin reached EOF`） | PASS |
 | 5 | `exec` 显式 `echo y` | 命令**已执行**（向后兼容） | PASS |
-| 6 | `delegate inline` 未获授权 | 命令**未执行** + 「权限策略拒绝」 | PASS |
-| 7 | `delegate run`（任务文件）未获授权 | 命令**未执行** | PASS |
+| 6 | `exec --yes`（非交互） | 命令**已执行**（自动化的正式出口） | PASS |
+| 7 | `delegate inline --yes`（非交互） | 命令**已执行** | PASS |
+| 8 | `delegate inline` 未获授权 | 命令**未执行** + 「权限策略拒绝」 | PASS |
+| 9 | `delegate run`（任务文件）未获授权 | 命令**未执行** | PASS |
 
-原始输出：`runs/dev-permission-check.out`（`PASS=14 FAIL=0`；每项都断言
+原始输出：`runs/dev-permission-check.out`（`PASS=16 FAIL=0`；每项都断言
 「命令是否真的执行」与审计记录）。
 
 复现：

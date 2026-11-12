@@ -189,6 +189,30 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# ── 5b) exec 入口：--yes 让非交互自动化有正式出口 ───────────────────
+rm -f "$MARKER"
+( cd "$WORKDIR" && timeout 60 "$CLI" --config "$CFG" --data-dir "$DATA_DIR" \
+    exec "touch $MARKER" --yes < /dev/null ) >"$WORKDIR/exec-yesflag.out" 2>&1
+if [ -f "$MARKER" ]; then
+  printf 'PASS  exec --yes 在非交互下放行\n'
+  PASS=$((PASS + 1))
+else
+  printf 'FAIL  exec --yes 应放行\n---\n%s\n---\n' "$(cat "$WORKDIR/exec-yesflag.out")"
+  FAIL=$((FAIL + 1))
+fi
+
+# ── 5c) delegate --yes：非交互自动化的正式出口 ──────────────────────
+rm -f "$MARKER"
+( cd "$WORKDIR" && timeout 60 "$CLI" --config "$CFG" --data-dir "$DATA_DIR" \
+    delegate inline "touch $MARKER" --yes < /dev/null ) >"$WORKDIR/delegate-yes.out" 2>&1
+if [ -f "$MARKER" ]; then
+  printf 'PASS  delegate inline --yes 放行\n'
+  PASS=$((PASS + 1))
+else
+  printf 'FAIL  delegate inline --yes 应放行\n---\n%s\n---\n' "$(cat "$WORKDIR/delegate-yes.out")"
+  FAIL=$((FAIL + 1))
+fi
+
 # ── 6) delegate inline：执行命令前也要过权限闸 ─────────────────────
 rm -f "$MARKER"
 ( cd "$WORKDIR" && timeout 60 "$CLI" --config "$CFG" --data-dir "$DATA_DIR" \

@@ -134,8 +134,8 @@ pub async fn dispatch(
             path,
             include,
         } => handle_file::handle_grep(pattern, path, include.as_deref())?,
-        Commands::Exec { command, dir } => {
-            handle_exec::handle_exec(command, dir, cli_perms).await?
+        Commands::Exec { command, dir, yes } => {
+            handle_exec::handle_exec(command, dir, *yes, cli_perms).await?
         },
         Commands::Search { query, num } => handle_exec::handle_search(query, *num).await?,
         Commands::ApplyPatch { file, input } => handle_exec::handle_apply_patch(file, input)?,

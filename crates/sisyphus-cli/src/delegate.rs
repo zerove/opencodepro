@@ -22,6 +22,7 @@ pub async fn run_tasks(
     file: PathBuf,
     max_concurrent: usize,
     perms: &crate::permission::CliPermission,
+    auto_approve: bool,
 ) -> Result<()> {
     let content = std::fs::read_to_string(&file)
         .with_context(|| format!("read task file: {}", file.display()))?;
@@ -35,7 +36,7 @@ pub async fn run_tasks(
 
     // 每条命令单独判定并写审计（deny → 直接拒绝，不执行任何命令）。
     for t in &tasks {
-        crate::permission::require_tool(perms, "exec")
+        crate::permission::require_tool_with(perms, "exec", auto_approve)
             .with_context(|| format!("任务 {} 的命令被权限策略拒绝", t.id))?;
     }
 
@@ -259,10 +260,11 @@ pub async fn run_inline(
     commands: &[String],
     max_concurrent: usize,
     perms: &crate::permission::CliPermission,
+    auto_approve: bool,
 ) -> Result<()> {
     // 每条命令单独判定并写审计（deny → 直接拒绝，不执行任何命令）。
     for cmd in commands {
-        crate::permission::require_tool(perms, "exec")
+        crate::permission::require_tool_with(perms, "exec", auto_approve)
             .with_context(|| format!("命令被权限策略拒绝: {cmd}"))?;
     }
 

@@ -9,14 +9,16 @@ pub async fn handle_delegate(sub: &DelegateCommands, perms: &CliPermission) -> R
         DelegateCommands::Run {
             file,
             max_concurrent,
+            yes,
         } => {
-            sisyphus_cli::delegate::run_tasks(file.clone(), *max_concurrent, perms).await?;
+            sisyphus_cli::delegate::run_tasks(file.clone(), *max_concurrent, perms, *yes).await?;
         },
         DelegateCommands::Inline {
             commands,
             max_concurrent,
+            yes,
         } => {
-            sisyphus_cli::delegate::run_inline(commands, *max_concurrent, perms).await?;
+            sisyphus_cli::delegate::run_inline(commands, *max_concurrent, perms, *yes).await?;
         },
         DelegateCommands::Team {
             goal,

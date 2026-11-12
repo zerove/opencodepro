@@ -72,6 +72,9 @@ pub enum Commands {
         command: String,
         #[arg(short = 'd', long = "dir")]
         dir: Option<PathBuf>,
+        /// 非交互环境下自动放行（跳过人工确认；显式 deny 规则仍然拒绝）
+        #[arg(long = "yes", alias = "auto-approve")]
+        yes: bool,
     },
     ///使用 DuckDuckGo 搜索网络
     Search {

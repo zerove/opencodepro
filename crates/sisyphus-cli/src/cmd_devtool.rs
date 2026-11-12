@@ -299,6 +299,9 @@ pub enum CommandCommands {
         /// 执行 Shell 命令模板（提示词命令不可执行）
         #[arg(long = "exec")]
         exec: bool,
+        /// 非交互环境下自动放行（跳过人工确认；显式 deny 规则仍然拒绝）
+        #[arg(long = "yes", alias = "auto-approve")]
+        yes: bool,
         /// 执行超时毫秒（默认 120000）
         #[arg(long = "timeout-ms", default_value_t = 120_000)]
         timeout_ms: u64,

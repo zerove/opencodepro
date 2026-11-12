@@ -56,6 +56,7 @@ pub async fn handle_command(sub: &CommandCommands, perms: &CliPermission) -> Res
             name,
             args,
             exec,
+            yes,
             timeout_ms,
             json,
             cwd,
@@ -96,7 +97,7 @@ pub async fn handle_command(sub: &CommandCommands, perms: &CliPermission) -> Res
 
             let output = {
                 // 与 `sisyphus exec` 共用审批/审计口径
-                sisyphus_cli::permission::require_tool(perms, "exec")?;
+                sisyphus_cli::permission::require_tool_with(perms, "exec", *yes)?;
                 sisyphus_cli::tools::bash::execute(&rendered, None, *timeout_ms).await?
             };
             if output.exit_code != 0 {

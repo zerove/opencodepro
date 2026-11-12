@@ -278,6 +278,14 @@ impl CliPermission {
 /// CLI 侧所有“可能执行任意命令”的入口都应走这里，保证审计口径一致，
 /// 而不是让不同入口各自复制一份提示逻辑。
 pub fn require_tool(perms: &CliPermission, tool: &str) -> Result<()> {
+    require_tool_with(perms, tool, false)
+}
+
+/// 同 [`require_tool`]，但可显式自动放行 `Ask` 判定（`--yes`）。
+///
+/// 非交互场景（脚本 / CI）没有人工确认的渠道：要么显式 `--yes`，要么 fail-safe
+/// 拒绝。显式 deny 规则仍然优先，`--yes` 不会绕过它。
+pub fn require_tool_with(perms: &CliPermission, tool: &str, auto_approve: bool) -> Result<()> {
     use std::io::Write;
 
     let decision = perms.evaluate(tool);
@@ -294,6 +302,10 @@ pub fn require_tool(perms: &CliPermission, tool: &str) -> Result<()> {
             anyhow::bail!("Permission denied: {tool} is blocked by config");
         },
         Decision::Ask => {
+            if auto_approve {
+                perms.record_decision(tool, &decision, "asked-approved");
+                return Ok(());
+            }
             let label = if tool == "exec" {
                 "shell execution"
             } else {

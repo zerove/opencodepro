@@ -35,8 +35,9 @@ sisyphus read path/to/file.txt
 # 写入内容到文件
 sisyphus write path/to/output.txt "file content"
 
-# 执行 shell 命令
+# 执行 shell 命令（危险命令默认需人工确认；非交互环境用 --yes 显式放行）
 sisyphus exec "cargo test" --dir /path/to/project
+sisyphus exec "cargo test" --yes        # 脚本 / CI 里显式放行
 
 # 网络搜索
 sisyphus search "Rust async/await" -n 10
@@ -148,6 +149,20 @@ token 维度只在 provider 上报了 usage 的记录上统计（`dev` 链路自
 
 - `pattern` 支持 glob（`*`、`?`、`[...]`），按声明顺序匹配，**首条命中生效**；语法非法的 pattern 退化为精确比较。
 - 未命中任何规则时：危险工具（`exec`/`bash`/`bash_exec`/`builtin:bash_exec`/`shell`）→ `ask`，其余 → `allow`。
+
+### 会执行命令的入口
+
+以下入口在执行前都会走同一套权限判定与审计：
+
+| 入口 | 危险动作 | 非交互环境的默认行为 |
+|---|---|---|
+| `sisyphus exec` | shell 命令 | 拒绝（`--yes` 显式放行） |
+| `sisyphus command run --exec` | Shell 命令模板 | 拒绝（`--yes` 显式放行） |
+| `sisyphus delegate inline/run` | 任务里的每条命令 | 拒绝（`--yes` 显式放行） |
+| `sisyphus dev` | 计划里的 `RunCommand` | 拒绝（`--yes` 显式放行） |
+
+stdin 已 EOF（`< /dev/null`、CI 里没有 tty）时视为「无法确认」→ 拒绝；显式
+`echo y | sisyphus exec ...` 仍可用。显式 `deny` 规则**永远优先**，`--yes` 不会绕过它。
 
 ### 检查与审计
 
@@ -436,7 +451,7 @@ fi
 （`allowed` / `denied` / `asked-approved` / `asked-denied` / `asked-unanswered`）。
 
 stdin **已 EOF**（`< /dev/null`、CI 里没有 tty）时判为「无法确认」并**拒绝** ——
-不会把「没读到输入」当成同意；要显式放行请 `echo y | sisyphus exec ...`。
+不会把「没读到输入」当成同意；要显式放行请加 `--yes`（或 `echo y | sisyphus exec ...`）。
 
 自动化场景（脚本 / CI）必须显式 `--yes`，否则模型无法执行命令 —— 这是刻意的
 fail-safe：静默执行模型提出的任意命令是自动化入口最危险的行为。
