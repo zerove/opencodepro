@@ -185,6 +185,11 @@ mod tests {
             }
         }
 
+        /// 通知没有响应：不消费响应队列（与协议一致）。
+        async fn notify(&mut self, _message: &str) -> ToolResult<()> {
+            Ok(())
+        }
+
         async fn close(&mut self) -> ToolResult<()> {
             Ok(())
         }
@@ -196,14 +201,15 @@ mod tests {
             json!({
                 "jsonrpc": "2.0", "id": 1,
                 "result": {
-                    "protocol_version": "2025-03-26",
-                    "capabilities": { "tools": { "list_changed": true }, "resources": null },
-                    "server_info": { "name": "mock-mcp", "version": "1.0.0" }
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": { "tools": { "listChanged": true }, "resources": null },
+                    "serverInfo": { "name": "mock-mcp", "version": "1.0.0" }
                 }
             })
             .to_string(),
-            // initialized notification response (empty)
-            "{}".to_string(),
+            // 注意：初始化后的 `notifications/initialized` 是通知，协议规定**没有**
+            // 响应，因此这里不再为它预留一条响应（旧实现预留了 "{}"，掩盖了
+            // 「客户端不该等通知响应」的问题）。
         ]
     }
 
@@ -215,7 +221,7 @@ mod tests {
                 "jsonrpc": "2.0", "id": 3,
                 "result": {
                     "content": [{ "type": "text", "text": "hello back" }],
-                    "is_error": false
+                    "isError": false
                 }
             })
             .to_string(),
@@ -238,7 +244,7 @@ mod tests {
                 "jsonrpc": "2.0", "id": 3,
                 "result": {
                     "content": [{ "type": "text", "text": "done" }],
-                    "is_error": false
+                    "isError": false
                 }
             })
             .to_string(),
@@ -277,7 +283,7 @@ mod tests {
                 "jsonrpc": "2.0", "id": 3,
                 "result": {
                     "content": [{ "type": "text", "text": "mapped result" }],
-                    "is_error": false
+                    "isError": false
                 }
             })
             .to_string(),
@@ -299,7 +305,7 @@ mod tests {
             "jsonrpc": "2.0", "id": 3,
             "result": {
                 "tools": [
-                    { "name": "greet", "description": "Say hello", "input_schema": { "type": "object" } }
+                    { "name": "greet", "description": "Say hello", "inputSchema": { "type": "object" } }
                 ]
             }
         }).to_string());
@@ -340,7 +346,7 @@ mod tests {
                         { "type": "text", "text": "part1" },
                         { "type": "text", "text": "part2" }
                     ],
-                    "is_error": false
+                    "isError": false
                 }
             })
             .to_string(),
@@ -360,7 +366,7 @@ mod tests {
         responses.push(
             json!({
                 "jsonrpc": "2.0", "id": 3,
-                "result": { "content": [{ "type": "text", "text": "direct" }], "is_error": false }
+                "result": { "content": [{ "type": "text", "text": "direct" }], "isError": false }
             })
             .to_string(),
         );
@@ -378,7 +384,7 @@ mod tests {
         for i in 0..3 {
             responses.push(json!({
                 "jsonrpc": "2.0", "id": 3,
-                "result": { "content": [{ "type": "text", "text": format!("call_{i}") }], "is_error": false }
+                "result": { "content": [{ "type": "text", "text": format!("call_{i}") }], "isError": false }
             }).to_string());
         }
 
@@ -417,7 +423,7 @@ mod tests {
         responses.push(
             json!({
                 "jsonrpc": "2.0", "id": 3,
-                "result": { "content": [{ "type": "text", "text": "via map" }], "is_error": false }
+                "result": { "content": [{ "type": "text", "text": "via map" }], "isError": false }
             })
             .to_string(),
         );
