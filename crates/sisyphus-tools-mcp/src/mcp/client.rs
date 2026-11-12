@@ -308,6 +308,11 @@ impl McpClient {
         self.server_info.as_ref()
     }
 
+    /// Get the server capabilities (available after initialize).
+    pub fn server_capabilities(&self) -> &ServerCapabilities {
+        &self.server_capabilities
+    }
+
     /// Close the transport.
     pub async fn close(&mut self) -> ToolResult<()> {
         self.transport.close().await
