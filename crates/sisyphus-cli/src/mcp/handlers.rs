@@ -22,6 +22,14 @@ pub(super) async fn handle_request(
 
         "tools/call" => handle_tools_call(req).await,
 
+        // ── 资源 ──
+        "resources/list" => handle_resources_list(&req),
+        "resources/read" => handle_resources_read(&req),
+
+        // ── 提示 ──
+        "prompts/list" => handle_prompts_list(&req),
+        "prompts/get" => handle_prompts_get(&req),
+
         // ── 未知 ──
         _ => jsonrpc_error(
             req.id,
@@ -36,8 +44,13 @@ fn handle_initialize(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRp
         protocol_version: "2024-11-05".into(),
         capabilities: crate::tools::ServerCapabilities {
             tools: Some(crate::tools::ToolsCapability { list_changed: None }),
-            resources: None,
-            prompts: None,
+            resources: Some(crate::tools::ResourcesCapability {
+                subscribe: Some(false),
+                list_changed: Some(false),
+            }),
+            prompts: Some(crate::tools::PromptsCapability {
+                list_changed: Some(false),
+            }),
         },
         server_info: Some(crate::tools::ServerInfo {
             name: "sisyphus-cli".into(),
@@ -69,6 +82,52 @@ fn handle_tools_list(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRp
         result: Some(serde_json::json!({ "tools": tools })),
         error: None,
     }
+}
+
+fn handle_resources_list(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRpcResponse {
+    crate::tools::JsonRpcResponse {
+        jsonrpc: "2.0".into(),
+        id: req.id,
+        result: Some(serde_json::json!({ "resources": [] })),
+        error: None,
+    }
+}
+
+fn handle_resources_read(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRpcResponse {
+    let uri = req
+        .params
+        .as_ref()
+        .and_then(|p| p.get("uri"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("<unknown>");
+    jsonrpc_error(
+        req.id,
+        crate::tools::MCP_ERROR_INVALID_PARAMS,
+        format!("Resource not found: {uri}"),
+    )
+}
+
+fn handle_prompts_list(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRpcResponse {
+    crate::tools::JsonRpcResponse {
+        jsonrpc: "2.0".into(),
+        id: req.id,
+        result: Some(serde_json::json!({ "prompts": [] })),
+        error: None,
+    }
+}
+
+fn handle_prompts_get(req: &crate::tools::JsonRpcRequest) -> crate::tools::JsonRpcResponse {
+    let name = req
+        .params
+        .as_ref()
+        .and_then(|p| p.get("name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("<unknown>");
+    jsonrpc_error(
+        req.id,
+        crate::tools::MCP_ERROR_INVALID_PARAMS,
+        format!("Prompt not found: {name}"),
+    )
 }
 
 async fn handle_tools_call(req: crate::tools::JsonRpcRequest) -> crate::tools::JsonRpcResponse {

@@ -101,12 +101,25 @@ check "自家 MCP server 可被协议客户端读取工具列表" "Available too
 check "自家 MCP server 工具名 metis_analyse" "metis_analyse" "$self_out"
 
 # ── 级别 1b：HTTP 传输（Streamable HTTP）────────────────────────
+if (exec 3<>"/dev/tcp/127.0.0.1/$HTTP_MCP_PORT") 2>/dev/null; then
+  echo "FAIL  HTTP MCP 端口 $HTTP_MCP_PORT 已被占用（可能残留旧服务）" >&2
+  exit 1
+fi
 python3 "$HTTP_SERVER" --port "$HTTP_MCP_PORT" >"$WORKDIR/http-server.log" 2>&1 &
 HTTP_PID=$!
+READY_HTTP=0
 for _ in $(seq 1 40); do
-  (exec 3<>"/dev/tcp/127.0.0.1/$HTTP_MCP_PORT") 2>/dev/null && break
+  if (exec 3<>"/dev/tcp/127.0.0.1/$HTTP_MCP_PORT") 2>/dev/null; then
+    READY_HTTP=1
+    break
+  fi
   sleep 0.25
 done
+if [ "$READY_HTTP" -ne 1 ]; then
+  echo "FAIL  HTTP MCP fixture 未就绪（port=$HTTP_MCP_PORT）" >&2
+  tail -20 "$WORKDIR/http-server.log" 2>/dev/null || true
+  exit 1
+fi
 HTTP_URL="http://127.0.0.1:$HTTP_MCP_PORT/mcp"
 
 http_info="$(timeout 60 "$CLI" mcp info "$HTTP_URL" 2>&1)"
