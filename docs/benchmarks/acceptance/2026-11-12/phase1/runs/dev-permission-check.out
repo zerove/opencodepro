@@ -1,0 +1,10 @@
+PASS  非交互无 --yes 时命令未执行
+PASS  非交互拒绝时输出说明
+PASS  非交互拒绝时审计记录 asked-denied
+PASS  --yes 时命令已执行
+PASS  --yes 放行时审计记录 asked-approved
+PASS  deny 规则下命令未执行
+PASS  deny 规则优先于 --yes（输出说明）
+PASS  deny 规则优先于 --yes（审计 denied）
+
+PASS=8 FAIL=0

@@ -377,7 +377,8 @@ sisyphus dev "<目标>" \
   [--timeout-secs 300] \
   [--verify-cmd "cargo clippy -- -D warnings"] \
   [--verify-fix-attempts 2] \
-  [--record <path>] [--scenario <label>]
+  [--record <path>] [--scenario <label>] \
+  [--yes]
 ```
 
 | 参数 | 说明 |
@@ -390,6 +391,7 @@ sisyphus dev "<目标>" \
 | `--verify-fix-attempts` | 闸门失败后的自动修复次数（默认 2，`0` 表示只判定不修复） |
 | `--record` | 把本次闭环写成一条任务级质量记录（JSON）；**必须同时指定 `--verify-cmd`**，否则直接拒绝 |
 | `--scenario` | 记录里的场景标签（默认 `dev-closed-loop`），如 `diagnose-fix` / `quality-gate` / `feature` |
+| `--yes` | 自动放行「需要人工确认」的命令。默认：交互式终端问 `[Y/n]`，**非交互环境直接拒绝**（fail-safe） |
 
 ### 为什么需要 `--verify-cmd`
 
@@ -418,6 +420,26 @@ if ! sisyphus dev "实现 tests/feature.rs 引用的 API" --verify-cmd "cargo te
   echo "目标未达成" >&2
 fi
 ```
+
+### 权限闸：模型提出的命令要先过权限体系
+
+`dev` 的计划里可能有 `RunCommand`（任意 shell）。执行前会走**统一权限体系**
+（与 TUI 的 dev 路径同一口径，规则文件 `.sisyphus-permissions.json`）：
+
+| 判定 | 行为 |
+|---|---|
+| `allow` 规则命中 | 直接放行 |
+| `deny` 规则命中 | 拒绝（`--yes` 也不放行） |
+| 危险命令默认 `ask` | 交互式终端问 `[Y/n]`；**非交互环境直接拒绝** |
+
+每次判定都写审计 `<data-dir>/audit/permissions.jsonl`
+（`allowed` / `denied` / `asked-approved` / `asked-denied`）。
+
+自动化场景（脚本 / CI）必须显式 `--yes`，否则模型无法执行命令 —— 这是刻意的
+fail-safe：静默执行模型提出的任意命令是自动化入口最危险的行为。
+
+> 权限闸（哪些命令允许执行）与 `--verify-cmd` 客观闸门（目标是否达成）是正交的
+> 两件事；被拒绝的步骤会在报告里显示 `denied by user: builtin:bash_exec`。
 
 ### `--record`：把闭环结果接入质量指标
 

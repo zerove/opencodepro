@@ -122,13 +122,13 @@ pub struct PermissionAuditEntry {
 }
 
 /// 从配置文件加载规则的 CLI 权限存储。
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CliPermission {
     rules: Vec<Rule>,
     audit_path: Option<PathBuf>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Rule {
     pattern: String,
     permission: crate::tools::Permission,

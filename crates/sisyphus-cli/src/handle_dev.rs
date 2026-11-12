@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
+use sisyphus_cli::dev_approval::CliDevApprover;
 use sisyphus_cli::tools::developer::DevelopmentReport;
 use sisyphus_metrics::quality::{TaskRecord, TaskStatus};
 use sisyphus_types::{LlmClient, LlmTokenUsage};
@@ -18,6 +19,8 @@ pub(crate) async fn handle_dev(
     verify_fix_attempts: usize,
     record: &Option<PathBuf>,
     scenario: &str,
+    yes: bool,
+    cli_perms: &sisyphus_cli::permission::CliPermission,
     sisyphus_cfg: &sisyphus_types::Config,
 ) -> Result<()> {
     ensure_recordable(record, verify_cmd)?;
@@ -34,6 +37,13 @@ pub(crate) async fn handle_dev(
     // token 成本维度）。`Developer` 只拿到 trait object，读不到用量。
     let llm = Arc::new(sisyphus_cli::tools::llm::DynamicLlmClient::new(config));
     let mut developer = sisyphus_cli::tools::developer::Developer::new(llm.clone());
+    // 权限闸：计划里的 RunCommand 是任意 shell，必须走统一权限体系
+    // （与 TUI 的 dev 路径同一口径）。非交互环境默认拒绝 —— 自动化必须显式
+    // `--yes`，否则模型可以静默执行任意命令。
+    developer = developer.with_approval_handler(Arc::new(CliDevApprover::from_env(
+        Arc::new(cli_perms.clone()),
+        yes,
+    )));
     if let Some(cmd) = verify_cmd {
         println!("Objective verification: `{cmd}` (fix attempts: {verify_fix_attempts})");
         developer = developer

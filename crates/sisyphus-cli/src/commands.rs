@@ -311,6 +311,10 @@ pub enum Commands {
         ///闸门失败也会落记录（失败样本是成功率的分母）
         #[arg(long = "record")]
         record: Option<std::path::PathBuf>,
+        ///自动放行需要人工确认的命令（默认：交互式询问；非交互环境直接拒绝）。
+        ///显式 deny 的权限规则仍然拒绝，--yes 不会绕过它
+        #[arg(long = "yes", alias = "auto-approve")]
+        yes: bool,
         ///任务记录的场景标签（默认 dev-closed-loop）
         #[arg(long = "scenario", default_value = "dev-closed-loop")]
         scenario: String,

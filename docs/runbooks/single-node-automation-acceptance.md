@@ -186,6 +186,19 @@ bash scripts/l3-mcp-check.sh --cli-only # 只跑 CLI 级
 注册与 `/api/tools/execute` 调用。说明与证据：
 `docs/benchmarks/acceptance/2026-11-12/phase1/l3-mcp-scenario.md`。
 
+### 7.4 dev 权限闸（不需要 LLM）
+
+`sisyphus dev` 的命令执行必须先过统一权限体系（CLI 与 TUI 同一口径）。验收脚本用
+**桩 LLM**（`scripts/l3-mock-llm.py` 返回固定计划）做确定性检查：
+
+```bash
+bash scripts/l3-dev-permission-check.sh
+```
+
+覆盖：非交互默认拒绝（fail-safe）、`--yes` 显式放行、显式 `deny` 规则优先于
+`--yes`，每项都断言「命令是否真的执行」与审计记录。说明与证据：
+`docs/benchmarks/acceptance/2026-11-12/phase1/l3-dev-permission-gate.md`。
+
 **阻塞记录（环境缺失时）**：明确缺失的 LLM/凭据/MCP/工具；保留请求与响应证据；以 `BLOCKED` 标注 L3，不替代 L2 结论。
 
 ## 8. L4 性能与稳定性采样

@@ -23,6 +23,10 @@
 #                               [--upstream URL] [--workdir DIR]
 #
 # 退出码：0 = 所有被选场景判定 PASS；1 = 有场景未通过（属正常结果，需看结论）。
+#
+# `--yes`：本脚本是自动化验收场景，需要模型可以执行命令（如 `cargo check`）。
+#        CLI 的 dev 路径默认对「需要人工确认的命令」fail-safe 拒绝（非交互环境），
+#        自动化必须显式授权；显式 deny 的权限规则仍然拒绝。
 
 set -uo pipefail
 
@@ -271,7 +275,8 @@ run_case() {
   ( cd "$dir" && local start; start=$(date +%s); \
     timeout $((TIMEOUT_SECS + 60)) "$CLI" --config "$CFG" dev "$goal" \
       --context "$ctx" --timeout-secs "$TIMEOUT_SECS" \
-      --verify-cmd "$verify" --record "$record" --scenario "$scenario" >"$log" 2>&1; \
+      --verify-cmd "$verify" --record "$record" --scenario "$scenario" \
+      --yes >"$log" 2>&1; \
     echo "rc=$?" >"$WORKDIR/$tag.rc"; \
     echo $(( $(date +%s) - start )) >"$WORKDIR/$tag.elapsed" )
 

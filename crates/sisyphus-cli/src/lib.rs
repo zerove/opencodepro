@@ -8,6 +8,7 @@ pub mod approval;
 pub mod bridge;
 pub mod build;
 pub mod delegate;
+pub mod dev_approval;
 pub mod diagnose;
 pub mod git;
 pub mod hints;
