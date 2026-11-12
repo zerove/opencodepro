@@ -362,6 +362,59 @@ sisyphus workspace delete <workspace-id> -y
 
 工作区内持久化的所有数据（SOPs、会话、待办、经验）通过 `project_id` 隔离。切换工作区会改变活动的项目上下文，使后续命令在该项目的存储命名空间内操作。
 
+## 对话式开发（`dev`）
+
+`dev` 让 LLM 规划并执行一个开发目标（建文件 / 编辑 / 跑命令），再按步骤验证。
+
+```bash
+sisyphus dev "<目标>" \
+  --context "<当前状态/约束>" \
+  [--parallel] [--resume] \
+  [--timeout-secs 300] \
+  [--verify-cmd "cargo clippy -- -D warnings"] \
+  [--verify-fix-attempts 2]
+```
+
+| 参数 | 说明 |
+|------|------|
+| `--context` | 项目现状、约束、相关代码片段；弱模型对上下文质量非常敏感 |
+| `--parallel` | 并行执行步骤（最多 4 并发，写冲突由编排层串行化） |
+| `--resume` | 从 checkpoint 恢复，跳过已完成步骤 |
+| `--timeout-secs` | 整体超时（默认 300s）；本地/慢速模型需调大 |
+| `--verify-cmd` | **客观验收命令**。通过才判定目标达成；未通过则自动修复，仍失败则整体判失败 |
+| `--verify-fix-attempts` | 闸门失败后的自动修复次数（默认 2，`0` 表示只判定不修复） |
+
+### 为什么需要 `--verify-cmd`
+
+每个步骤自带 `verification`，由**模型在计划里自选**，可能与用户目标不一致。实测：目标是
+`cargo clippy -- -D warnings` 通过，模型却声明 `CargoCheck`（警告不是错误 → 通过），
+于是「全部步骤成功」而目标实际未达成。
+
+`--verify-cmd` 是用户给定的**唯一客观判据**：
+
+- 未通过 → 整体状态 `FAILED`，CLI 退出码非零；
+- 通过但仍有步骤失败 → `PARTIAL FAILURE`（目标达成与过程失败分别记录）；
+- 通过且步骤全成功 → `SUCCESS`。
+
+闸门修复接受两种 LLM 输出形态：整文件重写 `{"files":[{path,content}]}`（优先）与
+精确编辑 `[{path,old_string,new_string}]`；落盘前会剥离文件内容外的 markdown 围栏。
+修复 prompt 附带错误输出点名的文件内容与 `git diff`（若工作区是 git 仓库）。
+
+```bash
+# 质量门示例：clippy 告警必须以错误级别清零
+sisyphus dev "消除 src/lib.rs 的 clippy 告警" \
+  --context "$(cat src/lib.rs)" \
+  --verify-cmd "cargo clippy -- -D warnings"
+
+# 脚本里据此判断成败（闸门失败 → 非零退出）
+if ! sisyphus dev "实现 tests/feature.rs 引用的 API" --verify-cmd "cargo test"; then
+  echo "目标未达成" >&2
+fi
+```
+
+> 本地 3B 模型的真实闭环验收（三场景 × 3 轮）与复现脚本见
+> `docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md`。
+
 ## 交互式 TUI
 
 启动交互式终端界面：

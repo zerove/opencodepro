@@ -155,6 +155,20 @@ curl -sS -X POST http://127.0.0.1:8080/api/execute/goal \
 
 **通过标准（环境具备时）**：返回成功结果并可关联 trace/事件（按配置）；失败时返回可解释 `error` 与可选 `hint`，能区分依赖缺失、StrategicPivot/无真实结果、参数或契约问题。
 
+### 7.2 开发闭环三场景（`dev --verify-cmd`）
+
+本机已有 LLM（含 ollama 等本地 OpenAI 兼容端点）时，可用三场景做**端到端**验收，
+判定完全由外部 `cargo` 命令退出码决定：
+
+```bash
+bash scripts/l3-run-scenarios.sh s1 s2 s3   # 诊断修复 / 质量门 / TDD 功能新增
+```
+
+- 每个场景都通过 `--verify-cmd` 设置客观闸门（`cargo check` / `cargo clippy -- -D warnings` / `cargo test`）；
+  闸门失败时 CLI 退出码非零，自动修复次数默认 2。
+- LLM 请求/响应/token/耗时/trace 由 `scripts/l3-llm-proxy.py` 归档到工作区 `llm.jsonl`。
+- 归档样例与结果解读：`docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md`。
+
 **阻塞记录（环境缺失时）**：明确缺失的 LLM/凭据/MCP/工具；保留请求与响应证据；以 `BLOCKED` 标注 L3，不替代 L2 结论。
 
 ## 8. L4 性能与稳定性采样

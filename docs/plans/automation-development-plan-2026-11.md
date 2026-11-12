@@ -68,8 +68,8 @@
 | T1.1 | 编辑后自动验证（post-edit hook） | `write/edit/apply_patch` 后按配置触发 LSP diagnostics 或 `verify_cmd`；结果写入节点输出并可阻断“成功” | 故意引入类型错误 → 自动失败并输出诊断摘要；修复后通过；单测 + 实跑证据 | M |
 | T1.2 | 验证-修复循环 | 基于 `scenario_diagnose_fix_verify_template`，失败时携带诊断上下文重试（有界次数）；记录每次尝试 | 一次真实“失败→修复→通过”记录（含耗时/次数）；无 LLM 时走确定性路径 | M |
 | T1.3 | 执行进度事件 | `/api/execute/goal/{id}/stream` 增加 `step_started/step_finished/tool_call/token_usage` 事件（向后兼容） | SSE 事件契约文档 + 消费端展示；旧客户端不受影响 | M |
-| T1.4 | L3 真实闭环证据 | 在具备 LLM/凭据环境执行 ≥3 个场景（诊断修复、质量门、功能新增），归档请求/响应/trace/耗时/成本 | `docs/benchmarks/acceptance/<date>-l3/` 完整证据；`summary.md` 判定 | M（受环境阻塞） |
-| T1.4 状态（执行） | BLOCKED | 缺失 LLM/凭据/MCP/工具环境，无法产出 `execute/goal` 成功证据 | 后续在具备环境时补跑并更新证据 | - |
+| T1.4 | L3 真实闭环证据 | 在具备 LLM/凭据环境执行 ≥3 个场景（诊断修复、质量门、功能新增），归档请求/响应/trace/耗时/成本 | `docs/benchmarks/acceptance/<date>-l3/` 完整证据；`summary.md` 判定 | M |
+| T1.4 状态（执行） | DONE（本地真实模型）/ 云端外部后置 | 用本机 ollama `qwen2.5-coder:3b` 跑三场景 × 3 轮 = 9/9 PASS；每场景判定由外部 `cargo` 命令决定；归档请求/响应/token/耗时/trace（`phase1/runs/`）；过程中新增 `dev --verify-cmd` 客观闸门并修复 4 个真实缺陷；**云端 provider 首次真实调用仍未验证**（无有效云端凭据），MCP/多文件重构未覆盖 | 证据 `docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md`；复现 `bash scripts/l3-run-scenarios.sh s1 s2 s3` |
 
 **阶段 1 完成标准**：至少 1 个真实任务形成“改文件 → 验证失败 → 修复 → 验证通过”的完整记录；其余场景有可解释结果或明确 `BLOCKED`。
 
@@ -136,7 +136,7 @@
 
 | 风险 | 影响 | 应对 |
 |---|---|---|
-| LLM/凭据不可用 | T1.4 阻塞；T3.2 已用本地真实 provider 解阻 | 先做确定性路径（T1.1/T1.2 本地部分）；T3.2 用本地 OpenAI 兼容服务做端到端；仅「云端 provider 首次真实调用」外部后置 |
+| LLM/凭据不可用 | T1.4 已用本地真实模型解阻；T3.2 已用本地真实 provider 解阻 | 先做确定性路径（T1.1/T1.2 本地部分）；T1.4/T3.2 用本地 OpenAI 兼容服务做端到端；仅「云端 provider 首次真实调用」外部后置 |
 | 网络推送失败 | 提交积压 | 本地小批次提交 + 定期重试；必要时生成 `git bundle` 备份 |
 | 长命令/采样被中断 | 性能数据不完整 | 分批采样并标注聚合方式；不伪造连续样本 |
 | 范围膨胀 | 交付延迟 | 每任务必须映射到 §2 差距表；阶段 Exit Criteria 不满足不进入下一阶段 |
@@ -202,7 +202,7 @@
 | T3.1 自定义开发命令 | DONE | 新增 `custom_command` 模块（用户级 + 项目级目录、同名项目覆盖、`{{arg}}` 渲染、必填/默认校验）+ `sisyphus command list/show/run`；Shell 命令 `--exec` 复用 `require_tool` 审批与审计；TUI `/commands` 可发现；11 个 loader/render 单测 + 4 个输出/参数单测 + 2 个审批单测；实跑：提示词渲染、`--exec` 拒绝/批准/失败退出码、审计三条记录均符合预期 |
 | T2.4 错误提示有效性抽样 | DONE | 新增 `sisyphus-cli::hints`：`HINTS` 提示目录 + `suggest_hint`（多 pattern 命中取最长）；`sample_hints` 抽样聚合（初始判定 Indeterminate）+ `sample_hint_outcome`/`HintSample::with_action` 回填；TUI SOP 失败路径改用统一 `suggest_hint`；7 个 hint 单测 |
 
-| T1.4 L3 真实闭环 | BLOCKED | 缺 LLM/凭据/MCP/工具环境，无法产出 `execute/goal` 成功证据；后续在具备环境时补跑并更新证据 |
+| T1.4 L3 真实闭环 | DONE（本地真实模型）/ 云端外部后置 | 三场景 × 3 轮 = 9/9 PASS（本机 ollama `qwen2.5-coder:3b`，CPU）；每场景判定由外部 `cargo` 命令决定；新增 `dev --verify-cmd` 客观闸门（原实现由模型自选 verification，实测报 SUCCESS 而 clippy 仍失败）；三场景完整请求/响应/token/耗时/trace 归档于 `docs/benchmarks/acceptance/2026-11-12/phase1/runs/`；**云端 provider 首次真实调用、MCP、多文件重构未覆盖** |
 | T2.1 TUI 对话式执行 MVP | DONE（脚本化验收） | 四切片落地：S1 `Developer` interrupt + `DevOverallStatus::Cancelled`；S2 `DevApprover` 审批闸；S3 TUI 接缝（`BgOp::DevAsk`/`DevRunHandle`/审批卡片/y·n·Esc 键位/Esc→Resume 恢复入口）；S4 验收测试 `crates/sisyphus-tools-agent/tests/t2_1_mvp_acceptance.rs`（2 次工具调用 / 2 次审批 / 1 次中断 + 恢复）；`sisyphus-cli` 120 单测、`tools-agent` 98 + 1 验收 |
 | T2.2 权限规则与审批审计 | DONE | glob 规则 + 危险默认 `ask` + JSONL 审计 + `permission check/audit`；TUI 审批弹窗补齐（crate 级 broker `crates/sisyphus-cli/src/approval.rs` + `Dialog::ToolApproval` + `shell::exec` Ask 分支接入，审计口径 `asked-approved`/`asked-denied`）；**dev 工具闸已接入同一权限体系**（allow 直接放行 / deny 直接拒绝 / ask 才弹窗，3 个新单测）；5 个新单测 |
 | T3.2 Provider 交互式引导 | DONE（本地真实 provider）/ 部分外部后置 | `provider login`（选择→输入→**真实连通性测试**→写配置，失败不落盘）、`provider test`（原为桩实现，现真实调用并对 401/403/404/429/解析失败/连接失败分类给出可执行 hint）、`provider remove`；顺带修复 `request_timeout_secs` 被 client 级 5s 硬编码钳制（配置调大无效，慢/本地模型必然失败）；端到端 12/12 PASS（本机 ollama `qwen2.5-coder:3b` 真实 completion + mock 401/404/HTML/不可达失败路径），证据 `docs/benchmarks/acceptance/2026-11-12/phase3/t3-2-provider-onboarding.md`；**云端 provider 首次真实调用仍未验证**（本机无有效云端凭据） |
