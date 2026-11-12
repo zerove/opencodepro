@@ -92,6 +92,27 @@ fn print_human(metrics: &QualityMetrics, records_dir: &Path) {
         ),
         None => println!("平均单任务 token: 无样本"),
     }
+    print_engine_commits(metrics);
+}
+
+/// 打印样本涉及的引擎版本。
+///
+/// 长度 > 1 时必须显式警告：这批样本混用了不同引擎版本，成功率等比率**不可
+/// 直接横向比较**（修好一个缺陷后重跑，比率变化也可能只是样本构成变了）。
+fn print_engine_commits(metrics: &QualityMetrics) {
+    match metrics.engine_commits.len() {
+        0 => println!("引擎版本: 未知（样本未携带版本信息，比率无法归因）"),
+        1 => println!("引擎版本: {}", metrics.engine_commits[0]),
+        n => println!(
+            "引擎版本: {} 个（{}）—— 样本混用不同引擎版本，比率不可直接横向比较",
+            n,
+            metrics.engine_commits.join(", ")
+        ),
+    }
+    let dirty = metrics.engine_commits.iter().filter(|c| c.ends_with("+dirty")).count();
+    if dirty > 0 {
+        println!("  ↳ 其中 {dirty} 组为**脏工作区**产出（不对应任何已提交版本，仅供参考）");
+    }
 }
 
 #[cfg(test)]

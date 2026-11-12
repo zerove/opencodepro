@@ -15,6 +15,7 @@
 | 任务回归率 | 修复引入回归 / 执行过修复 | 同上 | 0.0（`dev` 链路现检测「公开 API 被删除」并写入 `regressed`；`verify` 链路仍恒 false） |
 | 单任务耗时 | 单任务端到端耗时 | 任务记录 `duration_ms` | 7 条样本，均值 ~65.6s |
 | 单任务 token 成本 | 单任务输入/输出 token 数 | 任务记录 `prompt_tokens` / `completion_tokens`（provider 上报的 usage；`dev` 链路自动写入） | 3 条 `dev` 记录有真实 token（均值 1894/任务）；`verify` 链路暂无（后端未暴露 usage） |
+| 样本版本归因 | 样本涉及的引擎版本集合（脏工作区样本单列 `sha+dirty`） | 任务记录 `engine_commit` / `engine_dirty` | 聚合输出 `engine_commits`；>1 组说明样本混用不同引擎版本，**比率不可直接横向比较** |
 | 全局 token 预算 | 进程级 LLM token 消耗估算 | bridge `/api/metrics`（`sisyphus_token_budget_usage` 等） | bridge 未运行时记 `null` |
 
 ## 2. 采集口径
@@ -23,13 +24,20 @@
   `sisyphus dev --record <path>`（LLM 闭环）每次执行落一条 JSON 记录
   （`task_id` / `scenario` / `status` / `initial_verify_passed` / `final_verify_passed` /
   `fix_attempts` / `regressed` / `duration_ms` / `prompt_tokens` / `completion_tokens` /
-  `recorded_at`），记录目录约定为 `docs/benchmarks/quality-metrics/records/`
-  （格式说明见该目录 `README.md`）。
+  `engine_commit` / `engine_dirty` / `recorded_at`），记录目录约定为
+  `docs/benchmarks/quality-metrics/records/`（格式说明见该目录 `README.md`）。
+- **版本归因**：`engine_commit` 记录产出样本的引擎短 commit，`engine_dirty` 记录
+  当时工作区是否有未提交改动。缺这两个字段时，「成功率 0.857」无法归因到具体
+  引擎版本 —— 不同版本的样本混在同一个扁平目录里聚合，比率变化可能只是样本
+  构成变了。脏工作区产出的样本**不对应任何已提交版本**，聚合时单列为
+  `sha+dirty` 并显式提示。历史记录（字段引入前产出）显示为「未知」，
+  **不猜测**历史版本号。
 - **token 口径**：只统计 provider **实际上报**的 usage；provider 未返回 usage 时
   字段留空（`null`），聚合时该记录**不参与** token 均值（避免把「未上报」当 0 拉低均值）。
   `verify` 链路目前拿不到后端 usage，恒为 `null`。
 - **聚合**：`sisyphus metrics quality --records <dir> [--json]` → 成功率 / 修复率 /
-  回归率 / 平均耗时 / 平均 token；无记录时各比率为 `null`（不伪造 0 值）。
+  回归率 / 平均耗时 / 平均 token / 样本涉及的引擎版本；无记录时各比率为 `null`
+  （不伪造 0 值）。
 - **Bridge 指标**：`GET /api/metrics` → Prometheus 文本。当前采集的**真实**指标名：
   `sisyphus_token_budget_usage`（LLM 阶段 token 消耗估算，gauge）、
   `sisyphus_token_budget_capped`、`sisyphus_token_budget_exhausted`、

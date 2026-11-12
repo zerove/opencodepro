@@ -131,6 +131,10 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records --jso
 token 维度只在 provider 上报了 usage 的记录上统计（`dev` 链路自动写入
 `prompt_tokens` / `completion_tokens`）；没有 token 样本时该指标为 `null`。
 
+聚合还会输出样本涉及的**引擎版本**（记录里的 `engine_commit` / `engine_dirty`）：
+多于一组说明这批样本混用了不同引擎版本（脏工作区产出的样本单列为 `sha+dirty`），
+此时成功率等比率**不可直接横向比较** —— 变化可能来自样本构成而非引擎本身。
+
 指标口径与记录格式见 `docs/plans/single-node-quality-metrics.md`。
 
 ## 权限与审计

@@ -225,6 +225,8 @@ fn write_dev_task_record(
 ) -> Result<()> {
     let gate =
         report.final_verification.as_ref().context("--record 需要闸门结果，但报告中不存在")?;
+    // 引擎版本：没它则指标无法归因到具体版本（见 quality::TaskRecord 的文档）。
+    let revision = sisyphus_cli::engine_revision::engine_revision();
 
     let task_id = path
         .file_stem()
@@ -248,6 +250,10 @@ fn write_dev_task_record(
         completion_tokens: token_usage.map(|u| u.completion_tokens),
         // 公开 API 被删除 = 回归信号（闸门检查不到这一类破坏）。
         regressed,
+        // 产出这条记录的引擎版本。没有它，「成功率 0.857」无法归因到具体版本：
+        // 不同版本的样本混在一个扁平目录里聚合，比率变化可能只是样本构成变了。
+        engine_commit: revision.as_ref().map(|r| r.commit.clone()),
+        engine_dirty: revision.as_ref().map(|r| r.dirty),
         recorded_at: chrono::Utc::now().to_rfc3339(),
     };
 

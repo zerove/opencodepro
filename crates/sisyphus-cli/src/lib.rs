@@ -10,6 +10,7 @@ pub mod build;
 pub mod delegate;
 pub mod dev_approval;
 pub mod diagnose;
+pub mod engine_revision;
 pub mod git;
 pub mod hints;
 pub mod init;

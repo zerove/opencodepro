@@ -177,6 +177,9 @@ fn print_json(backend: &str, report: &VerifyFixReport, max_warnings: Option<usiz
 fn write_task_record(path: &PathBuf, report: &VerifyFixReport) -> Result<()> {
     use sisyphus_metrics::quality::{TaskRecord, TaskStatus};
 
+    // 引擎版本：没它则指标无法归因到具体版本。
+    let revision = sisyphus_cli::engine_revision::engine_revision();
+
     let first_round_passed = report
         .rounds
         .first()
@@ -208,6 +211,9 @@ fn write_task_record(path: &PathBuf, report: &VerifyFixReport) -> Result<()> {
         // 留空表示「未知」，不伪造 0。
         prompt_tokens: None,
         completion_tokens: None,
+        // 同 `dev --record`：记录引擎版本，否则指标无法归因到具体版本。
+        engine_commit: revision.as_ref().map(|r| r.commit.clone()),
+        engine_dirty: revision.as_ref().map(|r| r.dirty),
         recorded_at: chrono::Utc::now().to_rfc3339(),
     };
 

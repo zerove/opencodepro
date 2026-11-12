@@ -21,12 +21,23 @@
   "duration_ms": 188,
   "prompt_tokens": 1024,
   "completion_tokens": 256,
+  "engine_commit": "79bebcf826ee",
+  "engine_dirty": false,
   "recorded_at": "2026-11-11T00:00:00Z"
 }
 ```
 
 `prompt_tokens` / `completion_tokens` 只在 provider 真的上报 usage 时存在
 （`dev` 链路自动写入）；缺失表示「未知」，聚合时该记录不参与 token 均值。
+
+`engine_commit` / `engine_dirty` 是**样本归因**字段：记录这条样本的是哪个引擎
+版本、当时工作区是否干净。缺了它们，「成功率 0.857」无法归因到具体版本 ——
+不同版本的样本混在这个扁平目录里聚合，比率变化可能只是样本构成变了，而不是
+引擎变好/变坏。`engine_dirty: true` 表示产出样本时工作区**有未提交改动**，
+该样本**不对应任何已提交版本**，聚合时会单独分组（`sha+dirty`）并显式提示。
+
+本目录现有的 7 条记录产出于这两个字段引入之前，因此没有版本信息；聚合时显示
+「引擎版本: 未知」。**这是刻意的** —— 不去猜测历史版本号，猜错比不知道更糟。
 
 ## 生成方式
 
@@ -48,7 +59,9 @@ sisyphus dev "<目标>" \
 - **闸门失败也会落记录**（`status: fail`）—— 失败样本是成功率的分母，不能只记成功；
 - `initial_verify_passed` 是闸门**首轮**结果，`fix_attempts` 是闸门自动修复次数，
   二者共同定义修复率；
-- `regressed` 在 `dev` 链路恒为 `false`（dev 不做跨任务回归检测，不伪造）。
+- `regressed`：`dev` 链路现在会检测「既有公开 API 被删除」（闸门检查不到这一类
+  破坏：实测模型整文件覆盖删掉 `pub fn` 而闸门仍 PASS）并写入该字段；
+  `verify` 链路不检测这一类破坏，恒为 `false`。
 
 `scripts/l3-run-scenarios.sh --records-dir <dir>` 会在三场景运行时自动落记录。
 
@@ -72,6 +85,12 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records --jso
 | `l3-s1-diagnose-fix.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` 诊断修复场景（闸门 `cargo check`）：首轮 FAIL → 修复 1 次 → PASS，48.0s，1392 token |
 | `l3-s2-quality-gate.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` 质量门场景（闸门 `cargo clippy -- -D warnings`）：首轮 FAIL → 修复 1 次 → PASS，35.9s，1632 token |
 | `l3-s3-feature.json` | L3 闭环（本地 ollama `qwen2.5-coder:3b`） | `dev` TDD 跨文件场景（闸门 `cargo test`）：首轮 FAIL → 修复 2 次仍 FAIL，**失败样本**（3B 模型把函数当模块写），140.0s，2657 token |
+
+> 上述 s3 失败样本的根因后来被定位并修掉：**闸门修复的上下文里没有测试文件**，
+> 模型看不到「`use x::y;` 是函数导入」，于是把函数写成了模块。修复后 s3 单独
+> 复跑 4/4、完整轮次 2×3/3 通过（见 `phase1/t1-4-l3-closed-loop.md` §4.4c）。
+> 这条失败记录**保留在目录里**：它是失败样本、是成功率的分母，也是该缺陷存在过
+> 的证据；删掉它只会让指标更好看。
 
 > 归档的是**一整轮真实运行**的结果，含失败样本 —— 失败样本是成功率的分母，
 > 只留成功样本会让指标失真。该轮的判定已加严（s3 还要求既有公开 API 保留，
