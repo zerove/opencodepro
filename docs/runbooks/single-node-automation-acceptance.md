@@ -165,6 +165,9 @@ bash scripts/l3-run-scenarios.sh s1 s2 s3   # 诊断修复 / 质量门 / TDD 功
 ```
 
 - 每个场景都通过 `--verify-cmd` 设置客观闸门（`cargo check` / `cargo clippy -- -D warnings` / `cargo test`）；
+- **判定不止看闸门**：s3 还要求「既有的公开 API 必须保留」—— 只判闸门会把
+  「整文件覆盖、顺手删掉不相关函数」算成成功（归档的 9/9 即是如此，见证据
+  §4.4b）。本地 3B 模型在严格判定下 s3 FAIL，这是**模型能力边界**，如实记录。
   闸门失败时 CLI 退出码非零，自动修复次数默认 2。
 - LLM 请求/响应/token/耗时/trace 由 `scripts/l3-llm-proxy.py` 归档到工作区 `llm.jsonl`。
 - 归档样例与结果解读：`docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md`。
