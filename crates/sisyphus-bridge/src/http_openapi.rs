@@ -270,6 +270,24 @@ fn build_document() -> Result<serde_json::Value, String> {
                     }
                 }
             },
+            "/api/mcp/resources": {
+                "get": {
+                    "summary": "List MCP resources discovered from connected servers (startup snapshot)",
+                    "operationId": "listMcpResources",
+                    "responses": {
+                        "200": {"description": "MCP resources grouped by server", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object"}}}}}
+                    }
+                }
+            },
+            "/api/mcp/prompts": {
+                "get": {
+                    "summary": "List MCP prompts discovered from connected servers (startup snapshot)",
+                    "operationId": "listMcpPrompts",
+                    "responses": {
+                        "200": {"description": "MCP prompts grouped by server", "content": {"application/json": {"schema": {"type": "array", "items": {"type": "object"}}}}}
+                    }
+                }
+            },
             "/api/agents": {
                 "get": {
                     "summary": "List registered agents",

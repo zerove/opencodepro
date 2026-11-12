@@ -287,6 +287,8 @@ pub fn build_router(state: RestApiState) -> Router {
         .route("/api/sessions/:id", get(get_session_handler))
         .route("/api/sessions/:id/messages", post(add_message_handler))
         .route("/api/tools", get(list_tools_handler))
+        .route("/api/mcp/resources", get(list_mcp_resources_handler))
+        .route("/api/mcp/prompts", get(list_mcp_prompts_handler))
         .route("/api/agents", get(list_agents_handler))
         .route("/api/skills", get(list_skills_handler))
         .route("/api/skills/:id", get(show_skill_handler))

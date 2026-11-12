@@ -58,6 +58,18 @@ impl MCPToolExecutor {
         client.list_tools().await
     }
 
+    /// List resources available on the MCP server.
+    pub async fn list_resources(&self) -> ToolResult<sisyphus_tools_mcp::mcp::ListResourcesResult> {
+        let mut client = self.client.lock().await;
+        client.list_resources().await
+    }
+
+    /// List prompts available on the MCP server.
+    pub async fn list_prompts(&self) -> ToolResult<sisyphus_tools_mcp::mcp::ListPromptsResult> {
+        let mut client = self.client.lock().await;
+        client.list_prompts().await
+    }
+
     /// Close the underlying transport.
     pub async fn close(&self) -> ToolResult<()> {
         let mut client = self.client.lock().await;

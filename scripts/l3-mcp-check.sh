@@ -9,7 +9,8 @@
 #                 校验握手、工具列表与调用、资源列表与读取、提示列表与获取
 #                 （stdio 与 HTTP 两种传输各跑一遍）
 #   级别 2（引擎）：启动 bridge（同时挂 stdio 与 HTTP 两个 MCP 服务器），校验
-#                   /api/tools 出现 MCP 工具，并经 /api/tools/execute 真正调用一次
+#                   /api/tools 出现 MCP 工具并可执行，同时校验 /api/mcp/resources 与
+#                   /api/mcp/prompts 返回启动时发现的资源/提示快照
 #
 # 用法：
 #   ./scripts/l3-mcp-check.sh [--cli-only] [--bridge-bin PATH]
@@ -212,6 +213,14 @@ else
     -H 'content-type: application/json' \
     -d '{"tool_id":"l3http:sum","args_json":"{\"a\":1,\"b\":2}"}' 2>&1)"
   check "引擎调用 HTTP 传输的 MCP 工具 l3http:sum(1,2)" '3' "$http_exec_out"
+
+  mcp_res_out="$(curl -sf --max-time 10 "$BASE/api/mcp/resources" 2>&1)"
+  check "引擎 /api/mcp/resources 含 l3 服务资源" '"server_prefix":"l3"' "$mcp_res_out"
+  check "引擎 /api/mcp/resources 含 memo://welcome" '"memo://welcome"' "$mcp_res_out"
+  check "引擎 /api/mcp/resources 含 l3http 服务资源" '"server_prefix":"l3http"' "$mcp_res_out"
+  mcp_prompts_out="$(curl -sf --max-time 10 "$BASE/api/mcp/prompts" 2>&1)"
+  check "引擎 /api/mcp/prompts 含 greet" '"greet"' "$mcp_prompts_out"
+  check "引擎 /api/mcp/prompts 含 l3http" '"server_prefix":"l3http"' "$mcp_prompts_out"
 fi
 
 echo
