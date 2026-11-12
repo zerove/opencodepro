@@ -3,6 +3,7 @@ use std::path::Path;
 
 use sisyphus_cli::tui::enhancements::{
     expand_file_references, filter_slash_commands, fuzzy_match, parse_file_references,
+    SLASH_COMMANDS,
 };
 use sisyphus_core::dag_renderer::{DagRenderer, NodeStatus};
 use sisyphus_core::performance::{
@@ -390,8 +391,11 @@ fn test_filter_slash_commands_exact() {
 #[test]
 fn test_filter_slash_commands_empty() {
     let results = filter_slash_commands("");
-    // Empty query matches everything (score 0 for all)
-    assert_eq!(results.len(), 17); // 17 commands in SLASH_COMMANDS
+    // Empty query matches everything (score 0 for all).
+    // 期望值从常量派生而不是写死数字：写死会在新增斜杠命令时静默腐烂
+    // （本仓库就因此烂过一阵：`/search` 加入后计数变 18，断言仍写 17，
+    // 而该 crate 因 wasmtime 依赖不在默认测试集合里，问题一直没人看见）。
+    assert_eq!(results.len(), SLASH_COMMANDS.len());
 }
 
 #[test]

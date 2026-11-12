@@ -154,6 +154,28 @@ jobs:
           path: golden_sop_report.txt
           retention-days: 30
 
+  # ── 集成测试（sisyphus-tests）─────────────────────────────────────
+  # 该 crate 因 wasmtime 传递依赖被排除在默认测试集合与 PR CI 之外，
+  # 于是「写死的断言」会静默腐烂（本仓库就出现过：斜杠命令新增后计数变了，
+  # 断言仍写旧值，而没人跑这个 crate）。放到 nightly 跑一遍，至少腐烂会被发现。
+  integration-tests:
+    timeout-minutes: 45
+    name: Integration Tests (sisyphus-tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust
+      - uses: ./.github/actions/setup-protoc
+      - uses: Swatinem/rust-cache@v2
+      - name: Run integration tests
+        run: cargo test -p sisyphus-tests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-log
+          path: docs/benchmarks/
+          retention-days: 30
+
   # ── HTTP client performance regression check (ADR-006 §J) ─────────
   # 跑 shared_http bench，与 `.sisyphus/eval-history/` 上次基线对比。
   # 失败条件 (任一即 fail):
