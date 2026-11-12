@@ -62,6 +62,50 @@ pub async fn run_info(connect_args: &[String]) -> Result<()> {
             println!("    schema: {schema}");
         }
     }
+
+    match client.list_resources().await {
+        Ok(res) => {
+            println!("Available resources ({}):", res.resources.len());
+            for r in &res.resources {
+                println!(
+                    "  {} ({}) — {}",
+                    r.uri,
+                    r.name,
+                    r.description.as_deref().unwrap_or("")
+                );
+            }
+            if !res.resource_templates.is_empty() {
+                println!(
+                    "Available resource templates ({}):",
+                    res.resource_templates.len()
+                );
+                for t in &res.resource_templates {
+                    println!(
+                        "  {} ({}) — {}",
+                        t.uri_template,
+                        t.name,
+                        t.description.as_deref().unwrap_or("")
+                    );
+                }
+            }
+        },
+        Err(e) => {
+            println!("Available resources: (not supported: {e})");
+        },
+    }
+
+    match client.list_prompts().await {
+        Ok(res) => {
+            println!("Available prompts ({}):", res.prompts.len());
+            for p in &res.prompts {
+                println!("  {} — {}", p.name, p.description.as_deref().unwrap_or(""));
+            }
+        },
+        Err(e) => {
+            println!("Available prompts: (not supported: {e})");
+        },
+    }
+
     Ok(())
 }
 

@@ -422,7 +422,17 @@ pub fn spawn_dev_agent(
         let config = std::sync::Arc::new(std::sync::RwLock::new(config));
         let llm: std::sync::Arc<dyn crate::tools::metis::LlmClient> =
             std::sync::Arc::new(crate::tools::llm::DynamicLlmClient::new(config));
-        let developer = crate::tools::developer::Developer::new(llm)
+        // 最小出口：TUI `/dev` 路径无 UI 配置闸门，允许通过环境变量注入客观验证命令，
+        // 与 CLI `--verify-cmd` / `--verify-fix-attempts` 语义对齐（未设置则保持模型自评）。
+        let verify_cmd = std::env::var("SISYPHUS_DEV_VERIFY_CMD")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let verify_fix_attempts = std::env::var("SISYPHUS_DEV_VERIFY_FIX_ATTEMPTS")
+            .ok()
+            .and_then(|s| s.trim().parse::<usize>().ok())
+            .filter(|&n| n > 0);
+        let mut developer = crate::tools::developer::Developer::new(llm)
             .with_checkpoint(dev_checkpoint_dir(&goal))
             .with_interrupt(interrupt_task)
             .with_approval_handler(std::sync::Arc::new(DevAskApprover {
@@ -431,6 +441,12 @@ pub fn spawn_dev_agent(
                 // 统一权限体系：dev 的工具调用同样受 glob 规则 / 危险默认 / 审计约束
                 perms: crate::permission::CliPermission::load(None).unwrap_or_default(),
             }));
+        if let Some(cmd) = verify_cmd {
+            developer = developer.with_final_verification(cmd);
+            if let Some(attempts) = verify_fix_attempts {
+                developer = developer.with_final_fix_attempts(attempts);
+            }
+        }
         let goal_c = goal.clone();
         match developer.develop(&goal, &context, parallel, resume).await {
             Ok(report) => {
