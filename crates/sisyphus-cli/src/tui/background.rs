@@ -412,6 +412,8 @@ pub fn spawn_dev_agent(
     context: String,
     parallel: bool,
     resume: bool,
+    verify_cmd: Option<String>,
+    verify_fix_attempts: Option<usize>,
 ) -> DevRunHandle {
     let (tx, result) = tokio::sync::oneshot::channel();
     let (ask_tx, asks) = tokio::sync::mpsc::unbounded_channel::<BgOp>();
@@ -422,16 +424,23 @@ pub fn spawn_dev_agent(
         let config = std::sync::Arc::new(std::sync::RwLock::new(config));
         let llm: std::sync::Arc<dyn crate::tools::metis::LlmClient> =
             std::sync::Arc::new(crate::tools::llm::DynamicLlmClient::new(config));
-        // 最小出口：TUI `/dev` 路径无 UI 配置闸门，允许通过环境变量注入客观验证命令，
-        // 与 CLI `--verify-cmd` / `--verify-fix-attempts` 语义对齐（未设置则保持模型自评）。
-        let verify_cmd = std::env::var("SISYPHUS_DEV_VERIFY_CMD")
-            .ok()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
-        let verify_fix_attempts = std::env::var("SISYPHUS_DEV_VERIFY_FIX_ATTEMPTS")
-            .ok()
-            .and_then(|s| s.trim().parse::<usize>().ok())
-            .filter(|&n| n > 0);
+        // TUI `/dev`：优先使用 UI 传入值；未提供时回退环境变量（保持 CLI/env 语义）。
+        let verify_cmd =
+            verify_cmd.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).or_else(|| {
+                std::env::var("SISYPHUS_DEV_VERIFY_CMD")
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+            });
+        let verify_fix_attempts = verify_fix_attempts
+            .filter(|&n| n > 0)
+            .or_else(|| {
+                std::env::var("SISYPHUS_DEV_VERIFY_FIX_ATTEMPTS")
+                    .ok()
+                    .and_then(|s| s.trim().parse::<usize>().ok())
+                    .filter(|&n| n > 0)
+            })
+            .or(if verify_cmd.is_some() { Some(2) } else { None });
         let mut developer = crate::tools::developer::Developer::new(llm)
             .with_checkpoint(dev_checkpoint_dir(&goal))
             .with_interrupt(interrupt_task)

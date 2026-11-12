@@ -848,6 +848,34 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
     lines.push(Line::from(vec![ctx_label, ctx_val]));
     lines.push(Line::from(""));
 
+    // 客观验收闸门（同 CLI --verify-cmd / --verify-fix-attempts；空则模型自评）
+    let verify_label = Span::styled(
+        "VerifyCmd:",
+        focus_style(app.dev_focus == DevFocus::VerifyCmd),
+    );
+    let verify_val = if app.dev_verify_cmd.trim().is_empty() {
+        Span::styled(
+            " <optional objective gate cmd, e.g. cargo test -q>",
+            Style::default().fg(theme.muted),
+        )
+    } else {
+        Span::styled(&app.dev_verify_cmd, Style::default().fg(theme.fg))
+    };
+    lines.push(Line::from(vec![verify_label, verify_val]));
+    lines.push(Line::from(""));
+
+    let fix_label = Span::styled(
+        "FixAttempts:",
+        focus_style(app.dev_focus == DevFocus::VerifyFixAttempts),
+    );
+    let fix_val = if app.dev_verify_fix_attempts.trim().is_empty() {
+        Span::styled(" <default 2>", Style::default().fg(theme.muted))
+    } else {
+        Span::styled(&app.dev_verify_fix_attempts, Style::default().fg(theme.fg))
+    };
+    lines.push(Line::from(vec![fix_label, fix_val]));
+    lines.push(Line::from(""));
+
     // 并行
     let par_checked = if app.dev_parallel { "[x]" } else { "[ ]" };
     let par_label = Span::styled(
@@ -875,7 +903,7 @@ pub(super) fn render_dev_dialog(frame: &mut ratatui::Frame, area: Rect, app: &Ap
     lines.push(Line::from(Span::styled(" [ Run Dev Agent ] ", run_style)));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        " Tab/Shift+Tab: navigate  Enter: run  Space: toggle  Esc: close",
+        " Tab/Shift+Tab: navigate  Enter: run/toggle  Space: toggle/text  Esc: close",
         Style::default().fg(theme.muted),
     )));
 

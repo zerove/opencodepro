@@ -534,7 +534,9 @@ pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
         KeyCode::Tab => {
             app.dev_focus = match app.dev_focus {
                 DevFocus::Goal => DevFocus::Context,
-                DevFocus::Context => DevFocus::Parallel,
+                DevFocus::Context => DevFocus::VerifyCmd,
+                DevFocus::VerifyCmd => DevFocus::VerifyFixAttempts,
+                DevFocus::VerifyFixAttempts => DevFocus::Parallel,
                 DevFocus::Parallel => DevFocus::Resume,
                 DevFocus::Resume => DevFocus::Run,
                 DevFocus::Run => DevFocus::Goal,
@@ -544,7 +546,9 @@ pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
             app.dev_focus = match app.dev_focus {
                 DevFocus::Goal => DevFocus::Run,
                 DevFocus::Context => DevFocus::Goal,
-                DevFocus::Parallel => DevFocus::Context,
+                DevFocus::VerifyCmd => DevFocus::Context,
+                DevFocus::VerifyFixAttempts => DevFocus::VerifyCmd,
+                DevFocus::Parallel => DevFocus::VerifyFixAttempts,
                 DevFocus::Resume => DevFocus::Parallel,
                 DevFocus::Run => DevFocus::Resume,
             };
@@ -561,11 +565,35 @@ pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
                 let context = app.dev_context.clone();
                 let parallel = app.dev_parallel;
                 let resume = app.dev_resume;
+                let verify_cmd = {
+                    let v = app.dev_verify_cmd.trim().to_string();
+                    if v.is_empty() {
+                        None
+                    } else {
+                        Some(v)
+                    }
+                };
+                let verify_fix_attempts = {
+                    let parsed =
+                        app.dev_verify_fix_attempts.trim().parse::<usize>().ok().filter(|&n| n > 0);
+                    if verify_cmd.is_some() {
+                        Some(parsed.unwrap_or(2))
+                    } else {
+                        parsed
+                    }
+                };
                 if app.pending_dev.is_none() {
                     let mut config = sisyphus_types::Config::default();
                     config.apply_env_overrides();
-                    app.pending_dev =
-                        Some(spawn_dev_agent(config, goal, context, parallel, resume));
+                    app.pending_dev = Some(spawn_dev_agent(
+                        config,
+                        goal,
+                        context,
+                        parallel,
+                        resume,
+                        verify_cmd,
+                        verify_fix_attempts,
+                    ));
                 }
             }
         },
@@ -576,20 +604,30 @@ pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
             DevFocus::Context => {
                 app.dev_context.pop();
             },
+            DevFocus::VerifyCmd => {
+                app.dev_verify_cmd.pop();
+            },
+            DevFocus::VerifyFixAttempts => {
+                app.dev_verify_fix_attempts.pop();
+            },
             _ => {},
         },
-        KeyCode::Char(' ') => {
-            match app.dev_focus {
-                DevFocus::Parallel => app.dev_parallel = !app.dev_parallel,
-                DevFocus::Resume => app.dev_resume = !app.dev_resume,
-                DevFocus::Goal => app.dev_goal.push(' '),
-                DevFocus::Context => app.dev_context.push(' '),
-                DevFocus::Run => {}, // space on Run is no-op
-            }
+        KeyCode::Char(' ') => match app.dev_focus {
+            DevFocus::Parallel => app.dev_parallel = !app.dev_parallel,
+            DevFocus::Resume => app.dev_resume = !app.dev_resume,
+            DevFocus::Goal => app.dev_goal.push(' '),
+            DevFocus::Context => app.dev_context.push(' '),
+            DevFocus::VerifyCmd => app.dev_verify_cmd.push(' '),
+            DevFocus::VerifyFixAttempts => {}, // 次数不含空格
+            DevFocus::Run => {},
         },
         KeyCode::Char(c) => match app.dev_focus {
             DevFocus::Goal => app.dev_goal.push(c),
             DevFocus::Context => app.dev_context.push(c),
+            DevFocus::VerifyCmd => app.dev_verify_cmd.push(c),
+            DevFocus::VerifyFixAttempts if c.is_ascii_digit() => {
+                app.dev_verify_fix_attempts.push(c);
+            },
             _ => {},
         },
         _ => {},

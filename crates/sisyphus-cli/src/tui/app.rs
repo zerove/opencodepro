@@ -334,6 +334,8 @@ pub(crate) enum Mode {
 pub(crate) enum DevFocus {
     Goal,
     Context,
+    VerifyCmd,
+    VerifyFixAttempts,
     Parallel,
     Resume,
     Run,
@@ -501,6 +503,8 @@ pub(crate) struct App {
     pub(crate) dev_context: String,
     pub(crate) dev_parallel: bool,
     pub(crate) dev_resume: bool,
+    pub(crate) dev_verify_cmd: String,
+    pub(crate) dev_verify_fix_attempts: String,
     pub(crate) dev_report: Option<String>,
     pub(crate) dev_status: String,
     pub(crate) dev_focus: DevFocus,
@@ -658,6 +662,15 @@ impl App {
             dev_context: String::new(),
             dev_parallel: false,
             dev_resume: false,
+            dev_verify_cmd: std::env::var("SISYPHUS_DEV_VERIFY_CMD")
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
+            dev_verify_fix_attempts: std::env::var("SISYPHUS_DEV_VERIFY_FIX_ATTEMPTS")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "2".to_string()),
             dev_report: None,
             dev_status: "idle".into(),
             dev_focus: DevFocus::Goal,
