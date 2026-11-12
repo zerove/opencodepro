@@ -12,8 +12,10 @@
 
 - **3 轮完整运行 × 3 场景 = 9/9 PASS**（每场景判定由外部命令退出码决定，不是 CLI 自报状态）。
 - s2 质量门多次出现「首次修复不完整 → 闸门抓出 → 二次修复 → 通过」，修复次数与输出均已归档。
-- 过程中发现并修复 **5 个真实缺陷**（见 §5），其中最重要的是：**成功标准原本由模型自选**，
-  导致报告 SUCCESS 而目标未达成。
+- 过程中发现并修复 **9 个真实缺陷**（见 §5），其中最重要的是：**成功标准原本由模型自选**，
+  导致报告 SUCCESS 而目标未达成。§5.6–§5.9 由多文件重构探索（§4.5）暴露：
+  计划重试丢失目标、`ComplexChange` 吞编辑失败、开发失败退出码为 0、
+  闸门修复看不到被重写文件的当前内容。
 
 ## 2. 环境与方法
 
@@ -82,8 +84,14 @@ phase1/
     │   ├── summary.md              # 该轮场景判定汇总
     │   └── s{1,2,3}-run.log        # 各场景 CLI 完整输出
     ├── run{1,2,3}.out              # 该轮脚本控制台输出
+    ├── s4-exploratory/             # 多文件重构探索（FAIL，见 §4.5）
+    ├── gate-exit-code.log          # 闸门失败退出码实测（附录 §5.5）
+    ├── dev-exit-code-llm-failure.log  # 开发失败退出码实测（附录 §5.8）
     └── pre-diff-s2-failure.out     # 加 diff 上下文之前的一次真实失败（见 §5.4）
 ```
+
+> 仓库根 `.gitignore` 的 `*.log` 曾把这些验收日志挡在版本库外（文档引用、实际未入库）。
+> 现已在 `.gitignore` 为 `docs/benchmarks/acceptance/**/*.log` 开例外并补交缺失文件。
 
 ### 4.4 同一闭环进入质量指标（T4.1）
 
@@ -113,6 +121,35 @@ success_rate 1.0 / fix_rate 1.0 / regression_rate 0.0 / mean_duration 45.4s
 - 闸门失败也会落记录（`status: fail`），失败样本是成功率的分母；
 - `regressed` 恒为 `false`：dev 不做跨任务回归检测，该字段在 dev 链路不具信息量；
 - `--record` 必须配 `--verify-cmd`，否则 CLI 直接拒绝 —— 没有客观闸门就没有成败。
+
+### 4.5 多文件重构缺口（s4 探索场景，3B 模型 FAIL）
+
+在三个场景之外新增了 `s4`（多文件重构）以覆盖原「未覆盖」项，**opt-in**：
+
+```bash
+bash scripts/l3-run-scenarios.sh s4     # 不在默认集合内
+```
+
+任务：`add()` 与 `format_sum()` 同处 `src/lib.rs`，测试从 `l3_s4::math::add`
+引用 → 要求把 `add()` 拆到新文件 `src/math.rs` 并声明模块。判定：`cargo test`
+通过、`math.rs` 存在、`lib.rs` 不再定义 `add`（复制粘贴不算重构）。
+
+本地 `qwen2.5-coder:3b` 在 3 次尝试（不同提示策略）均 FAIL，典型失败形态：
+
+- 规划阶段把 `ReadFile`（动作类型）当作 `verification.type` → 计划解析失败；
+- 闸门修复重写 `src/lib.rs` 时凭空加入 `#[cfg(test)] mod tests;`（仓库里没有
+  `src/tests.rs`）、或把 `format_sum` 的 `format!` 写残；
+- 第一次探索甚至把整个目标换成「新建 Hello World 项目」并覆盖了 `Cargo.toml`。
+
+其中前两项是**产品缺陷**（见 §5.6–§5.8），已修复；最后一项属模型能力边界：
+3B 模型可完成单文件小改动（s1–s3 稳定通过），但多文件重构超出其能力。
+
+本轮任务记录（FAIL）：`runs/s4-exploratory/l3-s4-refactor.json`
+（`initial_verify_passed=false`、`fix_attempts=2`、`duration_ms=51295`），
+原始请求/响应 `runs/s4-exploratory/llm.jsonl`，CLI 输出 `s4-run.log`。
+
+**结论**：s4 目前用作「缺口覆盖 + 缺陷发现器」，不计入通过率；
+MCP 场景仍未覆盖。
 
 ## 5. 过程中发现并修复的缺陷（均来自真实运行）
 
@@ -168,6 +205,47 @@ sisyphus --config /tmp/opencode/l3-ollama.toml dev "创建一个文件 note.txt�
 输出见 `runs/gate-exit-code.log`。该改动晚于 §4 的归档运行；通过路径（闸门 PASS）
 的退出码仍为 0，故归档结果不受影响。
 
+### 5.6 计划重试丢失原始目标
+
+`plan()` 在首次 JSON 解析失败后，只把报错信息发给模型重试，**没有重发目标与
+项目上下文**。实测 3B 模型因此把「把 add 拆到 src/math.rs」重试成「新建
+Hello World 项目」，并且该计划被真正执行 —— 用户仓库的 `Cargo.toml` 被覆盖。
+
+修复：重试 prompt 带上原始 `user_prompt`（目标 + 上下文）、上一次响应片段，
+并显式列出合法的 `verification.type`（模型常把动作类型当验证类型）。
+单测 `plan_retry_keeps_goal_and_context` 断言重试 prompt 仍含目标与上下文标记。
+
+### 5.7 `ComplexChange` 把编辑失败吞成成功
+
+`ComplexChange` 分支对每个编辑失败只记录 `Warning: ...`，最后仍返回
+`StepStatus::Success` —— 上层认为步骤完成，不再修复。与本项目已修的
+「成功标准由模型自选」是同一类缺陷。
+
+修复：任一编辑失败（或分解出 0 条编辑）即返回 `Err`；单测
+`complex_change_edit_failure_is_an_error` 覆盖。
+
+### 5.8 开发失败时 CLI 退出码仍为 0
+
+闸门失败此前已修为非零（§5.5），但「连计划都拿不到」「LLM 不可达」「超时」
+仍走 `eprintln! + Ok(())`，自动化脚本无法感知。修复后实测：
+
+```bash
+# 指向不存在的模型
+sisyphus --config <bad-model> dev "do nothing" --timeout-secs 60
+# ❌ Development failed: ... LLM connect failed ...
+# rc=1
+```
+
+输出见 `runs/dev-exit-code-llm-failure.log`。
+
+### 5.9 闸门修复在看不到当前内容的情况下重写文件
+
+修复 prompt 只注入错误点名的文件；对于「修复时顺手重写另一个已改动文件」
+的情况，模型看不到该文件当前内容，只能凭记忆重建 —— 实测把 `src/lib.rs`
+的 `format_sum` 整段丢掉。修复：`gate_file_context` 现在还会收集
+`git status --porcelain` 里已改动/新增的源文件（最多 4 个，每个 3000 字符），
+并在提示中要求保留不相关代码。
+
 ## 6. 诚实性说明与局限
 
 - **本地 3B 模型**：结果不代表云端大模型能力；`qwen2.5-coder:3b` 在 CPU 上
@@ -178,6 +256,8 @@ sisyphus --config /tmp/opencode/l3-ollama.toml dev "创建一个文件 note.txt�
   调用序号 id，用于归档内关联；**端到端 trace 传播仍属 T4.4 范围**。
 - **样本量**：最终 3 轮 9/9；改动前存在 s2 失败（2/4）。模型输出具随机性，
   该数据不构成通过率保证。
-- 场景工作区是最小 Rust crate，不是 sisyphus 仓库自身的任务；尚未覆盖 MCP /
-  多文件重构 / 长上下文场景。
+- 场景工作区是最小 Rust crate，不是 sisyphus 仓库自身的任务；多文件重构已由
+  s4 探索场景覆盖（3B FAIL，见 §4.5），MCP / 长上下文仍未覆盖。
+- §4 的 9/9 归档来自修复前代码；本轮产品修复后已重跑 s1–s3 = 3/3 PASS
+  （`s1` 122s / `s2` 29s / `s3` 69s），未替换已归档记录。
 - 所有判定均来自外部 `cargo` 命令退出码；CLI 自报状态仅作对照，不作证据。

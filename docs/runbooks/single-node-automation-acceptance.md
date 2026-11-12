@@ -168,6 +168,9 @@ bash scripts/l3-run-scenarios.sh s1 s2 s3   # 诊断修复 / 质量门 / TDD 功
   闸门失败时 CLI 退出码非零，自动修复次数默认 2。
 - LLM 请求/响应/token/耗时/trace 由 `scripts/l3-llm-proxy.py` 归档到工作区 `llm.jsonl`。
 - 归档样例与结果解读：`docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md`。
+- `s4`（多文件重构）为 **opt-in**：`bash scripts/l3-run-scenarios.sh s4`。本地 3B 模型
+  当前无法完成（会返回非零），该场景用于覆盖缺口与发现缺陷，不计入默认通过率；
+  详见证据文档 §4.5。
 
 **阻塞记录（环境缺失时）**：明确缺失的 LLM/凭据/MCP/工具；保留请求与响应证据；以 `BLOCKED` 标注 L3，不替代 L2 结论。
 

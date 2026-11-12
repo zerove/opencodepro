@@ -4,6 +4,9 @@
 *~
 .DS_Store
 *.log
+# 验收证据目录里的 *.log 是归档证据（失败输出/退出码），
+# 不能被通用 *.log 规则静默丢掉 —— 证据文档引用过一份从未入库的日志。
+!docs/benchmarks/acceptance/**/*.log
 tmp/
 .omo/
 

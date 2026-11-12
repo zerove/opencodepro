@@ -67,6 +67,61 @@ async fn test_plan_parsing() {
 }
 
 #[tokio::test]
+async fn plan_retry_keeps_goal_and_context() {
+    // 首次响应用了非法的 verification 变体 → 触发重试。
+    // 真实缺陷：旧实现只把报错发给模型，3B 模型因此彻底丢失目标
+    // （实测把「拆 add 到 src/math.rs」重试成「新建 Hello World 项目」）。
+    let invalid = r#"{"goal":"Test Goal","overview":"x","steps":[{"id":1,"description":"d","action":{"type":"ReadFile","params":{"path":"a"}},"expected_outcome":"e","verification":{"type":"ReadFile","params":{"path":"a"}},"status":"Pending"}]}"#;
+    let valid = r#"{"goal":"Test Goal","overview":"x","steps":[{"id":1,"description":"d","action":{"type":"ReadFile","params":{"path":"a"}},"expected_outcome":"e","verification":{"type":"None"},"status":"Pending"}]}"#;
+    let client = Arc::new(SequenceClient::new(&[invalid, valid]));
+    let dev = Developer::new(client.clone());
+
+    let plan = dev.plan("Test Goal", "PROJECT-CONTEXT-MARKER").await.expect("重试后应解析成功");
+    assert_eq!(plan.goal, "Test Goal");
+
+    let prompts = client.prompts.lock().expect("prompts");
+    assert_eq!(prompts.len(), 2, "应恰好重试一次");
+    assert!(
+        prompts[1].contains("Test Goal"),
+        "重试 prompt 丢失目标: {}",
+        prompts[1]
+    );
+    assert!(
+        prompts[1].contains("PROJECT-CONTEXT-MARKER"),
+        "重试 prompt 丢失项目上下文: {}",
+        prompts[1]
+    );
+}
+
+#[tokio::test]
+async fn complex_change_edit_failure_is_an_error() {
+    // 旧实现把编辑失败收进 "Warning" 却返回 Success，上层会跳过修复。
+    let dir = tempdir().unwrap();
+    let missing = dir.path().join("missing.rs");
+    let step = DevStep {
+        id: 1,
+        description: "complex change".to_string(),
+        action: DevAction::ComplexChange {
+            description: "把 a 改成 b".to_string(),
+        },
+        expected_outcome: "edited".to_string(),
+        verification: VerificationMethod::None,
+        status: StepStatus::Pending,
+    };
+    let edit_json = format!(
+        r#"[{{"path":"{}","old_string":"a","new_string":"b"}}]"#,
+        missing.display()
+    );
+    let dev = Developer::new(Arc::new(SequenceClient::new(&[&edit_json])));
+
+    let err = dev.execute_step(&step).await.expect_err("编辑失败必须报错");
+    assert!(
+        err.contains("failed to apply"),
+        "错误信息应说明失败原因: {err}"
+    );
+}
+
+#[tokio::test]
 async fn test_execute_step_create_file() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("test_dev.txt");

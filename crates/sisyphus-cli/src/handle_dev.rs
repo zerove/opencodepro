@@ -87,9 +87,13 @@ pub(crate) async fn handle_dev(
         },
         Ok(Err(e)) => {
             eprintln!("❌ Development failed: {e:#}");
+            // 自动化脚本以退出码判断成败：规划/执行失败同样必须是非零。
+            // （闸门失败已单独 bail；这里覆盖「连计划都拿不到」的路径。）
+            anyhow::bail!("development failed: {e:#}");
         },
         Err(_) => {
             eprintln!("❌ Development timed out after {timeout_secs}s.");
+            anyhow::bail!("development timed out after {timeout_secs}s");
         },
     }
     Ok(())

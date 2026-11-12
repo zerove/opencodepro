@@ -1,0 +1,5 @@
+🧠 Sisyphus developer agent
+Goal: do nothing
+
+❌ Development failed: Internal system error: LLM connect failed for no-such-model:1b at http://127.0.0.1:11500/v1/chat/completions (endpoint unreachable or port not listening)
+Error: development failed: Internal system error: LLM connect failed for no-such-model:1b at http://127.0.0.1:11500/v1/chat/completions (endpoint unreachable or port not listening)

@@ -7,13 +7,19 @@
 #                判定 `cargo clippy -- -D warnings` 通过
 #   s3 功能新增：只有 add() → 要求新增 multiply() + 单元测试，判定 `cargo test`
 #                通过且确实运行了 ≥1 个测试、multiply 存在
+#   s4 多文件重构：add() 与 format_sum() 同处 lib.rs → 要求把 add() 拆到新文件
+#                src/math.rs 并声明模块，判定 `cargo test` 通过、math.rs 存在、
+#                lib.rs 不再定义 add（复制粘贴不算重构）
+#                **opt-in**：不在默认集合内。本地 3B 模型当前无法完成（见
+#                docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md §4.5），
+#                该场景用于覆盖缺口与暴露缺陷，默认跑会返回非零。
 #
 # 依赖：
 #   - 一个 OpenAI 兼容的真实 LLM 端点（默认走本机 ollama）
 #   - 可选：`scripts/l3-llm-proxy.py` 记录请求/响应（T1.4 证据要求）
 #
 # 用法：
-#   ./scripts/l3-run-scenarios.sh [s1] [s2] [s3] [--model M] [--timeout-secs N]
+#   ./scripts/l3-run-scenarios.sh [s1] [s2] [s3] [s4] [--model M] [--timeout-secs N]
 #                               [--upstream URL] [--workdir DIR]
 #
 # 退出码：0 = 所有被选场景判定 PASS；1 = 有场景未通过（属正常结果，需看结论）。
@@ -31,7 +37,7 @@ SCENARIOS=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    s1|s2|s3) SCENARIOS+=("$1"); shift ;;
+    s1|s2|s3|s4) SCENARIOS+=("$1"); shift ;;
     --model) MODEL="$2"; shift 2 ;;
     --timeout-secs) TIMEOUT_SECS="$2"; shift 2 ;;
     --upstream) UPSTREAM="$2"; shift 2 ;;
@@ -160,6 +166,42 @@ fn multiply_works() {
 RS
 }
 
+reset_s4() {
+  local d="$WORKDIR/s4"
+  rm -rf "$d"; mkdir -p "$d/src" "$d/tests"
+  cat > "$d/Cargo.toml" <<'TOML'
+[package]
+name = "l3-s4"
+version = "0.1.0"
+edition = "2021"
+TOML
+  # 被测函数与调用方同处 lib.rs；测试从 `l3_s4::math::add` 引用尚未存在的模块。
+  # 测试放独立文件，避免「删测试」绕过闸门。
+  cat > "$d/src/lib.rs" <<'RS'
+pub fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+pub fn format_sum(a: i32, b: i32) -> String {
+    format!("sum={}", add(a, b))
+}
+RS
+  cat > "$d/tests/api.rs" <<'RS'
+use l3_s4::format_sum;
+use l3_s4::math::add;
+
+#[test]
+fn add_works() {
+    assert_eq!(add(2, 3), 5);
+}
+
+#[test]
+fn format_works() {
+    assert_eq!(format_sum(1, 2), "sum=3");
+}
+RS
+}
+
 # 记录基线：闸门修复会读取 git diff 判断「这一步改了什么」。
 git_baseline() {
   local d="$1"
@@ -189,6 +231,19 @@ judge_s3() {
   printf '%s' "$out" | grep -qE "test result: ok\. [1-9][0-9]* passed"
 }
 
+judge_s4() {
+  local d="$WORKDIR/s4"
+  # 1) 新文件存在且确实承载 add
+  [ -f "$d/src/math.rs" ] || return 1
+  grep -qE "(pub +)?fn +add" "$d/src/math.rs" || return 1
+  # 2) lib.rs 不再定义 add（复制一份到新文件不算重构）
+  if grep -qE "^ *(pub +)?fn +add" "$d/src/lib.rs"; then return 1; fi
+  # 3) 测试真实通过，且两个用例都跑到
+  local out
+  out="$( cd "$d" && env -u RUSTUP_TOOLCHAIN cargo test 2>&1 )" || return 1
+  printf '%s' "$out" | grep -qE "test result: ok\. [2-9][0-9]* passed"
+}
+
 run_case() {
   local tag="$1"; shift
   local dir="$WORKDIR/$tag"
@@ -201,6 +256,7 @@ run_case() {
     s1) scenario="diagnose-fix" ;;
     s2) scenario="quality-gate" ;;
     s3) scenario="feature" ;;
+    s4) scenario="refactor" ;;
     *) scenario="$tag" ;;
   esac
   local record="$RECORDS_DIR/l3-$tag-$scenario.json"
@@ -289,6 +345,34 @@ fn multiply_works() {
     assert_eq!(multiply(-2, 5), -10);
 }
 multiply 未定义 → cargo test 编译失败。请在 src/lib.rs 实现 pub fn multiply(a: i32, b: i32) -> i32。" "cargo test"
+      ;;
+    s4)
+      reset_s4
+      git_baseline "$WORKDIR/s4"
+      run_case s4 "把 src/lib.rs 中的 add 拆分到新文件 src/math.rs，同时保持 cargo test 通过" \
+"项目**已存在**（Cargo.toml / src/lib.rs / tests/api.rs 都已就绪），不要新建或修改 Cargo.toml。
+src/lib.rs 当前内容：
+pub fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+pub fn format_sum(a: i32, b: i32) -> String {
+    format!(\"sum={}\", add(a, b))
+}
+tests/api.rs 已存在（不要修改它），它从 l3_s4::math::add 引用 add → 当前 cargo test 编译失败。
+目标最终形态（两个文件各写一次，不要改 Cargo.toml 与 tests/api.rs）：
+src/math.rs:
+pub fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+src/lib.rs:
+pub mod math;
+
+pub use math::add;
+
+pub fn format_sum(a: i32, b: i32) -> String {
+    format!(\"sum={}\", add(a, b))
+}" "cargo test"
       ;;
   esac
 done

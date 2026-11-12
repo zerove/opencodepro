@@ -178,9 +178,12 @@ Return ONLY the JSON object."#;
         match serde_json::from_str::<DevelopmentPlan>(&response) {
             Ok(plan) => Ok(plan),
             Err(e) => {
-                // Retry once with error context
+                // 重试必须带上**原始任务**：只发报错信息时，弱模型会彻底丢失目标
+                // （实测 3B 模型把「拆 add 到 src/math.rs」重试成「新建 Hello World 项目」，
+                // 并真的执行了那个计划，覆盖掉用户仓库的 Cargo.toml）。
                 let corrective_prompt = format!(
-                    "Your previous response was not valid JSON for DevelopmentPlan. Error: {e}. Please try again and ensure the JSON structure is exactly as requested."
+                    "{user_prompt}\n\n---\nYour previous response was not valid JSON for DevelopmentPlan.\nError: {e}\nPrevious response (truncated): {}\n\nFix ONLY the schema error. `verification.type` must be exactly one of: CargoCheck, CargoTest, LspDiagnostics, Command, LlmReview, None. Action types (CreateFile / EditFile / RunCommand / ReadFile / ComplexChange) are NOT verification types.\nReturn ONLY the corrected JSON object for the SAME goal and project context above.",
+                    truncate_chars(&response, 800)
                 );
                 let response = self
                     .llm
@@ -241,7 +244,13 @@ Return ONLY the JSON object."#;
                     .map_err(|e| e.to_string())?;
                 let edits = parse_edit_requests(&response)?;
 
+                if edits.is_empty() {
+                    return Err("complex change produced no edits".to_string());
+                }
+                // 编辑失败不能吞成 warning + Success：上层会把「没改成」当成
+                // 已完成并跳过修复（与「成功标准由模型自选」是同一类缺陷）。
                 let mut summary = Vec::new();
+                let mut failures = Vec::new();
                 for edit in edits {
                     match sisyphus_tools_system::file::edit(
                         Path::new(&edit.path),
@@ -249,11 +258,16 @@ Return ONLY the JSON object."#;
                         &edit.new_string,
                     ) {
                         Ok(()) => summary.push(format!("Applied edit to {}", edit.path)),
-                        Err(e) => summary.push(format!(
-                            "Warning: failed to apply edit to {}: {}",
-                            edit.path, e
-                        )),
+                        Err(e) => failures.push(format!("{}: {e}", edit.path)),
                     }
+                }
+                if !failures.is_empty() {
+                    return Err(format!(
+                        "failed to apply {}/{} edit(s): {}",
+                        failures.len(),
+                        summary.len() + failures.len(),
+                        failures.join("; ")
+                    ));
                 }
                 summary.join("\n")
             },
@@ -767,11 +781,48 @@ fn gate_change_diff() -> String {
     }
 }
 
+/// 工作区里已改动或新增的文件（`git status --porcelain`）。
+///
+/// 修复环节最常重写的就是这些文件；若不把它们的**当前内容**给模型，弱模型
+/// 会凭记忆「重建」整份文件并丢掉不相关的代码。实测：3B 模型重写 `src/lib.rs`
+/// 时丢掉 `format_sum`，闸门因此永远无法通过。
+fn changed_paths() -> Vec<String> {
+    let out = sisyphus_tools_core::process::run_command_blocking(
+        "git",
+        ["status", "--porcelain", "--", "."],
+        sisyphus_tools_core::process::CommandOpts::default(),
+    );
+    let Ok(out) = out else {
+        return Vec::new();
+    };
+    if out.exit_code != 0 {
+        return Vec::new();
+    }
+
+    let mut paths = Vec::new();
+    for line in out.stdout.lines() {
+        // porcelain 格式：`XY path` 或 `XY old -> new`
+        let Some(raw) = line.get(3..) else { continue };
+        let path = raw.rsplit(" -> ").next().unwrap_or(raw).trim().trim_matches('"');
+        if !(path.ends_with(".rs") || path.ends_with(".toml")) {
+            continue;
+        }
+        if !std::path::Path::new(path).is_file() {
+            continue;
+        }
+        if !paths.iter().any(|p| p == path) {
+            paths.push(path.to_string());
+        }
+    }
+    paths
+}
+
 /// 从（clippy/rustc 的）验证输出里提取被点名的源文件并读回内容。
 ///
 /// 弱模型在修复环节没有工具可用，只能靠 prompt 里的上下文；只给错误行不够，
 /// 它需要看到 `old_string` 要匹配的真实文本。这里按 `--> src/lib.rs:2:8`
-/// 之类的形式收集路径（也接受裸路径），最多 3 个文件。
+/// 之类的形式收集路径（也接受裸路径），再补上工作区已改动/新增的文件
+/// （重写这些文件时同样需要看到当前内容），合计最多 4 个文件。
 fn gate_file_context(output: &str) -> String {
     let mut paths: Vec<String> = Vec::new();
     for token in output.split_whitespace() {
@@ -793,17 +844,27 @@ fn gate_file_context(output: &str) -> String {
             break;
         }
     }
+    for path in changed_paths() {
+        if paths.len() >= 4 {
+            break;
+        }
+        if !paths.iter().any(|p| p == &path) {
+            paths.push(path);
+        }
+    }
 
     if paths.is_empty() {
         return String::new();
     }
 
-    let mut ctx = String::from("Current file contents (old_string must match exactly):\n");
+    let mut ctx = String::from(
+        "Current file contents (preserve unrelated code; old_string must match exactly):\n",
+    );
     for p in &paths {
         if let Ok(content) = std::fs::read_to_string(p) {
             ctx.push_str(&format!(
                 "--- {p} ---\n{}\n",
-                truncate_chars(&content, 4000)
+                truncate_chars(&content, 3000)
             ));
         }
     }

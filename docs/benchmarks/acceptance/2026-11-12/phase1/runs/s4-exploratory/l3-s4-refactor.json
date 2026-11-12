@@ -1,0 +1,11 @@
+{
+  "task_id": "l3-s4-refactor",
+  "scenario": "refactor",
+  "status": "fail",
+  "initial_verify_passed": false,
+  "final_verify_passed": false,
+  "fix_attempts": 2,
+  "regressed": false,
+  "duration_ms": 51295,
+  "recorded_at": "2026-11-12T03:09:00.687984401+00:00"
+}
