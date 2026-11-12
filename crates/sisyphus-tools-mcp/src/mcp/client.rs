@@ -510,4 +510,106 @@ mod tests {
         client.initialize("test", "0.1").await.unwrap();
         assert_eq!(client.server_info().unwrap().name, "test-server");
     }
+
+    #[tokio::test]
+    async fn test_list_resources() {
+        let transport = MockTransport::new(vec![
+            mock_initialize_response_for_notification(),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "resources": [
+                        { "uri": "memo://a", "name": "a", "description": "A", "mimeType": "text/plain" },
+                        { "uri": "memo://b", "name": "b" }
+                    ]
+                }
+            })
+            .to_string(),
+        ]);
+        let mut client = McpClient::new(Box::new(transport));
+        client.initialize("test", "0.1").await.unwrap();
+        let result = client.list_resources().await.unwrap();
+        assert_eq!(result.resources.len(), 2);
+        assert_eq!(result.resources[0].uri, "memo://a");
+        assert_eq!(result.resources[0].name, "a");
+        assert!(result.resource_templates.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_read_resource() {
+        let transport = MockTransport::new(vec![
+            mock_initialize_response_for_notification(),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "contents": [
+                        { "uri": "memo://a", "mimeType": "text/plain", "text": "hello" }
+                    ]
+                }
+            })
+            .to_string(),
+        ]);
+        let mut client = McpClient::new(Box::new(transport));
+        client.initialize("test", "0.1").await.unwrap();
+        let result = client.read_resource("memo://a").await.unwrap();
+        assert_eq!(result.contents.len(), 1);
+        assert_eq!(result.contents[0].uri, "memo://a");
+        assert_eq!(result.contents[0].text.as_deref(), Some("hello"));
+    }
+
+    #[tokio::test]
+    async fn test_list_prompts() {
+        let transport = MockTransport::new(vec![
+            mock_initialize_response_for_notification(),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "prompts": [
+                        {
+                            "name": "greet",
+                            "description": "hi",
+                            "arguments": [{ "name": "name", "required": true }]
+                        },
+                        { "name": "plain" }
+                    ]
+                }
+            })
+            .to_string(),
+        ]);
+        let mut client = McpClient::new(Box::new(transport));
+        client.initialize("test", "0.1").await.unwrap();
+        let result = client.list_prompts().await.unwrap();
+        assert_eq!(result.prompts.len(), 2);
+        assert_eq!(result.prompts[0].name, "greet");
+        assert_eq!(result.prompts[0].arguments.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_prompt() {
+        let transport = MockTransport::new(vec![
+            mock_initialize_response_for_notification(),
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "description": "greeting",
+                    "messages": [
+                        { "role": "user", "content": { "type": "text", "text": "Say hi" } }
+                    ]
+                }
+            })
+            .to_string(),
+        ]);
+        let mut client = McpClient::new(Box::new(transport));
+        client.initialize("test", "0.1").await.unwrap();
+        let mut args = std::collections::BTreeMap::new();
+        args.insert("name".to_string(), "Sisyphus".to_string());
+        let result = client.get_prompt("greet", Some(args)).await.unwrap();
+        assert_eq!(result.description.as_deref(), Some("greeting"));
+        assert_eq!(result.messages.len(), 1);
+        assert_eq!(result.messages[0].role, "user");
+    }
 }
