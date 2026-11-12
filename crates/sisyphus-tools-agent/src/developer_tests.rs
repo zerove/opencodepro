@@ -413,6 +413,7 @@ async fn final_verification_passes_when_command_succeeds() {
     assert_eq!(report.overall_status, DevOverallStatus::Success);
     let gate = report.final_verification.expect("应记录闸门结果");
     assert!(gate.passed, "`true` 应判定通过");
+    assert!(gate.initial_passed, "一次就过时首轮应为通过");
     assert_eq!(gate.fix_attempts, 0);
 }
 
@@ -466,6 +467,7 @@ async fn final_verification_fix_attempt_closes_the_loop() {
 
     let gate = report.final_verification.expect("应记录闸门结果");
     assert!(gate.passed, "修复后闸门应通过，输出: {}", gate.output);
+    assert!(!gate.initial_passed, "首轮失败应被记录，供修复率统计");
     assert_eq!(gate.fix_attempts, 1);
     assert_eq!(std::fs::read_to_string(&marker).unwrap(), "good");
     // 修复步骤进入报告，便于审计

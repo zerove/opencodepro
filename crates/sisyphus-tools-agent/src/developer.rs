@@ -422,6 +422,7 @@ Return ONLY the JSON object."#;
     ) -> Option<FinalVerification> {
         let command = self.final_verification.clone()?;
         let mut fix_attempts = 0usize;
+        let mut initial_passed: Option<bool> = None;
 
         loop {
             let (passed, output) = match Self::run_verification_output(&command) {
@@ -430,10 +431,14 @@ Return ONLY the JSON object."#;
                 // 但绝不能当成通过 —— 否则闸门形同虚设。
                 Err(e) => (false, format!("failed to run `{command}`: {e}")),
             };
+            if initial_passed.is_none() {
+                initial_passed = Some(passed);
+            }
 
             if passed || fix_attempts >= self.final_fix_attempts {
                 return Some(FinalVerification {
                     command,
+                    initial_passed: initial_passed.unwrap_or(passed),
                     passed,
                     fix_attempts,
                     output: truncate_chars(&output, 4000),

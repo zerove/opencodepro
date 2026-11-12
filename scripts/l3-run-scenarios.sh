@@ -26,6 +26,7 @@ MODEL="qwen2.5-coder:3b"
 UPSTREAM="http://127.0.0.1:11434/v1/chat/completions"
 TIMEOUT_SECS=900
 WORKDIR="${TMPDIR:-/tmp}/opencode/l3"
+RECORDS_DIR=""
 SCENARIOS=()
 
 while [ $# -gt 0 ]; do
@@ -35,6 +36,7 @@ while [ $# -gt 0 ]; do
     --timeout-secs) TIMEOUT_SECS="$2"; shift 2 ;;
     --upstream) UPSTREAM="$2"; shift 2 ;;
     --workdir) WORKDIR="$2"; shift 2 ;;
+    --records-dir) RECORDS_DIR="$2"; shift 2 ;;
     --cli) CLI="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -42,6 +44,8 @@ done
 [ ${#SCENARIOS[@]} -eq 0 ] && SCENARIOS=(s1 s2 s3)
 
 mkdir -p "$WORKDIR"
+RECORDS_DIR="${RECORDS_DIR:-$WORKDIR/records}"
+mkdir -p "$RECORDS_DIR"
 LOG="$WORKDIR/llm.jsonl"
 PROXY_PORT="${PROXY_PORT:-11500}"
 PROXY_PID=""
@@ -192,6 +196,14 @@ run_case() {
   local ctx="$1"; shift
   local verify="$1"; shift
   local log="$WORKDIR/$tag-run.log"
+  local scenario
+  case "$tag" in
+    s1) scenario="diagnose-fix" ;;
+    s2) scenario="quality-gate" ;;
+    s3) scenario="feature" ;;
+    *) scenario="$tag" ;;
+  esac
+  local record="$RECORDS_DIR/l3-$tag-$scenario.json"
 
   echo "──────── $tag ────────"
   echo "goal: $goal"
@@ -203,7 +215,7 @@ run_case() {
   ( cd "$dir" && local start; start=$(date +%s); \
     timeout $((TIMEOUT_SECS + 60)) "$CLI" --config "$CFG" dev "$goal" \
       --context "$ctx" --timeout-secs "$TIMEOUT_SECS" \
-      --verify-cmd "$verify" >"$log" 2>&1; \
+      --verify-cmd "$verify" --record "$record" --scenario "$scenario" >"$log" 2>&1; \
     echo "rc=$?" >"$WORKDIR/$tag.rc"; \
     echo $(( $(date +%s) - start )) >"$WORKDIR/$tag.elapsed" )
 
@@ -226,6 +238,7 @@ echo "cli:      $CLI"
 echo "model:    $MODEL"
 echo "upstream: $UPSTREAM (recorded via proxy :$PROXY_PORT)"
 echo "workdir:  $WORKDIR"
+echo "records:  $RECORDS_DIR"
 echo "timeout:  ${TIMEOUT_SECS}s"
 echo
 
@@ -290,6 +303,7 @@ for r in "${RESULTS[@]}"; do
 done
 echo "PASS=$PASS FAIL=$FAIL"
 echo "llm records: $LOG ($(wc -l < "$LOG") calls)"
+echo "task records: $RECORDS_DIR"
 
 {
   echo "# T1.4 L3 scenario run"

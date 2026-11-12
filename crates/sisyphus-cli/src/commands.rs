@@ -307,6 +307,13 @@ pub enum Commands {
         ///验收命令失败后的自动修复尝试次数（0 = 只判定不修复，默认 2）
         #[arg(long = "verify-fix-attempts", default_value_t = 2)]
         verify_fix_attempts: usize,
+        ///把本次闭环落成一条任务级质量记录（T4.1）；必须同时指定 --verify-cmd。
+        ///闸门失败也会落记录（失败样本是成功率的分母）
+        #[arg(long = "record")]
+        record: Option<std::path::PathBuf>,
+        ///任务记录的场景标签（默认 dev-closed-loop）
+        #[arg(long = "scenario", default_value = "dev-closed-loop")]
+        scenario: String,
     },
 }
 

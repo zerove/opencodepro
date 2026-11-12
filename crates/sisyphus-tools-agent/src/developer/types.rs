@@ -102,6 +102,11 @@ pub enum DevOverallStatus {
 pub struct FinalVerification {
     /// 用户给定的验收命令。
     pub command: String,
+    /// **首轮**运行是否通过（`fix_attempts == 0` 时等价于 `passed`）。
+    ///
+    /// T4.1 的质量指标需要区分「一次就过」与「修复后通过」，
+    /// 仅凭最终结果无法计算修复率。
+    pub initial_passed: bool,
     /// 最后一次运行是否通过。
     pub passed: bool,
     /// 已消耗的自动修复尝试次数（0 表示一次就过）。

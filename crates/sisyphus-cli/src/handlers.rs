@@ -299,6 +299,8 @@ pub async fn dispatch(
             timeout_secs,
             verify_cmd,
             verify_fix_attempts,
+            record,
+            scenario,
         } => {
             handle_dev::handle_dev(
                 goal,
@@ -308,6 +310,8 @@ pub async fn dispatch(
                 *timeout_secs,
                 verify_cmd,
                 *verify_fix_attempts,
+                record,
+                scenario,
                 sisyphus_cfg,
             )
             .await?
