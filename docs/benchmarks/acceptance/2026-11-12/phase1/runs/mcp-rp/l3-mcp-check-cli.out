@@ -1,0 +1,26 @@
+cli:     /home/zeron/dev/opencodepro/target/debug/sisyphus
+server:  /home/zeron/dev/opencodepro/scripts/l3-mcp-server.py
+
+PASS  mcp info 握手并列出 3 个工具
+PASS  mcp info 工具名 sum
+PASS  mcp info 工具名 word_count
+PASS  mcp call sum(2,3) = 5
+PASS  mcp call word_count = 3
+PASS  mcp call 参数缺失返回 isError
+PASS  mcp resources 列出 2 个资源
+PASS  mcp resources 包含 status
+PASS  mcp read-resource 返回文本内容
+PASS  mcp prompts 列出 greet
+PASS  mcp prompts 列出 summary
+PASS  mcp get-prompt 返回渲染消息
+PASS  自家 MCP server 可被协议客户端读取工具列表
+PASS  自家 MCP server 工具名 metis_analyse
+PASS  HTTP 传输握手并列出 3 个工具
+PASS  HTTP 传输 mcp call sum(20,22) = 42
+PASS  HTTP 传输参数缺失返回 isError
+PASS  HTTP 传输列出资源 memo://welcome
+PASS  HTTP 传输读取资源内容
+PASS  HTTP 传输列出 prompts
+PASS  HTTP 传输 get-prompt 渲染
+
+PASS=21 FAIL=0（--cli-only，跳过引擎级检查）
