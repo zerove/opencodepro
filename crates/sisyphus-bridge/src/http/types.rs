@@ -896,3 +896,18 @@ impl RestApiState {
         self
     }
 }
+
+#[derive(Deserialize)]
+/// Mcp Read Resource Query.
+pub struct McpReadResourceQuery {
+    pub server: String,
+    pub uri: String,
+}
+
+#[derive(Deserialize)]
+/// Mcp Get Prompt Request.
+pub struct McpGetPromptRequest {
+    pub server: String,
+    pub name: String,
+    pub arguments: Option<std::collections::BTreeMap<String, String>>,
+}

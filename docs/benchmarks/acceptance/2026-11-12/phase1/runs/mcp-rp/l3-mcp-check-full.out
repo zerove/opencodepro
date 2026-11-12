@@ -33,5 +33,9 @@ PASS  引擎 /api/mcp/resources 含 memo://welcome
 PASS  引擎 /api/mcp/resources 含 l3http 服务资源
 PASS  引擎 /api/mcp/prompts 含 greet
 PASS  引擎 /api/mcp/prompts 含 l3http
+PASS  引擎代理 resources/read 返回资源内容
+PASS  引擎代理 resources/read（HTTP MCP）返回状态
+PASS  引擎代理 prompts/get 返回渲染消息
+PASS  引擎代理 prompts/get（HTTP MCP）返回摘要提示
 
-PASS=32 FAIL=0
+PASS=36 FAIL=0

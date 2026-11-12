@@ -9,8 +9,9 @@
 #                 校验握手、工具列表与调用、资源列表与读取、提示列表与获取
 #                 （stdio 与 HTTP 两种传输各跑一遍）
 #   级别 2（引擎）：启动 bridge（同时挂 stdio 与 HTTP 两个 MCP 服务器），校验
-#                   /api/tools 出现 MCP 工具并可执行，同时校验 /api/mcp/resources 与
-#                   /api/mcp/prompts 返回启动时发现的资源/提示快照
+#                   /api/tools 出现 MCP 工具并可执行；校验 /api/mcp/resources 与
+#                   /api/mcp/prompts 返回启动快照，并经 /api/mcp/resources/read、
+#                   /api/mcp/prompts/get 代理按需读取/获取
 #
 # 用法：
 #   ./scripts/l3-mcp-check.sh [--cli-only] [--bridge-bin PATH]
@@ -221,6 +222,21 @@ else
   mcp_prompts_out="$(curl -sf --max-time 10 "$BASE/api/mcp/prompts" 2>&1)"
   check "引擎 /api/mcp/prompts 含 greet" '"greet"' "$mcp_prompts_out"
   check "引擎 /api/mcp/prompts 含 l3http" '"server_prefix":"l3http"' "$mcp_prompts_out"
+
+  mcp_read_out="$(curl -sf --max-time 15 -G "$BASE/api/mcp/resources/read" \
+    --data-urlencode 'server=l3' --data-urlencode 'uri=memo://welcome' 2>&1)"
+  check "引擎代理 resources/read 返回资源内容" 'hello from mcp resource' "$mcp_read_out"
+  mcp_read_http_out="$(curl -sf --max-time 15 -G "$BASE/api/mcp/resources/read" \
+    --data-urlencode 'server=l3http' --data-urlencode 'uri=memo://status' 2>&1)"
+  check "引擎代理 resources/read（HTTP MCP）返回状态" 'status: ok' "$mcp_read_http_out"
+  mcp_get_prompt_out="$(curl -sf --max-time 15 -X POST "$BASE/api/mcp/prompts/get" \
+    -H 'content-type: application/json' \
+    -d '{"server":"l3","name":"greet","arguments":{"name":"Bridge"}}' 2>&1)"
+  check "引擎代理 prompts/get 返回渲染消息" 'Say hello to Bridge' "$mcp_get_prompt_out"
+  mcp_get_prompt_http_out="$(curl -sf --max-time 15 -X POST "$BASE/api/mcp/prompts/get" \
+    -H 'content-type: application/json' \
+    -d '{"server":"l3http","name":"summary","arguments":{}}' 2>&1)"
+  check "引擎代理 prompts/get（HTTP MCP）返回摘要提示" 'Summarize the context.' "$mcp_get_prompt_http_out"
 fi
 
 echo

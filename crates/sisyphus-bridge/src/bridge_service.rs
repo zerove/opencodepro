@@ -106,6 +106,8 @@ pub struct MySisyphusBridge {
     pub(crate) control_plane_tls_wired: bool,
     /// MCP 服务器 resources/prompts 快照（启动时采集，按 server prefix 聚合）。
     pub(crate) mcp_catalog: Arc<Vec<McpServerCatalog>>,
+    /// MCP 执行器按 prefix 索引（用于按需 resources/read、prompts/get 代理）。
+    pub(crate) mcp_executors: Arc<std::collections::HashMap<String, Arc<MCPToolExecutor>>>,
 }
 
 impl Clone for MySisyphusBridge {
@@ -144,6 +146,7 @@ impl Clone for MySisyphusBridge {
             control_plane_state: self.control_plane_state.clone(),
             control_plane_tls_wired: self.control_plane_tls_wired,
             mcp_catalog: self.mcp_catalog.clone(),
+            mcp_executors: self.mcp_executors.clone(),
         }
     }
 }
@@ -494,6 +497,8 @@ impl MySisyphusBridge {
         // Collect MCP tool/resource/prompt info for agent registration and catalog
         let mut mcp_servers: Vec<(String, String, Vec<McpTool>)> = Vec::new();
         let mut mcp_catalog: Vec<McpServerCatalog> = Vec::new();
+        let mut mcp_executors: std::collections::HashMap<String, Arc<MCPToolExecutor>> =
+            std::collections::HashMap::new();
 
         // Optional MCP executors
         for (prefix, command_line) in &stdio_servers {
@@ -506,6 +511,7 @@ impl MySisyphusBridge {
             let args: Vec<&str> = parts[1..].to_vec();
             match MCPToolExecutor::from_stdio(cmd, &args).await {
                 Ok(mcp) => {
+                    let mcp = Arc::new(mcp);
                     let tools = mcp.list_tools().await.unwrap_or_default();
                     let (resources, resource_templates) = match mcp.list_resources().await {
                         Ok(r) => (r.resources, r.resource_templates),
@@ -529,7 +535,8 @@ impl MySisyphusBridge {
                         prompts,
                     });
                     mcp_servers.push((prefix.clone(), command_line.clone(), tools));
-                    router.register(prefix, Arc::new(mcp));
+                    mcp_executors.insert(prefix.clone(), mcp.clone());
+                    router.register(prefix, mcp);
                 },
                 Err(e) => {
                     warn!("Failed to start MCP server for prefix '{prefix}': {e}");
@@ -539,6 +546,7 @@ impl MySisyphusBridge {
         for (prefix, url) in &http_servers {
             match MCPToolExecutor::from_url(url).await {
                 Ok(mcp) => {
+                    let mcp = Arc::new(mcp);
                     let tools = mcp.list_tools().await.unwrap_or_default();
                     let (resources, resource_templates) = match mcp.list_resources().await {
                         Ok(r) => (r.resources, r.resource_templates),
@@ -562,7 +570,8 @@ impl MySisyphusBridge {
                         prompts,
                     });
                     mcp_servers.push((prefix.clone(), url.to_string(), tools));
-                    router.register(prefix, Arc::new(mcp));
+                    mcp_executors.insert(prefix.clone(), mcp.clone());
+                    router.register(prefix, mcp);
                 },
                 Err(e) => {
                     warn!("Failed to connect MCP server for '{prefix}' at {url}: {e}");
@@ -874,6 +883,7 @@ impl MySisyphusBridge {
             control_plane_state,
             control_plane_tls_wired,
             mcp_catalog: Arc::new(mcp_catalog),
+            mcp_executors: Arc::new(mcp_executors),
         };
 
         let bridge_arc = Arc::new(bridge);
@@ -948,6 +958,11 @@ impl MySisyphusBridge {
     }
     pub(crate) fn mcp_catalog(&self) -> &Arc<Vec<McpServerCatalog>> {
         &self.mcp_catalog
+    }
+    pub(crate) fn mcp_executors(
+        &self,
+    ) -> &Arc<std::collections::HashMap<String, Arc<MCPToolExecutor>>> {
+        &self.mcp_executors
     }
     pub(crate) fn skill_loader(&self) -> &Arc<SkillLoader> {
         &self.skill_loader

@@ -70,6 +70,25 @@ impl MCPToolExecutor {
         client.list_prompts().await
     }
 
+    /// Read a resource from the MCP server.
+    pub async fn read_resource(
+        &self,
+        uri: &str,
+    ) -> ToolResult<sisyphus_tools_mcp::mcp::ReadResourceResult> {
+        let mut client = self.client.lock().await;
+        client.read_resource(uri).await
+    }
+
+    /// Get a prompt from the MCP server.
+    pub async fn get_prompt(
+        &self,
+        name: &str,
+        arguments: Option<std::collections::BTreeMap<String, String>>,
+    ) -> ToolResult<sisyphus_tools_mcp::mcp::GetPromptResult> {
+        let mut client = self.client.lock().await;
+        client.get_prompt(name, arguments).await
+    }
+
     /// Close the underlying transport.
     pub async fn close(&self) -> ToolResult<()> {
         let mut client = self.client.lock().await;

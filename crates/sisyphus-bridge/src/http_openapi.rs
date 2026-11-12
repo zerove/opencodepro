@@ -288,6 +288,33 @@ fn build_document() -> Result<serde_json::Value, String> {
                     }
                 }
             },
+            "/api/mcp/resources/read": {
+                "get": {
+                    "summary": "Read an MCP resource on demand via a connected server",
+                    "operationId": "mcpReadResource",
+                    "parameters": [
+                        {"name": "server", "in": "query", "required": true, "schema": {"type": "string"}},
+                        {"name": "uri", "in": "query", "required": true, "schema": {"type": "string"}}
+                    ],
+                    "responses": {
+                        "200": {"description": "Resource contents", "content": {"application/json": {"schema": {"type": "object"}}}},
+                        "404": {"description": "MCP server not found"},
+                        "502": {"description": "MCP server/protocol error"}
+                    }
+                }
+            },
+            "/api/mcp/prompts/get": {
+                "post": {
+                    "summary": "Get an MCP prompt on demand via a connected server",
+                    "operationId": "mcpGetPrompt",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["server", "name"], "properties": {"server": {"type": "string"}, "name": {"type": "string"}, "arguments": {"type": "object"}}}}}},
+                    "responses": {
+                        "200": {"description": "Prompt result", "content": {"application/json": {"schema": {"type": "object"}}}},
+                        "404": {"description": "MCP server not found"},
+                        "502": {"description": "MCP server/protocol error"}
+                    }
+                }
+            },
             "/api/agents": {
                 "get": {
                     "summary": "List registered agents",

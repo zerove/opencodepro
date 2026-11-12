@@ -1591,6 +1591,54 @@ pub(super) async fn list_mcp_prompts_handler(
     (StatusCode::OK, Json(servers))
 }
 
+pub(super) async fn mcp_read_resource_handler(
+    State(state): State<RestApiState>,
+    Query(params): Query<crate::http::types::McpReadResourceQuery>,
+) -> impl IntoResponse {
+    let executors = state.bridge.mcp_executors();
+    let Some(executor) = executors.get(&params.server) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(
+                serde_json::json!({ "error": format!("MCP server not found: {}", params.server) }),
+            ),
+        );
+    };
+    match executor.read_resource(&params.uri).await {
+        Ok(result) => (
+            StatusCode::OK,
+            Json(serde_json::to_value(result).unwrap_or_default()),
+        ),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+pub(super) async fn mcp_get_prompt_handler(
+    State(state): State<RestApiState>,
+    Json(req): Json<crate::http::types::McpGetPromptRequest>,
+) -> impl IntoResponse {
+    let executors = state.bridge.mcp_executors();
+    let Some(executor) = executors.get(&req.server) else {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": format!("MCP server not found: {}", req.server) })),
+        );
+    };
+    match executor.get_prompt(&req.name, req.arguments).await {
+        Ok(result) => (
+            StatusCode::OK,
+            Json(serde_json::to_value(result).unwrap_or_default()),
+        ),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
 pub(super) async fn list_agents_handler(State(state): State<RestApiState>) -> impl IntoResponse {
     let agents = state.bridge.agent_registry().list();
     let entries: Vec<AgentEntry> = agents
