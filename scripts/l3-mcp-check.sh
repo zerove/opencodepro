@@ -78,6 +78,13 @@ check "mcp call word_count = 3" '"text": "3"' "$wc_out"
 err_out="$(timeout 60 "$CLI" mcp call sum '{}' python3 "$SERVER" 2>&1)"
 check "mcp call 参数缺失返回 isError" '"isError": true' "$err_out"
 
+# 客户端 ↔ 自家 MCP server（`sisyphus mcp serve`）：同一套协议的两端。
+# 这里同时守住「自家 server 不得回复 notification」——否则滞留在管道里的响应
+# 会被下一个请求读走，客户端报「list_tools: missing result」。
+self_out="$(timeout 60 "$CLI" mcp info "$CLI" mcp serve 2>&1)"
+check "自家 MCP server 可被协议客户端读取工具列表" "Available tools (" "$self_out"
+check "自家 MCP server 工具名 metis_analyse" "metis_analyse" "$self_out"
+
 # ── 级别 2：引擎（bridge）侧注册与调用 ───────────────────────
 if [ "$CLI_ONLY" -eq 1 ]; then
   echo

@@ -207,7 +207,17 @@ pub async fn run_serve(client: Arc<dyn crate::tools::metis::LlmClient>) -> anyho
             },
         };
 
+        // 通知（没有 id）按 MCP 规范**不得**回复。
+        // 若回复了，这条响应会滞留在管道里，被下一个请求读走 —— 流就此错位
+        // （实测：客户端收到 tools/list 的响应里没有 result，报
+        // 「list_tools: missing result」）。
+        let is_notification = request.id.is_none();
+
         let response = handlers::handle_request(request).await;
+
+        if is_notification {
+            continue;
+        }
 
         let out = serde_json::to_string(&response)?;
         println!("{out}");
