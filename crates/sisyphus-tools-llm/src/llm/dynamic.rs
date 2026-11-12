@@ -41,12 +41,19 @@ pub struct DynamicLlmClient {
 
 impl DynamicLlmClient {
     pub fn new(config: Arc<RwLock<Config>>) -> Self {
-        // Timeouts will be resolved per-call from config, but we need a base
-        // client for the provider registry fallback. Use defaults as fallback.
+        // 连接超时在建 client 时固定（配置在构造前已加载）；**请求超时必须在每次
+        // 调用时按配置下发**。
+        //
+        // 旧实现把 `.timeout(5s)` 钉死在 client 上，而 `chat()` 只是在外层再套一个
+        // `tokio::time::timeout(config.request_timeout_secs)`。两者取小 —— 于是
+        // `request_timeout_secs` 调到 60s 也仍会被 client 的 5s 掐断：本地模型
+        // （ollama 3B 生成 100 token 约 9s）和任何慢速 provider 100% 失败，且调配置
+        // 无法自救。连接阶段仍按配置收紧，避免 DNS/防火墙黑洞。
+        let connect_timeout_secs =
+            config.read().map(|c| c.llm.connect_timeout_secs).unwrap_or(2).max(1);
         // 自定义构建器失败时降级为默认 Client::new()（无失败路径，避免 panic）。
         let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(2))
-            .timeout(Duration::from_secs(5))
+            .connect_timeout(Duration::from_secs(connect_timeout_secs))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         let provider_registry =
@@ -340,6 +347,8 @@ impl LlmClient for DynamicLlmClient {
             request_timeout,
             self.client
                 .post(&endpoint)
+                // 每次调用按当前配置下发请求超时（client 级不再钉死任何请求超时）。
+                .timeout(request_timeout)
                 .header("Authorization", format!("Bearer {api_key}"))
                 .json(&body)
                 .send(),
@@ -350,6 +359,25 @@ impl LlmClient for DynamicLlmClient {
             Ok(Err(e)) => {
                 self.breaker.on_failure(&model);
                 self.trip_fast_fail(&model);
+                // 连接/请求超时与「连不上」是两类不同问题，混在 "HTTP request failed"
+                // 里用户无法判断该改超时还是改端点 —— 这里显式区分。
+                if e.is_timeout() {
+                    // 连接阶段与「已连上但响应慢」是两类问题：前者是端点不可达，
+                    // 调大超时毫无用处；后者才是慢模型/慢网关。混为一谈会把用户
+                    // 引向错误的修复方向。
+                    return Err(sisyphus_types::TypesError::InternalError(
+                        if e.is_connect() {
+                            format!(
+                            "LLM connect failed for {model} at {endpoint} (endpoint unreachable or port not listening)"
+                        )
+                        } else {
+                            format!(
+                            "LLM request timed out after {}s for {model} (raise `request_timeout_secs` for slow/local providers)",
+                            request_timeout.as_secs()
+                        )
+                        },
+                    ));
+                }
                 return Err(sisyphus_types::TypesError::InternalError(format!(
                     "HTTP request failed: {e}"
                 )));
@@ -515,5 +543,38 @@ mod tests {
             err.to_string().contains("fast-fail cooling"),
             "expected fast-fail error, got: {err}"
         );
+    }
+    /// 回归：`request_timeout_secs` 必须真正生效，不能被 client 级硬编码超时钳制。
+    ///
+    /// 旧实现把 `.timeout(5s)` 钉在 reqwest client 上，本用例的慢响应（6s）必然
+    /// 超时；修好后按配置 10s 放行。响应延迟 6s 是刻意越过 5s 的旧硬编码。
+    #[tokio::test]
+    async fn request_timeout_secs_is_not_clamped() {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("绑定回环端口");
+        let addr = listener.local_addr().expect("读取本地地址");
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf);
+                std::thread::sleep(Duration::from_secs(6));
+                let body = r#"{"choices":[{"message":{"content":"PONG"}}]}"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+
+        let mut cfg = Config::default();
+        cfg.llm.endpoint = format!("http://{addr}/v1/chat/completions");
+        cfg.llm.request_timeout_secs = 10;
+        let client = DynamicLlmClient::new(Arc::new(RwLock::new(cfg)));
+
+        let out = client.chat("", "hi", false).await.expect("6s 慢响应应在 10s 超时内成功");
+        assert_eq!(out, "PONG");
     }
 }

@@ -36,16 +36,54 @@ pub enum GithubCommands {
 pub enum ProviderCommands {
     /// 列出配置中注册的所有提供商
     List,
-    /// 用提示词测试指定提供商
+    /// 用提示词对提供商做**真实**连通性调用
     Test {
-        ///要测试的提供商名
-        name: String,
+        ///要测试的提供商名（省略则测试默认端点 `[llm] endpoint/model`）
+        name: Option<String>,
         ///可选提示词（默认："Say hello in one sentence"）
         #[arg(default_value = "Say hello in one sentence")]
         prompt: String,
+        ///覆盖请求超时（秒）；本地/慢速模型需要更长
+        #[arg(long)]
+        timeout_secs: Option<u64>,
     },
     /// 显示提供商回退链顺序
     Fallback,
+    /// 交互式引导接入提供商：选择 → 输入 → 连通性测试 → 写配置
+    Login {
+        ///提供商标识（例如 ollama-local）
+        #[arg(long)]
+        name: Option<String>,
+        ///类型：openai/anthropic/google/groq/mistral/together/openrouter/cohere
+        #[arg(long)]
+        kind: Option<String>,
+        ///模型名
+        #[arg(long)]
+        model: Option<String>,
+        ///API 端点（OpenAI 兼容需以 /v1/chat/completions 结尾）
+        #[arg(long)]
+        endpoint: Option<String>,
+        ///API key；`env:VAR` 形式引用环境变量（推荐）
+        #[arg(long)]
+        api_key: Option<String>,
+        ///非交互模式：缺参数直接报错，不弹提问
+        #[arg(long)]
+        yes: bool,
+        ///只做连通性测试，不写入配置
+        #[arg(long)]
+        dry_run: bool,
+        ///跳过连通性测试直接写入（provider 暂时不可用时使用）
+        #[arg(long)]
+        skip_test: bool,
+        ///连通性测试超时（秒）
+        #[arg(long)]
+        timeout_secs: Option<u64>,
+    },
+    /// 移除已注册的提供商
+    Remove {
+        ///要移除的提供商名
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]

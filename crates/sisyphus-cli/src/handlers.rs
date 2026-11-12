@@ -257,7 +257,9 @@ pub async fn dispatch(
         Commands::Github(sub) => handle_github::handle_github(sub)?,
 
         // ── 提供商 ───────────────────────────────────────
-        Commands::Provider(sub) => handle_provider::handle_provider(sub, sisyphus_cfg)?,
+        Commands::Provider(sub) => {
+            handle_provider::handle_provider(sub, sisyphus_cfg, cli.config.as_deref()).await?
+        },
 
         // ── 工具 ───────────────────────────────────────────
         Commands::Tool(sub) => handle_tool::handle_tool(sub, cli, sisyphus_cfg)?,

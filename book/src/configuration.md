@@ -157,6 +157,12 @@ sample_rate = 1.0
 | `SISYPHUS_LLM_FAST_FAIL_COOLING_SECS` | `llm.fast_fail_cooling_secs` | u64 | `30` |
 | `SISYPHUS_LLM_REQUEST_TIMEOUT_SECS` | `llm.request_timeout_secs` | u64 | `5` |
 | `SISYPHUS_LLM_CONNECT_TIMEOUT_SECS` | `llm.connect_timeout_secs` | u64 | `2` |
+
+> **超时语义**：`llm.request_timeout_secs` 对**默认端点**路径生效（每次请求下发，
+> 不再被 client 级硬编码钳制）；一旦配置了 `[[llm.providers]]`，请求走
+> `ProviderRegistry`，超时由上方 `SISYPHUS_HTTP_*` 控制。
+> 本地模型（如 ollama 3B）单次生成常在 10–30s，必须显式调大
+> （例：`SISYPHUS_LLM_REQUEST_TIMEOUT_SECS=180` 或 `provider test --timeout-secs 180`）。
 | `SISYPHUS_LLM_EMBEDDING_MODEL` | `llm.embedding.model` | string | `"text-embedding-3-small"` |
 | `SISYPHUS_LLM_EMBEDDING_ENDPOINT` | `llm.embedding.endpoint` | string | `None` |
 | `SISYPHUS_LLM_EMBEDDING_PROVIDER` | `llm.embedding.provider` | string | `"dummy"` |
@@ -198,6 +204,36 @@ sample_rate = 1.0
 | `openrouter` | `https://openrouter.ai/api/v1/chat/completions` | `anthropic/claude-3.5-sonnet` | OpenAI 兼容 |
 
 切换生产 provider 只需修改 `config.toml` 的 `[[llm.providers]]` 段。优先级（`priority` 字段）控制 fallback 链顺序——数值越小越优先。
+
+### 交互式接入（`provider login`）
+
+新用户不需要手写 TOML：`provider login` 走「选择 → 输入 → **真实连通性测试** → 写配置」，
+测试失败**不会**落盘。
+
+```bash
+# 交互式（TTY 下逐项提问，API key 建议填 env:VAR）
+sisyphus provider login
+
+# 非交互（CI / 脚本）
+sisyphus provider login \
+  --name ollama-local --kind openai \
+  --endpoint http://127.0.0.1:11434/v1/chat/completions \
+  --model qwen2.5-coder:3b --api-key ollama \
+  --yes --timeout-secs 180
+
+sisyphus provider test ollama-local     # 真实调用，失败给出可执行 hint
+sisyphus provider list                  # 查看 fallback 顺序
+sisyphus provider remove ollama-local
+```
+
+- 写入前会备份原文件为 `<config>.bak`；`Config::save_to_file` 会**丢失注释**，备份是找回途径。
+- 含明文密钥（非 `env:` 引用）时配置文件权限收紧为 `0600`（备份同样收紧）。
+- `--dry-run` 只测不写；`--skip-test` 在 provider 暂时不可用时强制写入。
+- `provider test` 是**单次尝试**：运行时 fallback 链会对不可达端点做 3 次指数退避，
+  诊断场景需要快速反馈，因此不走重试链。
+- 常见失败的可执行建议：401（密钥无效）/ 403（权限/区域）/ 404（端点或模型不存在）/
+  429（限流）/ 解析失败（`kind` 选错或端点不是 API）/ 连接失败（服务未启动）/
+  响应超时（慢/本地模型需调大超时）。
 
 ### OpenRouter 归因 headers
 

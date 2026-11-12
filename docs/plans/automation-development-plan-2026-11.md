@@ -87,7 +87,7 @@
 | ID | 任务 | 说明 | 验收/证据 | 工作量 |
 |---|---|---|---|---|
 | T3.1 | 自定义开发命令 | `.sisyphus/commands/*.md` 参数化映射到 SOP 模板/技能；CLI/TUI 可发现 | 新增命令文件即可执行；文档 + 单测 | S–M |
-| T3.2 | Provider 交互式引导 | `provider login` 选择→输入→连通性测试→写配置；失败可解释 | 新用户 5 分钟内完成首次真实调用（有凭据环境） | M |
+| T3.2 | Provider 交互式引导 | `provider login` 选择→输入→连通性测试→写配置；失败可解释 | 新用户 5 分钟内完成首次真实调用（有凭据环境；本地真实 provider 已可达成） | M |
 | T3.3 | 启动分段归因与优化 | bridge 就绪分段计时（配置/sqlite/embedding/端口）；TUI 首帧 PTY 测量；按需懒加载 | 分段耗时表 + 优化前后对比；TUI 首帧基线文档 | M |
 | T3.4 | 并行冲突感知（可选） | `team run --strategy parallel` 检测同文件并发编辑，串行化或告警 | 冲突场景产生告警而非静默覆盖 | M–L |
 | T3.4 状态（执行） | DONE | 新增 `crates/sisyphus-tools-agent/src/team/conflict.rs`：`detect_conflicts`（写写 / 读写冲突，写键来源含显式 `write_keys` 与兼容旧 `args["_write_keys"]`）+ `partition_by_write_conflicts`（按写冲突拆执行波次）；调度器在每批就绪任务上检测 → 发 `TeamEvent::ConflictDetected` 告警 + `tracing::warn!` → 冲突任务分波次串行化（波次内仍并行），避免静默覆盖；既有 `TeamContext::detect_write_conflicts` 改为复用新模块。证据：6 个新单测（5 模块级 + 1 调度器级：两任务写同一 key → 产生 1 个 `write_write` 告警且两任务均执行成功）；`cargo test -p sisyphus-tools-agent --lib` 104 passed |
@@ -136,7 +136,7 @@
 
 | 风险 | 影响 | 应对 |
 |---|---|---|
-| LLM/凭据不可用 | T1.4、T3.2 阻塞 | 先做确定性路径（T1.1/T1.2 本地部分）；证据标 `BLOCKED`；环境具备后补跑 |
+| LLM/凭据不可用 | T1.4 阻塞；T3.2 已用本地真实 provider 解阻 | 先做确定性路径（T1.1/T1.2 本地部分）；T3.2 用本地 OpenAI 兼容服务做端到端；仅「云端 provider 首次真实调用」外部后置 |
 | 网络推送失败 | 提交积压 | 本地小批次提交 + 定期重试；必要时生成 `git bundle` 备份 |
 | 长命令/采样被中断 | 性能数据不完整 | 分批采样并标注聚合方式；不伪造连续样本 |
 | 范围膨胀 | 交付延迟 | 每任务必须映射到 §2 差距表；阶段 Exit Criteria 不满足不进入下一阶段 |
@@ -205,7 +205,7 @@
 | T1.4 L3 真实闭环 | BLOCKED | 缺 LLM/凭据/MCP/工具环境，无法产出 `execute/goal` 成功证据；后续在具备环境时补跑并更新证据 |
 | T2.1 TUI 对话式执行 MVP | DONE（脚本化验收） | 四切片落地：S1 `Developer` interrupt + `DevOverallStatus::Cancelled`；S2 `DevApprover` 审批闸；S3 TUI 接缝（`BgOp::DevAsk`/`DevRunHandle`/审批卡片/y·n·Esc 键位/Esc→Resume 恢复入口）；S4 验收测试 `crates/sisyphus-tools-agent/tests/t2_1_mvp_acceptance.rs`（2 次工具调用 / 2 次审批 / 1 次中断 + 恢复）；`sisyphus-cli` 120 单测、`tools-agent` 98 + 1 验收 |
 | T2.2 权限规则与审批审计 | DONE | glob 规则 + 危险默认 `ask` + JSONL 审计 + `permission check/audit`；TUI 审批弹窗补齐（crate 级 broker `crates/sisyphus-cli/src/approval.rs` + `Dialog::ToolApproval` + `shell::exec` Ask 分支接入，审计口径 `asked-approved`/`asked-denied`）；**dev 工具闸已接入同一权限体系**（allow 直接放行 / deny 直接拒绝 / ask 才弹窗，3 个新单测）；5 个新单测 |
-| T3.2 Provider 交互式引导 | BLOCKED | 缺可用 LLM 凭据，无法验证「5 分钟内完成首次真实调用」 |
+| T3.2 Provider 交互式引导 | DONE（本地真实 provider）/ 部分外部后置 | `provider login`（选择→输入→**真实连通性测试**→写配置，失败不落盘）、`provider test`（原为桩实现，现真实调用并对 401/403/404/429/解析失败/连接失败分类给出可执行 hint）、`provider remove`；顺带修复 `request_timeout_secs` 被 client 级 5s 硬编码钳制（配置调大无效，慢/本地模型必然失败）；端到端 12/12 PASS（本机 ollama `qwen2.5-coder:3b` 真实 completion + mock 401/404/HTML/不可达失败路径），证据 `docs/benchmarks/acceptance/2026-11-12/phase3/t3-2-provider-onboarding.md`；**云端 provider 首次真实调用仍未验证**（本机无有效云端凭据） |
 | T3.3 启动分段归因与优化 | DONE | bridge `startup_phase_*_ms` + `scripts/measure-bridge-startup.sh`（end_to_end_ready_ms≈1530ms）；TUI 首帧 PTY 测量 `scripts/measure-tui-first-frame.sh` + `make perf-tui`（p50≈14.3ms）；已接入 nightly workflow |
 | T3.4 并行冲突感知 | DONE | 新增 `team/conflict.rs`：`detect_conflicts`（写写/读写冲突，写键含显式 `write_keys` 与兼容旧 `args["_write_keys"]`）+ `partition_by_write_conflicts`（按写冲突拆波次）；调度器检测 → `TeamEvent::ConflictDetected` 告警 + `tracing::warn!` → 冲突任务串行化（波次内并行）；既有 `TeamContext::detect_write_conflicts` 复用新模块；6 个新单测 |
 | T4.1 质量指标定义与采集 | DONE | 指标模型与聚合链路落地（`sisyphus-metrics::quality` 6 单测、`sisyphus verify --record`、`sisyphus metrics quality`、`scripts/quality-metrics-collect.sh` 接入真实聚合）；**首轮真实数据**：3 个受控 fixture 任务（可自动修复 lint / 不可修复类型错误 / 干净代码）→ 成功率 0.667、修复率 0.5、回归率 0.0、平均 640ms（`docs/benchmarks/quality-metrics/2026-11-11-6f1bcbd-fixture-samples.json`）；同时修正采集脚本两处真实缺陷：端点应为 `/api/metrics`、指标名 `sisyphus_llm_*` 并不存在（实际为 `sisyphus_token_budget_*`）。**已有 1 条真实仓库任务样本**（`records/repo-sisyphus-tools-build.json`：verify PASS，79s）；更多真实样本需 L3 环境（T1.4） |

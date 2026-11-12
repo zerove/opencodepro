@@ -736,6 +736,11 @@ eval-check:
 eval-ci:
 	./scripts/evals-ci-run.sh
 
+# — T3.2 provider 引导端到端验收（真实 provider + mock 失败路径） —
+# 默认打本机 ollama；用 LLM_ENDPOINT/LLM_MODEL 指向其它 OpenAI 兼容服务。
+provider-acceptance:
+	./scripts/t3-2-provider-onboarding.sh
+
 clean:
 	cargo clean
 
