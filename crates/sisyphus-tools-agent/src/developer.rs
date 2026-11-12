@@ -202,8 +202,23 @@ Return ONLY the JSON object."#;
     pub async fn execute_step(&self, step: &DevStep) -> Result<StepResult, String> {
         let output = match &step.action {
             DevAction::CreateFile { path, content } => {
+                // 覆盖已有文件不是错误（弱模型经常用 CreateFile 表达「整文件重写」，
+                // 精确 Edit 对它们太难），但必须**如实标注**：静默覆盖会毁掉用户
+                // 仓库里的文件（实测模型把 Cargo.toml 覆盖成了 hello_world 项目）。
+                let existed = std::path::Path::new(path).is_file();
+                let previous_len = if existed {
+                    std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
+                } else {
+                    0
+                };
                 sisyphus_tools_system::file::write(Path::new(path), content)
-                    .map(|()| format!("Created file: {path}"))
+                    .map(|()| {
+                        if existed {
+                            format!("Overwrote existing file: {path} (was {previous_len} bytes)")
+                        } else {
+                            format!("Created file: {path}")
+                        }
+                    })
                     .map_err(|e| e.to_string())?
             },
             DevAction::EditFile {

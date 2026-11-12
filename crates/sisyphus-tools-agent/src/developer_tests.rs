@@ -146,6 +146,45 @@ async fn test_execute_step_create_file() {
     assert_eq!(result.status, StepStatus::Success);
     assert!(path.exists());
     assert_eq!(std::fs::read_to_string(path).unwrap(), "hello dev");
+    assert!(
+        result.output.contains("Created file"),
+        "新建应如实标注: {}",
+        result.output
+    );
+}
+
+#[tokio::test]
+async fn create_file_reports_overwrite_of_existing_file() {
+    // 覆盖已有文件必须如实标注（实测模型把用户的 Cargo.toml 覆盖成了
+    // 另一个项目，静默覆盖让人完全看不出发生了什么）。
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("Cargo.toml");
+    std::fs::write(&path, "[package]\nname = \"real\"\n").unwrap();
+
+    let step = DevStep {
+        id: 1,
+        description: "Create file".to_string(),
+        action: DevAction::CreateFile {
+            path: path.to_string_lossy().to_string(),
+            content: "[package]\nname = \"hello_world\"\n".to_string(),
+        },
+        expected_outcome: "File exists".to_string(),
+        verification: VerificationMethod::None,
+        status: StepStatus::Pending,
+    };
+
+    let dev = Developer::new(Arc::new(DummyLlmClient));
+    let result = dev.execute_step(&step).await.unwrap();
+    assert_eq!(result.status, StepStatus::Success);
+    assert!(
+        result.output.contains("Overwrote existing file"),
+        "覆盖已有文件必须标注: {}",
+        result.output
+    );
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "[package]\nname = \"hello_world\"\n"
+    );
 }
 
 #[tokio::test]
