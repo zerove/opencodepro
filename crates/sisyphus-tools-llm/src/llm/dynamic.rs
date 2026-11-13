@@ -874,4 +874,41 @@ mod tests {
         );
         assert!(DynamicLlmClient::current_scope_usage_snapshot().is_none());
     }
+
+    #[tokio::test]
+    async fn scope_usage_isolates_concurrent_scopes() {
+        let ep1 = mock_server_once(
+            r#"{"model":"m","choices":[{"message":{"content":"a"}}],"usage":{"prompt_tokens":10,"completion_tokens":1}}"#,
+        );
+        let ep2 = mock_server_once(
+            r#"{"model":"m","choices":[{"message":{"content":"b"}}],"usage":{"prompt_tokens":20,"completion_tokens":2}}"#,
+        );
+        let mut cfg1 = Config::default();
+        cfg1.llm.endpoint = ep1;
+        let mut cfg2 = Config::default();
+        cfg2.llm.endpoint = ep2;
+        let c1 = Arc::new(DynamicLlmClient::new(Arc::new(RwLock::new(cfg1))));
+        let c2 = Arc::new(DynamicLlmClient::new(Arc::new(RwLock::new(cfg2))));
+        let c1a = c1.clone();
+        let c2a = c2.clone();
+
+        let f1 = DynamicLlmClient::scope_usage(async move { c1a.chat("", "hi", false).await });
+        let f2 = DynamicLlmClient::scope_usage(async move { c2a.chat("", "hi", false).await });
+        let ((r1, u1), (r2, u2)) = tokio::join!(f1, f2);
+        r1.expect("mock1 ok");
+        r2.expect("mock2 ok");
+
+        let u1 = u1.expect("scope1 usage");
+        let u2 = u2.expect("scope2 usage");
+        assert_eq!(u1.prompt_tokens, 10);
+        assert_eq!(u1.completion_tokens, 1);
+        assert_eq!(u2.prompt_tokens, 20);
+        assert_eq!(u2.completion_tokens, 2);
+
+        // 各自全局累计仅反映自身调用（独立 client 实例）
+        let g1 = c1.token_usage().expect("g1");
+        let g2 = c2.token_usage().expect("g2");
+        assert_eq!(g1.prompt_tokens, 10);
+        assert_eq!(g2.prompt_tokens, 20);
+    }
 }

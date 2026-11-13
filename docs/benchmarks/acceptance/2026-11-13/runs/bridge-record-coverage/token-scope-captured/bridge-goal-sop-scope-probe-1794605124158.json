@@ -1,0 +1,15 @@
+{
+  "task_id": "bridge-goal-sop-scope-probe-1794605124158",
+  "scenario": "bridge-goal-execute",
+  "status": "fail",
+  "initial_verify_passed": false,
+  "final_verify_passed": false,
+  "fix_attempts": 0,
+  "regressed": false,
+  "duration_ms": 178999,
+  "prompt_tokens": 515,
+  "completion_tokens": 479,
+  "engine_commit": "33c36f1ffb5a",
+  "engine_dirty": true,
+  "recorded_at": "2026-11-13T21:25:24.158647172+00:00"
+}

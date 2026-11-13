@@ -116,6 +116,7 @@
    - 风险/成本：client/registry/连接池生命周期与配置热更新需梳理；可能增加资源开销与改造面。
 
 **实现进展（2026-11-13，方案 1 最小增量）**：
-- `sisyphus-tools-llm`：新增 task-local 执行作用域（`EXECUTION_USAGE_SCOPE`），`TokenUsageCounters::record` 同步写入全局累计与当前作用域；提供 `DynamicLlmClient::scope_usage` / `current_scope_usage_snapshot()`；补单测 `scope_usage_captures_reported_tokens_deterministically`、`scope_usage_is_unknown_when_provider_omits_usage`（`cargo test -p sisyphus-tools-llm --lib scope_usage` 2 passed）。
+- `sisyphus-tools-llm`：新增 task-local 执行作用域（`EXECUTION_USAGE_SCOPE`），`TokenUsageCounters::record` 同步写入全局累计与当前作用域；提供 `DynamicLlmClient::scope_usage` / `current_scope_usage_snapshot()`；补单测 `scope_usage_captures_reported_tokens_deterministically`、`scope_usage_is_unknown_when_provider_omits_usage`、`scope_usage_isolates_concurrent_scopes`（`cargo test -p sisyphus-tools-llm --lib scope_usage` 3 passed）。
 - `sisyphus-bridge`：持有可选具体 `DynamicLlmClient`（默认构造路径），新增 `run_with_usage_scope`（scope 优先，回退租约+差值），HTTP/gRPC 记录入口已切换为该路径；`cargo check/clippy -p sisyphus-tools-llm -p sisyphus-bridge`、`cargo test -p sisyphus-bridge --lib quality_record` 6 passed。
-- **限制**：scope 不跨 `tokio::spawn` 自动传播，内核/执行链若在子任务中调用 LLM 仍可能部分不可归因（保持 `null` 或部分计数均按可见上报，不伪造）；并发两执行互不污染单测与 live 对照证据待补。
+- **live 证据（scope 路径）**：HTTP `execute_goal` 独占运行（`33c36f1ffb5a+dirty`，作用域路径）产出 `prompt_tokens=515` / `completion_tokens=479`（`runs/bridge-record-coverage/token-scope-captured/`，失败路径/模型能力边界，归因非 null）。
+- **限制**：scope 不跨 `tokio::spawn` 自动传播，内核/执行链若在子任务中调用 LLM 仍可能部分不可归因（保持 `null` 或部分计数均按可见上报，不伪造）；跨 spawn 传播与更多并发/成功路径 live 对照待补。
