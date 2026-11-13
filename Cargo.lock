@@ -4625,6 +4625,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sisyphus-types",
+ "tempfile",
  "thiserror 1.0.69",
  "tracing",
  "tracing-opentelemetry",

@@ -28,3 +28,4 @@ otel = ["tracing-opentelemetry", "opentelemetry", "opentelemetry-otlp", "opentel
 
 [dev-dependencies]
 proptest = "1.0"
+tempfile = "3"

@@ -6,70 +6,17 @@
 //! 覆盖入口：HTTP `execute_goal` / composite / goal streaming；
 //! gRPC `execute_sop` / `stream_execution`（goal 与 SOP 分支）/ `call_jcode`。
 //!
+//! 引擎版本归因复用 `sisyphus_metrics::engine_revision`（与 CLI 的
+//! `dev --record` / `verify --record` 同一实现），避免两处探测口径分叉。
+//!
 //! 口径见 `docs/plans/bridge-task-record-metrics.md` 与
 //! `docs/plans/single-node-quality-metrics.md`。
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use sisyphus_metrics::engine_revision::{engine_revision, EngineRevision};
 use sisyphus_metrics::quality::{TaskRecord, TaskStatus};
-
-/// 编译时记录的 bridge 源码目录（用于定位引擎 git 版本）。
-const BRIDGE_SOURCE_DIR: &str = env!("CARGO_MANIFEST_DIR");
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct EngineRevision {
-    commit: String,
-    dirty: bool,
-}
-
-fn engine_revision() -> Option<EngineRevision> {
-    let dir = Path::new(BRIDGE_SOURCE_DIR);
-    if !dir.is_dir() {
-        return None;
-    }
-    let commit = git_short_sha(dir)?;
-    Some(EngineRevision {
-        commit,
-        dirty: git_is_dirty(dir),
-    })
-}
-
-fn git_short_sha(dir: &Path) -> Option<String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(dir)
-        .args(["rev-parse", "--short=12", "HEAD"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let sha = String::from_utf8(output.stdout).ok()?;
-    normalize_sha(&sha)
-}
-
-fn git_is_dirty(dir: &Path) -> bool {
-    let Ok(output) =
-        Command::new("git").arg("-C").arg(dir).args(["status", "--porcelain"]).output()
-    else {
-        return true;
-    };
-    if !output.status.success() {
-        return true;
-    }
-    match String::from_utf8(output.stdout) {
-        Ok(status) => !status.trim().is_empty(),
-        Err(_) => true,
-    }
-}
-
-fn normalize_sha(raw: &str) -> Option<String> {
-    let sha = raw.trim();
-    let ok = (7..=40).contains(&sha.len()) && sha.chars().all(|c| c.is_ascii_hexdigit());
-    ok.then(|| sha.to_ascii_lowercase())
-}
 
 /// 记录目录：显式环境变量优先；未设置则不写（opt-in，避免意外写入）。
 pub(crate) fn records_dir() -> Option<PathBuf> {
@@ -284,14 +231,8 @@ mod tests {
         assert_eq!(sanitize_for_filename(&long).len(), 48);
     }
 
-    #[test]
-    fn normalize_sha_accepts_valid() {
-        assert_eq!(
-            normalize_sha("5869d3dbae51\n").as_deref(),
-            Some("5869d3dbae51")
-        );
-        assert_eq!(normalize_sha("bad"), None);
-    }
+    // `normalize_sha` 的边界（非 sha 输出、`-dirty` 后缀、过短）由
+    // `sisyphus-metrics` 的 engine_revision 单测覆盖，bridge 不再重复实现。
 
     #[test]
     fn build_task_id_includes_prefix_and_sanitized_hint() {

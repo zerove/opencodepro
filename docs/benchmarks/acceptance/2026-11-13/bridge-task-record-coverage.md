@@ -1,10 +1,11 @@
-# Bridge TaskRecord 覆盖扩展 E2E 证据（composite / streaming / unary）
+# Bridge TaskRecord 覆盖扩展 E2E 证据（composite / streaming / unary / gRPC）
 
 > 日期：2026-11-13
 > 引擎提交（记录内）：`02ce4abf94aa`，`engine_dirty=true`（运行时工作区含未提交的覆盖扩展改动；记录如实标记，不冒充干净版本）
 > 范围：验证新接线的 bridge 执行入口可产出可聚合 `TaskRecord`：
-> HTTP composite（成功路径）、HTTP goal streaming（失败路径）、HTTP unary goal（失败路径）。
-> gRPC `execute_sop` / `stream_execution` / `call_jcode` 已接线但**未做 live E2E**（环境无 grpcurl / 可用执行目标）。
+> HTTP composite（成功路径）、HTTP goal streaming（失败路径）、HTTP unary goal（失败路径）、
+> gRPC `execute_sop`（失败路径，LLM 能力边界）。
+> gRPC `stream_execution` / `call_jcode` 已接线但**未做 live E2E**（环境无 grpcurl / 可用执行目标）。
 > 另记录一次「本地 LLM 可用但模型能力不足」的 unary 失败样本，证明记录链路在真实执行下仍如实落盘。
 
 ## 环境与步骤
@@ -104,6 +105,40 @@ curl -sS -N --max-time 20 http://127.0.0.1:15493/api/execute/goal/stream-e2e-goa
 
 > 失败样本被保留（失败是成功率分母），不因「想要成功样本」而丢弃。
 
+### 5) gRPC `execute_sop` —— live E2E（失败路径，LLM 能力边界）
+
+环境就绪后，通过 CLI 的 gRPC `execute_sop` 入口（`sisyphus --bridge <addr> sop run <sop>`）调起
+真实 bridge，并先经 REST `POST /api/sops` 保存一个确定性的 `Test` 节点 SOP
+（`grpc_sop_e2e_smoke`，`echo grpc-sop-ok`），随后由 gRPC 执行：
+（执行过程走到 `LLM reflection failed: Failed to parse LLM reflection JSON`，
+属模型能力边界；**记录链路本身照常产出并聚合通过**）
+
+- 结果：`ExecuteSOP RPC failed`，HTTP 500 返回；
+- 落盘记录 `bridge-sop-grpc_sop_e2e_smoke-...-1794538467075.json`（场景
+  `bridge-sop-execute`，`status=fail`，`duration_ms=49784`）；
+  当前引擎版本归因 `engine_commit=44085aef998e`、`engine_dirty=true`；
+- 聚合（该样本）：
+
+```json
+{
+  "total": 1,
+  "passed": 0,
+  "failed": 1,
+  "blocked": 0,
+  "success_rate": 0.0,
+  "fix_rate": 0.0,
+  "regression_rate": null,
+  "mean_duration_ms": 49784.0,
+  "mean_prompt_tokens": null,
+  "mean_completion_tokens": null,
+  "mean_total_tokens": null,
+  "engine_commits": ["44085aef998e+dirty"],
+  "engine_unknown": 0
+}
+```
+
+原始记录与聚合输出归档于 `runs/bridge-record-coverage/grpc-sop/`。
+
 ## 聚合
 
 ```bash
@@ -133,15 +168,15 @@ sisyphus metrics quality --records <tmp>/records --json
 ## 结论与限制
 
 - **结论**：新接线入口在真实 bridge 运行中产出 schema 正确、可被 `sisyphus metrics quality`
-  聚合的记录；composite 成功与 streaming/unary 失败路径均有样本，场景标签可区分。
+  聚合的记录；composite 成功与 streaming/unary/gRPC 失败路径均有样本，场景标签可区分。
 - **`Pass` 语义**：仅表示执行路径完成，**不是**外部客观验收。本次 composite 的合成计划
   实际抓取了 `https://example.com` 的内容 —— 与输入 goal 的意图未必一致；这类执行语义
   由既有合成/执行逻辑决定，本记录只反映其终态。
-- **未覆盖**：gRPC 三个入口未做 live E2E（无 grpcurl、无可用执行目标）；HTTP unary
-  `execute_goal` 的成功路径仍缺（需要能产出合法 SOP JSON 的模型/可用云端凭据）。
-  `qwen2.5-coder:3b` 在有 LLM 的情况下仍因 proposal JSON 解析失败（见上），
+- **未覆盖**：gRPC `stream_execution` / `call_jcode` live E2E；HTTP unary `execute_goal` 的成功
+  路径仍缺（需要能产出合法 SOP JSON 的模型/可用云端凭据）。
+  `qwen2.5-coder:3b` 在有 LLM 的情况下仍因 proposal/reflection JSON 解析失败（见上），
   `gemma4:e4b` 在本机 CPU 上 290s 内无响应，均不足以完成成功路径验收。
 - **token usage** 为 `null`（无可得 provider usage，不伪造 0）。
 - `fix_rate=0.0` 来自“初次失败且最终失败”样本的既有聚合口径；bridge 无自动修复循环，
   该值不可解读为修复能力。
-- 原始记录与聚合输出归档于 `runs/bridge-record-coverage/`。
+- 原始记录与聚合输出归档于 `runs/bridge-record-coverage/`（含 `grpc-sop/` 下 gRPC execute_sop 失败样本与聚合）。

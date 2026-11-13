@@ -131,6 +131,7 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records
 - `docs/plans/automation-development-plan-2026-11.md`（T4.1）
 - `docs/plans/single-node-performance-baseline.md`
 - `crates/sisyphus-metrics/src/quality.rs`（记录模型与聚合）
+- `crates/sisyphus-metrics/src/engine_revision.rs`（引擎版本归因；CLI 与 bridge 共用）
 - `crates/sisyphus-bridge/src/quality_record.rs`（bridge 执行记录落盘）
 - `crates/sisyphus-cli/src/handle_metrics.rs`、`crates/sisyphus-cli/src/handle_verify.rs`
 - `scripts/single-node-bench-sample.sh`

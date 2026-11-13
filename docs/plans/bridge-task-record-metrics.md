@@ -1,6 +1,6 @@
 # Bridge 路径 TaskRecord 落盘与 `metrics quality` 覆盖（最小设计）
 
-> 状态：**已覆盖主要执行入口**（2026-11-13）。HTTP `execute_goal` / composite / goal streaming，以及 gRPC `execute_sop` / `stream_execution`（goal 与非 goal 分支）/ `call_jcode` 均已接线 best-effort 落盘；单测与聚合兼容性验证完成。live E2E 已覆盖 `execute_goal` 失败路径、composite 成功/streaming 失败路径（`docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`、`docs/benchmarks/acceptance/2026-11-13/bridge-task-record-coverage.md`）；`execute_goal` 成功路径、gRPC live E2E 与 token usage 提取待后续。
+> 状态：**已覆盖主要执行入口**（2026-11-13）。HTTP `execute_goal` / composite / goal streaming，以及 gRPC `execute_sop` / `stream_execution`（goal 与非 goal 分支）/ `call_jcode` 均已接线 best-effort 落盘；单测与聚合兼容性验证完成。live E2E 已覆盖 `execute_goal` 失败路径、`composite` 成功 + `goal streaming` 失败 + gRPC `execute_sop` 失败路径（`docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`、`docs/benchmarks/acceptance/2026-11-13/bridge-task-record-coverage.md`）；`execute_goal` 成功路径、`stream_execution`/`call_jcode` live E2E 与 token usage 提取待后续。
 >
 > 背景：`sisyphus dev` / `sisyphus verify` 已可通过 `--record` 产出 `TaskRecord`（`sisyphus-metrics::quality`）并由 `sisyphus metrics quality` 聚合；bridge 侧当前**无 Developer/dev 闭环执行路径**，因此 dev 语义的质量记录无法直接复用。bridge 可观测、可执行的是 **goal/SOP 执行**（HTTP/gRPC/SSE），需要定义与现有指标口径兼容且不伪造语义的最小落盘方案。
 
@@ -64,17 +64,18 @@
 ## 5. 实现步骤（最小可交付）
 
 1. **抽取引擎版本探测 helper**：从 CLI `dev/verify` 记录路径复用或提取到共享位置（避免三处重复且口径漂移）。
-   - **当前进展**：在 `crates/sisyphus-bridge/src/quality_record.rs` 内实现了与 CLI 一致口径的 git 版本探测（`CARGO_MANIFEST_DIR` + short sha + dirty；取不到按未知/保守处理），尚未抽取为跨 crate 共享 helper。
+   - **已完成**：探测逻辑迁移到 `sisyphus-metrics::engine_revision`（`engine_revision()` / `engine_revision_at()` / `EngineRevision`，含 6 个单测：sha 规范化、非 git/不存在目录、dirty 标签、仓库内解析）；`sisyphus-cli::engine_revision` 保留为 re-export 稳定路径，bridge `quality_record` 直接复用同一实现，不再各自探测。
 2. **Bridge 记录写入模块**：新增轻量 writer（依赖 `sisyphus-metrics::quality::TaskRecord`），负责序列化、目录创建、原子写文件、best-effort 错误处理。
    - **已完成（最小）**：`quality_record` 模块实现原子写入与 best-effort 告警；通过 `SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR` 环境变量 opt-in 启用（未设置则不写）。
 3. **接线 `execute_goal_handler`**：计时开始/结束；在成功与失败分支组装记录并调用 writer；补充 `tracing` 字段（`task_id`/`duration_ms`/`status`）便于排查。
    - **已完成**：HTTP `/api/execute/goal` 成功/失败（含响应序列化失败）分支写入 `scenario=bridge-goal-execute` 记录；token usage 当前为 `None`（无可靠来源时不伪造）。
+   - **token usage 评估（未接入）**：bridge 的 `DynamicLlmClient` 只在实例上暴露**累计**计数器，且该实例被所有并发请求共享；内核不产生 per-execution 的 `ExecutionEvent::TokenUsage`。用「执行前后快照相减」在并发下会把别的任务 token 记到本任务上——这比 `null` 更有害，因此保持 `null`，待内核/客户端支持执行级用量后再接入。
    - **已扩展**：同一 writer 现覆盖 HTTP composite（`bridge-composite-execute`）、HTTP/gRPC goal streaming（`bridge-goal-streaming`）、gRPC `execute_sop` 与流式 SOP/工具分支（`bridge-sop-execute`）、gRPC `call_jcode`（`bridge-jcode-execute`）。各入口只做计时与一次落盘调用，不改执行路径。
 4. **配置与开关**：增加最小配置（env/Config 字段二选一，按现有模式）；更新 `config.example.toml` 与 `book/`（若引入 Config 字段）。
    - **当前进展**：采用 env opt-in（`SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR`），未新增 `Config` schema 字段，故未修改 `config.example.toml`/`book/` 配置章节。
 5. **测试**：
    - 单元测试：记录映射（成功/失败/无 token/dirty 归因）与 JSON 往返。
-     - **已完成**：`cargo test -p sisyphus-bridge --lib quality_record` → 5 passed（文件名清洗、sha 规范化、task id 构造、pass/fail 字段映射、原子写入与反序列化）。
+     - **已完成**：`cargo test -p sisyphus-bridge --lib quality_record` → 4 passed（文件名清洗、task id 构造、pass/fail 字段映射、原子写入与反序列化）；sha 解析/非 git 目录/dirty 标签由共享 helper 的 6 个单测覆盖（`cargo test -p sisyphus-metrics --lib engine_revision`）。
    - 聚合兼容性：样本记录可被 `sisyphus metrics quality --records <dir> --json` 正确解析（成功率/耗时/版本归因符合预期，fix/regression 为 `null`）。
    - 集成测试：在可控 bridge 执行路径下断言记录文件生成且 `sisyphus metrics quality` 可聚合（注意 bridge 测试在 CI 的 OOM 约束与 `#[ignore]` 策略，按仓库惯例处理）。
      - **当前进展**：已完成 live bridge `POST /api/execute/goal` 失败路径 E2E（环境无可用 LLM）——产出 `bridge-goal-execute` `TaskRecord` 并经 `sisyphus metrics quality --json` 正确聚合（见 `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`）。
@@ -85,7 +86,7 @@
 ## 6. 风险与开放问题
 
 - **多路径覆盖**：仅接线 HTTP goal 会遗漏 gRPC/composite/streaming；需在后续迭代下沉到共享执行层并补齐验收。
-- **token/usage 来源**：goal 执行报告中 usage 字段形态需确认；不可用时必须保持 `None`。
+- **token/usage 来源**：goal 执行报告中 usage 字段形态需确认；不可用时必须保持 `None`。**已确认当前实现无法可靠取得**：客户端仅暴露跨请求累计计数且被并发共享，内核不产生执行级 usage 事件；详见 §3 步骤 3，保持 `null`。
 - **并发与高频写入**：原子写与唯一文件名可缓解；若执行量增大需考虑轮转/索引（非本次范围）。
 - **语义误读**：`Pass` 不等于外部验收通过；需在 metrics 输出或文档中提示按 `scenario` 区分来源。
 

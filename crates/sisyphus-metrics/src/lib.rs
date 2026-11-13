@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use thiserror::Error;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+pub mod engine_revision;
 pub mod observability;
 pub mod quality;
 
