@@ -583,7 +583,11 @@ pub(super) fn handle_dev_key(key: KeyEvent, app: &mut App) {
                     }
                 };
                 if app.pending_dev.is_none() {
-                    let mut config = sisyphus_types::Config::default();
+                    let mut config = if let Ok(p) = std::env::var("SISYPHUS_CONFIG") {
+                        sisyphus_types::Config::from_file(&p).unwrap_or_default()
+                    } else {
+                        sisyphus_types::Config::default()
+                    };
                     config.apply_env_overrides();
                     app.pending_dev = Some(spawn_dev_agent(
                         config,

@@ -351,6 +351,18 @@ convergence_threshold = 0.15
 # 类型: f64 | 默认: 0.3
 # deviation_weight = 0.3
 
+# ── Dev 开发闭环默认配置 ─────────────────────────────────────
+[dev]
+# `/dev` / `sisyphus dev` 的默认客观验收命令（空字符串=不设置闸门，保持模型自评）
+# 环境变量: SISYPHUS_DEV_VERIFY_CMD
+# 类型: string | 默认: ""
+# verify_cmd = "cargo test -p sisyphus-core"
+
+# 闸门失败后的自动修复次数（>=1 生效；0 表示仅判定不修复）
+# 环境变量: SISYPHUS_DEV_VERIFY_FIX_ATTEMPTS
+# 类型: usize | 默认: 2
+# verify_fix_attempts = 2
+
 # ── DAG 执行器参数 ────────────────────────────────────────
 [executor]
 # 最大并行任务数（JoinSet 并发上限）

@@ -422,11 +422,21 @@ pub fn spawn_dev_agent(
     let interrupt_task = interrupt.clone();
     tokio::spawn(async move {
         let config = std::sync::Arc::new(std::sync::RwLock::new(config));
+        // TUI `/dev`：优先使用 UI 传入值；未提供时回退配置（含 env 覆盖）默认值。
+        let cfg_verify_cmd = config
+            .read()
+            .ok()
+            .map(|c| c.dev.verify_cmd.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let cfg_verify_fix_attempts =
+            config.read().ok().map(|c| c.dev.verify_fix_attempts).filter(|&n| n > 0);
         let llm: std::sync::Arc<dyn crate::tools::metis::LlmClient> =
-            std::sync::Arc::new(crate::tools::llm::DynamicLlmClient::new(config));
-        // TUI `/dev`：优先使用 UI 传入值；未提供时回退环境变量（保持 CLI/env 语义）。
-        let verify_cmd =
-            verify_cmd.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).or_else(|| {
+            std::sync::Arc::new(crate::tools::llm::DynamicLlmClient::new(config.clone()));
+        let verify_cmd = verify_cmd
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or(cfg_verify_cmd)
+            .or_else(|| {
                 std::env::var("SISYPHUS_DEV_VERIFY_CMD")
                     .ok()
                     .map(|s| s.trim().to_string())
@@ -434,6 +444,7 @@ pub fn spawn_dev_agent(
             });
         let verify_fix_attempts = verify_fix_attempts
             .filter(|&n| n > 0)
+            .or(cfg_verify_fix_attempts)
             .or_else(|| {
                 std::env::var("SISYPHUS_DEV_VERIFY_FIX_ATTEMPTS")
                     .ok()

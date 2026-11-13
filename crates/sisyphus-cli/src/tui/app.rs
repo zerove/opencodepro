@@ -662,15 +662,24 @@ impl App {
             dev_context: String::new(),
             dev_parallel: false,
             dev_resume: false,
-            dev_verify_cmd: std::env::var("SISYPHUS_DEV_VERIFY_CMD")
-                .unwrap_or_default()
-                .trim()
-                .to_string(),
-            dev_verify_fix_attempts: std::env::var("SISYPHUS_DEV_VERIFY_FIX_ATTEMPTS")
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| "2".to_string()),
+            dev_verify_cmd: {
+                let mut cfg = if let Ok(p) = std::env::var("SISYPHUS_CONFIG") {
+                    sisyphus_types::Config::from_file(&p).unwrap_or_default()
+                } else {
+                    sisyphus_types::Config::default()
+                };
+                cfg.apply_env_overrides();
+                cfg.dev.verify_cmd.trim().to_string()
+            },
+            dev_verify_fix_attempts: {
+                let mut cfg = if let Ok(p) = std::env::var("SISYPHUS_CONFIG") {
+                    sisyphus_types::Config::from_file(&p).unwrap_or_default()
+                } else {
+                    sisyphus_types::Config::default()
+                };
+                cfg.apply_env_overrides();
+                cfg.dev.verify_fix_attempts.to_string()
+            },
             dev_report: None,
             dev_status: "idle".into(),
             dev_focus: DevFocus::Goal,

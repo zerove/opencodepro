@@ -65,6 +65,10 @@ pub struct Config {
     #[serde(default)]
     pub jwt: JwtConfig,
 
+    /// Development loop defaults (`sisyphus dev` / TUI `/dev`).
+    #[serde(default)]
+    pub dev: DevConfig,
+
     /// Bearer token for gRPC bridge authentication. Empty = no auth.
     #[serde(default)]
     pub auth_token: String,
@@ -134,6 +138,7 @@ impl Default for Config {
             chaos: ChaosConfig::default(),
             cluster: ClusterConfig::default(),
             jwt: JwtConfig::default(),
+            dev: DevConfig::default(),
             auth_token: String::new(),
             bridge_address: default_bridge_address(),
             http_address: default_http_address(),
@@ -219,6 +224,13 @@ impl Config {
         }
         if let Some(v) = env_string("SISYPHUS_JCODE_SOCKET_PATH") {
             self.jcode.socket_path = v;
+        }
+        // dev
+        if let Some(v) = env_string("SISYPHUS_DEV_VERIFY_CMD") {
+            self.dev.verify_cmd = v.trim().to_string();
+        }
+        if let Some(v) = env_usize("SISYPHUS_DEV_VERIFY_FIX_ATTEMPTS") {
+            self.dev.verify_fix_attempts = v;
         }
         if let Some(v) = env_string("SISYPHUS_LLM_API_KEY") {
             self.llm.api_key = v;
@@ -483,6 +495,7 @@ impl Config {
         self.registry.validate()?;
         self.chaos.validate()?;
         self.cluster.validate()?;
+        self.dev.validate()?;
         Ok(())
     }
 

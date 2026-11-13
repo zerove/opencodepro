@@ -619,6 +619,47 @@ impl McpConfig {
     }
 }
 
+// ── DevConfig ───────────────────────────────────────────────────
+
+/// 开发闭环（`sisyphus dev` / TUI `/dev`）默认配置。
+///
+/// 用于提供客观验收闸门的默认值；运行时显式参数/UI 输入优先于配置，
+/// 配置优先于环境变量默认行为由调用方决定（TUI/CLI 通过 `Config` + env 覆盖加载）。
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct DevConfig {
+    /// 客观验收命令（空字符串表示不设置闸门，保持模型自评）。
+    #[serde(default)]
+    pub verify_cmd: String,
+    /// 闸门失败后的自动修复次数（>=1 有效；0 表示仅判定不修复）。
+    #[serde(default = "default_dev_verify_fix_attempts")]
+    pub verify_fix_attempts: usize,
+}
+
+fn default_dev_verify_fix_attempts() -> usize {
+    2
+}
+
+impl Default for DevConfig {
+    fn default() -> Self {
+        Self {
+            verify_cmd: String::new(),
+            verify_fix_attempts: default_dev_verify_fix_attempts(),
+        }
+    }
+}
+
+impl DevConfig {
+    /// 校验 dev 配置。
+    pub fn validate(&self) -> Result<(), TypesError> {
+        if self.verify_fix_attempts > 100 {
+            return Err(TypesError::ConfigValidationError(
+                "dev.verify_fix_attempts must be <= 100".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 // ── ClusterConfig (TODO 8.3.1) ─────────────────────────────────────────────
 
 /// 控制面（强一致操作）门禁配置（ADR-019，条件触发）。

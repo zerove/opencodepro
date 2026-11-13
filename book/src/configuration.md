@@ -380,6 +380,15 @@ fencing/TTL，**超时/不确定=错误，不判定成功**（非 Raft 线性一
 | `submit_auth_mode` | `SISYPHUS_CLUSTER_CONTROL_PLANE_SUBMIT_AUTH_MODE` | string（`none`/`mtls_subject_allowlist`） | `none`；`mtls_subject_allowlist` 基于 peer 证书 subject（`DNS:`/`URI:`/`CN:`/裸值）**fail-closed** 校验，装配要求 wired mTLS + 非空 allowlist |
 | `allowed_submit_subjects` | — | string[] | `[]`（allowlist 模式必填；空则拒绝装配/拒绝请求） |
 
+### `[dev]` 字段
+
+开发闭环（`sisyphus dev` / TUI `/dev`）默认客观验收闸门配置。CLI 显式参数与 TUI UI 输入优先于此处默认值；环境变量通过 `apply_env_overrides()` 覆盖同名字段。
+
+| 字段 | 环境变量 | 类型 | 默认 | 说明 |
+|------|----------|------|------|------|
+| `verify_cmd` | `SISYPHUS_DEV_VERIFY_CMD` | string | `""` | 客观验收命令；空字符串表示不设置闸门（模型自评） |
+| `verify_fix_attempts` | `SISYPHUS_DEV_VERIFY_FIX_ATTEMPTS` | usize（`<= 100`） | `2` | 闸门失败后的自动修复次数；`0` 表示仅判定不修复 |
+
 ### `[cluster.strategy_selection]` 字段（v0.4.0 Phase E，ADR-017 Amendment 3）
 
 执行路径消费集群策略权重的开关。`enabled = false`（默认）时策略提示只依据本地
