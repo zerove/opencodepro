@@ -1,6 +1,6 @@
 # Bridge 路径 TaskRecord 落盘与 `metrics quality` 覆盖（最小设计）
 
-> 状态：**最小实现进行中**（2026-11-13）。已落地 HTTP `execute_goal` 路径的 best-effort 落盘与单测/聚合兼容性验证；尚未覆盖 gRPC/composite/streaming，也未产出 live bridge E2E 记录证据。
+> 状态：**最小实现进行中**（2026-11-13）。已落地 HTTP `execute_goal` 路径的 best-effort 落盘，完成单测与聚合兼容性验证，并产出失败路径 live E2E 记录/聚合证据（`docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`）；成功路径 live 记录、gRPC/composite/streaming 覆盖与 token usage 提取待后续。
 >
 > 背景：`sisyphus dev` / `sisyphus verify` 已可通过 `--record` 产出 `TaskRecord`（`sisyphus-metrics::quality`）并由 `sisyphus metrics quality` 聚合；bridge 侧当前**无 Developer/dev 闭环执行路径**，因此 dev 语义的质量记录无法直接复用。bridge 可观测、可执行的是 **goal/SOP 执行**（HTTP/gRPC/SSE），需要定义与现有指标口径兼容且不伪造语义的最小落盘方案。
 
@@ -74,9 +74,9 @@
      - **已完成**：`cargo test -p sisyphus-bridge --lib quality_record` → 3 passed（文件名清洗、sha 规范化、原子写入与反序列化）。
    - 聚合兼容性：样本记录可被 `sisyphus metrics quality --records <dir> --json` 正确解析（成功率/耗时/版本归因符合预期，fix/regression 为 `null`）。
    - 集成测试：在可控 bridge 执行路径下断言记录文件生成且 `sisyphus metrics quality` 可聚合（注意 bridge 测试在 CI 的 OOM 约束与 `#[ignore]` 策略，按仓库惯例处理）。
-     - **待完成**：live bridge `execute_goal` E2E 记录产出与落盘证据（需可控执行环境/依赖）。
+     - **当前进展**：已完成 live bridge `POST /api/execute/goal` 失败路径 E2E（环境无可用 LLM）——产出 `bridge-goal-execute` `TaskRecord` 并经 `sisyphus metrics quality --json` 正确聚合（见 `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`）；成功路径与更多场景待可控环境补齐。
 6. **文档与证据**：更新 `docs/plans/single-node-quality-metrics.md`、`docs/plans/automation-development-plan-2026-11.md` 状态与边界说明；产出一次真实运行的记录与聚合快照作为证据。
-   - **当前进展**：本设计文档已更新实现状态；其余文档与 live 证据待后续补齐。
+   - **当前进展**：本设计文档与 2026-11-13 E2E 证据已归档；质量指标/自动化计划文档的系统性状态同步与成功路径证据待后续补齐。
 
 ## 6. 风险与开放问题
 
