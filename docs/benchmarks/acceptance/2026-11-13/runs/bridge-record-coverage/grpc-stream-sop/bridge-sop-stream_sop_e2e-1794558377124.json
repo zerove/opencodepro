@@ -1,0 +1,15 @@
+{
+  "task_id": "bridge-sop-stream_sop_e2e-1794558377124",
+  "scenario": "bridge-sop-execute",
+  "status": "fail",
+  "initial_verify_passed": false,
+  "final_verify_passed": false,
+  "fix_attempts": 0,
+  "regressed": false,
+  "duration_ms": 31080,
+  "prompt_tokens": 383,
+  "completion_tokens": 120,
+  "engine_commit": "47ebf1118a49",
+  "engine_dirty": false,
+  "recorded_at": "2026-11-13T08:26:17.124862552+00:00"
+}
