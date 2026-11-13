@@ -176,7 +176,7 @@ sisyphus metrics quality --records <tmp>/records --json
   路径仍缺（需要能产出合法 SOP JSON 的模型/可用云端凭据）。
   `qwen2.5-coder:3b` 在有 LLM 的情况下仍因 proposal/reflection JSON 解析失败（见上），
   `gemma4:e4b` 在本机 CPU 上 290s 内无响应，均不足以完成成功路径验收。
-- **token usage（探测）**：`209e4d2` 后已接线 best-effort 独占租约采集；在 `44085ae`/`209e4d2`（clean）上对 HTTP unary goal 与 gRPC `execute_sop` 各做一次独占 live 探测（本机 ollama `qwen2.5-coder:3b`，执行因模型 proposal/reflection JSON 解析失败），记录 `prompt_tokens/completion_tokens` 仍为 `null`。实现单测覆盖 delta 语义（`cargo test -p sisyphus-bridge --lib quality_record` 6 passed），但本环境未产出可归因的 provider usage 增量，故按口径保持 `null`（未知 ≠ 0）。探测记录归档于 `runs/bridge-record-coverage/token-probe/`。
+- **token usage**：`209e4d2` 后已接线 best-effort 独占租约采集。初次 live 探测（HTTP unary goal / gRPC `execute_sop` / composite，clean build）记录仍为 `null`（归档 `runs/bridge-record-coverage/token-probe/`），但后续对 HTTP `execute_goal` 的独占 live 运行（本机 ollama `qwen2.5-coder:3b`，执行因模型 proposal JSON 解析失败；运行时构建含临时观测日志，故记录标记 `engine_dirty=true`）成功采集并落盘 **prompt_tokens=538 / completion_tokens=427 / total=965**（`calls=2` 的累计差值），聚合 `mean_*_tokens` 正确（`runs/bridge-record-coverage/token-captured/`，`sisyphus metrics quality --json`）。**结论**：机制可在 provider 上报 usage 且租约独占时产出真实增量；无 usage/非独占/无法归因时仍按口径保持 `null`（未知 ≠ 0，不伪造）。(delta 单测 2 项 + quality_record 6 passed)
 - `fix_rate=0.0` 来自“初次失败且最终失败”样本的既有聚合口径；bridge 无自动修复循环，
   该值不可解读为修复能力。
 - 原始记录与聚合输出归档于 `runs/bridge-record-coverage/`（含 `grpc-sop/`、`token-probe/` 等子目录）。
