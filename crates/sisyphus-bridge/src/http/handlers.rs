@@ -337,6 +337,15 @@ pub(super) async fn execute_goal_handler(
         workspace.project_id.or(req.project_id).unwrap_or_else(|| "default".to_string());
     tracing::Span::current().record("project_id", project_id.as_str());
 
+    // best-effort 任务级 token 用量：仅在独占观测租约下采集累计差值；
+    // 并发场景保持 None（未知 ≠ 0），避免把他人用量归因到本任务。
+    let usage_lease = state.bridge.begin_llm_task();
+    let usage_before = if usage_lease {
+        state.bridge.llm_token_usage_snapshot()
+    } else {
+        None
+    };
+
     let result = kernel.execute_goal(&req.goal, &sop_id, &project_id, event_tx, None).await;
 
     // 等待转发器排空。event_tx 已随上面的调用 move 进内核，执行结束时内核
@@ -346,6 +355,14 @@ pub(super) async fn execute_goal_handler(
     if let Some(handle) = event_forwarder {
         let _ = handle.await;
     }
+
+    let (prompt_tokens, completion_tokens) = if usage_lease {
+        let after = state.bridge.llm_token_usage_snapshot();
+        state.bridge.end_llm_task();
+        crate::quality_record::token_usage_delta(usage_before, after)
+    } else {
+        (None, None)
+    };
 
     match result {
         Ok((output, report)) => match serde_json::to_value(GoalExecuteResponse {
@@ -357,8 +374,8 @@ pub(super) async fn execute_goal_handler(
                     &sop_id,
                     true,
                     started_at.elapsed(),
-                    None,
-                    None,
+                    prompt_tokens,
+                    completion_tokens,
                 );
                 (StatusCode::OK, Json(val))
             },
@@ -367,8 +384,8 @@ pub(super) async fn execute_goal_handler(
                     &sop_id,
                     false,
                     started_at.elapsed(),
-                    None,
-                    None,
+                    prompt_tokens,
+                    completion_tokens,
                 );
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -381,8 +398,8 @@ pub(super) async fn execute_goal_handler(
                 &sop_id,
                 false,
                 started_at.elapsed(),
-                None,
-                None,
+                prompt_tokens,
+                completion_tokens,
             );
             let msg = e.to_string();
             let hint = if msg.contains("without any real execution result")
@@ -538,6 +555,12 @@ pub(super) async fn goal_stream_handler(
 
     tokio::spawn(async move {
         let started_at = std::time::Instant::now();
+        let usage_lease = bridge_clone.begin_llm_task();
+        let usage_before = if usage_lease {
+            bridge_clone.llm_token_usage_snapshot()
+        } else {
+            None
+        };
         let result = bridge_clone
             .kernel()
             .execute_goal_streaming(&goal_clone, "stream_task", &pid_clone, Some(tx), None)
@@ -546,7 +569,20 @@ pub(super) async fn goal_stream_handler(
         if let Err(e) = &result {
             tracing::error!(error = %e, "Goal streaming execution failed");
         }
-        crate::quality_record::record_goal_streaming(&goal_clone, passed, started_at.elapsed());
+        let (prompt_tokens, completion_tokens) = if usage_lease {
+            let after = bridge_clone.llm_token_usage_snapshot();
+            bridge_clone.end_llm_task();
+            crate::quality_record::token_usage_delta(usage_before, after)
+        } else {
+            (None, None)
+        };
+        crate::quality_record::record_goal_streaming(
+            &goal_clone,
+            passed,
+            started_at.elapsed(),
+            prompt_tokens,
+            completion_tokens,
+        );
     });
 
     let stream = stream::unfold(rx, |mut rx| async move {
@@ -609,6 +645,12 @@ pub(super) async fn execute_composite_handler(
     let project = project_id.as_deref().unwrap_or("default");
 
     let started_at = std::time::Instant::now();
+    let usage_lease = state.bridge.begin_llm_task();
+    let usage_before = if usage_lease {
+        state.bridge.llm_token_usage_snapshot()
+    } else {
+        None
+    };
     let result = kernel.execute_goals_with_events(&goal_refs, project, event_tx.clone()).await;
 
     // 等待转发器排空，确保执行末尾事件送达（理由同 execute_goal）
@@ -617,12 +659,22 @@ pub(super) async fn execute_composite_handler(
         let _ = handle.await;
     }
 
+    let (prompt_tokens, completion_tokens) = if usage_lease {
+        let after = state.bridge.llm_token_usage_snapshot();
+        state.bridge.end_llm_task();
+        crate::quality_record::token_usage_delta(usage_before, after)
+    } else {
+        (None, None)
+    };
+
     match result {
         Ok(output) => {
             crate::quality_record::record_composite_execution(
                 &composite_sop_id,
                 true,
                 started_at.elapsed(),
+                prompt_tokens,
+                completion_tokens,
             );
             let response = CompositeExecuteResponse {
                 results: output.results.into_iter().map(|(id, (out, _))| (id, out)).collect(),
@@ -644,6 +696,8 @@ pub(super) async fn execute_composite_handler(
                 &composite_sop_id,
                 false,
                 started_at.elapsed(),
+                prompt_tokens,
+                completion_tokens,
             );
             let msg = e.to_string();
             let hint = if msg.contains("without any real execution result")

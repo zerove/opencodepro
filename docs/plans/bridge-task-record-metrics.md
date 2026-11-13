@@ -68,14 +68,14 @@
 2. **Bridge 记录写入模块**：新增轻量 writer（依赖 `sisyphus-metrics::quality::TaskRecord`），负责序列化、目录创建、原子写文件、best-effort 错误处理。
    - **已完成（最小）**：`quality_record` 模块实现原子写入与 best-effort 告警；通过 `SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR` 环境变量 opt-in 启用（未设置则不写）。
 3. **接线 `execute_goal_handler`**：计时开始/结束；在成功与失败分支组装记录并调用 writer；补充 `tracing` 字段（`task_id`/`duration_ms`/`status`）便于排查。
-   - **已完成**：HTTP `/api/execute/goal` 成功/失败（含响应序列化失败）分支写入 `scenario=bridge-goal-execute` 记录；token usage 当前为 `None`（无可靠来源时不伪造）。
-   - **token usage 评估（未接入）**：bridge 的 `DynamicLlmClient` 只在实例上暴露**累计**计数器，且该实例被所有并发请求共享；内核不产生 per-execution 的 `ExecutionEvent::TokenUsage`。用「执行前后快照相减」在并发下会把别的任务 token 记到本任务上——这比 `null` 更有害，因此保持 `null`，待内核/客户端支持执行级用量后再接入。
-   - **已扩展**：同一 writer 现覆盖 HTTP composite（`bridge-composite-execute`）、HTTP/gRPC goal streaming（`bridge-goal-streaming`）、gRPC `execute_sop` 与流式 SOP/工具分支（`bridge-sop-execute`）、gRPC `call_jcode`（`bridge-jcode-execute`）。各入口只做计时与一次落盘调用，不改执行路径。
+   - **已完成**：HTTP `/api/execute/goal` 成功/失败（含响应序列化失败）分支写入 `scenario=bridge-goal-execute` 记录。
+   - **token usage（best-effort，已接入）**：bridge 的 `DynamicLlmClient` 暴露的是**进程累计**计数器且被并发共享；各记录入口在执行前后尝试获取独占观测租约（`begin_llm_task` / `end_llm_task`），仅在租约独占且 provider 上报 usage 时写入饱和差值，否则保持 `null`（未知 ≠ 0）。这避免并发归因污染，但**不保证**在高并发/未走同一租约协议的调用下严格准确；待内核/客户端支持执行级用量后可替换为确定性来源。`token_usage_delta` 辅助函数与单测已覆盖（`None`→`None`、基线未知按 0、饱和差值）。
+   - **已扩展**：同一 writer 现覆盖 HTTP composite（`bridge-composite-execute`）、HTTP/gRPC goal streaming（`bridge-goal-streaming`）、gRPC `execute_sop` 与流式 SOP/工具分支（`bridge-sop-execute`）、gRPC `call_jcode`（`bridge-jcode-execute`）。各入口均接入同一 best-effort token 采集，不改执行路径。
 4. **配置与开关**：增加最小配置（env/Config 字段二选一，按现有模式）；更新 `config.example.toml` 与 `book/`（若引入 Config 字段）。
    - **当前进展**：采用 env opt-in（`SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR`），未新增 `Config` schema 字段，故未修改 `config.example.toml`/`book/` 配置章节。
 5. **测试**：
-   - 单元测试：记录映射（成功/失败/无 token/dirty 归因）与 JSON 往返。
-     - **已完成**：`cargo test -p sisyphus-bridge --lib quality_record` → 4 passed（文件名清洗、task id 构造、pass/fail 字段映射、原子写入与反序列化）；sha 解析/非 git 目录/dirty 标签由共享 helper 的 6 个单测覆盖（`cargo test -p sisyphus-metrics --lib engine_revision`）。
+   - 单元测试：记录映射（成功/失败/无 token/dirty 归因/差值）与 JSON 往返。
+     - **已完成**：`cargo test -p sisyphus-bridge --lib quality_record` → 6 passed（文件名清洗、task id 构造、pass/fail 字段映射、原子写入与反序列化、token delta 2 项）；sha 解析/非 git 目录/dirty 标签由共享 helper 的 6 个单测覆盖（`cargo test -p sisyphus-metrics --lib engine_revision`）。
    - 聚合兼容性：样本记录可被 `sisyphus metrics quality --records <dir> --json` 正确解析（成功率/耗时/版本归因符合预期，fix/regression 为 `null`）。
    - 集成测试：在可控 bridge 执行路径下断言记录文件生成且 `sisyphus metrics quality` 可聚合（注意 bridge 测试在 CI 的 OOM 约束与 `#[ignore]` 策略，按仓库惯例处理）。
      - **当前进展**：已完成 live bridge `POST /api/execute/goal` 失败路径 E2E（环境无可用 LLM）——产出 `bridge-goal-execute` `TaskRecord` 并经 `sisyphus metrics quality --json` 正确聚合（见 `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`）。
@@ -86,7 +86,7 @@
 ## 6. 风险与开放问题
 
 - **多路径覆盖**：仅接线 HTTP goal 会遗漏 gRPC/composite/streaming；需在后续迭代下沉到共享执行层并补齐验收。
-- **token/usage 来源**：goal 执行报告中 usage 字段形态需确认；不可用时必须保持 `None`。**已确认当前实现无法可靠取得**：客户端仅暴露跨请求累计计数且被并发共享，内核不产生执行级 usage 事件；详见 §3 步骤 3，保持 `null`。
+- **token/usage 来源**：**已实现 best-effort 采集**（独占租约 + 累计差值，见 §3 步骤 3）：provider 上报且租约独占时可产出真实增量；并发/无 usage 时仍为 `None`（不伪造 0）。执行级确定性来源仍待内核/客户端支持。
 - **并发与高频写入**：原子写与唯一文件名可缓解；若执行量增大需考虑轮转/索引（非本次范围）。
 - **语义误读**：`Pass` 不等于外部验收通过；需在 metrics 输出或文档中提示按 `scenario` 区分来源。
 

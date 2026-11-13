@@ -63,20 +63,44 @@ impl MySisyphusBridge {
 
         let (result_str, _final_id) = {
             let started_at = std::time::Instant::now();
+            let usage_lease = self.begin_llm_task();
+            let usage_before = if usage_lease {
+                self.llm_token_usage_snapshot()
+            } else {
+                None
+            };
             match self.run_execution(sop_id.clone(), &project_id, None).await {
                 Ok(v) => {
+                    let (prompt_tokens, completion_tokens) = if usage_lease {
+                        let after = self.llm_token_usage_snapshot();
+                        self.end_llm_task();
+                        crate::quality_record::token_usage_delta(usage_before, after)
+                    } else {
+                        (None, None)
+                    };
                     crate::quality_record::record_sop_execution(
                         &sop_id,
                         true,
                         started_at.elapsed(),
+                        prompt_tokens,
+                        completion_tokens,
                     );
                     v
                 },
                 Err(e) => {
+                    let (prompt_tokens, completion_tokens) = if usage_lease {
+                        let after = self.llm_token_usage_snapshot();
+                        self.end_llm_task();
+                        crate::quality_record::token_usage_delta(usage_before, after)
+                    } else {
+                        (None, None)
+                    };
                     crate::quality_record::record_sop_execution(
                         &sop_id,
                         false,
                         started_at.elapsed(),
+                        prompt_tokens,
+                        completion_tokens,
                     );
                     return Err(e);
                 },
@@ -242,9 +266,16 @@ impl MySisyphusBridge {
 
         let kernel = self.kernel.clone();
         let default_fuel = self.default_fuel;
+        let bridge = self.clone();
 
         tokio::spawn(async move {
             let project_id = project_id.clone();
+            let usage_lease = bridge.begin_llm_task();
+            let usage_before = if usage_lease {
+                bridge.llm_token_usage_snapshot()
+            } else {
+                None
+            };
             if let Some(goal) = sop_id.strip_prefix("goal:") {
                 let synthesized_sop_id = format!("synth_{}", goal);
                 let started_at = std::time::Instant::now();
@@ -257,10 +288,19 @@ impl MySisyphusBridge {
                         None,
                     )
                     .await;
+                let (prompt_tokens, completion_tokens) = if usage_lease {
+                    let after = bridge.llm_token_usage_snapshot();
+                    bridge.end_llm_task();
+                    crate::quality_record::token_usage_delta(usage_before, after)
+                } else {
+                    (None, None)
+                };
                 crate::quality_record::record_goal_streaming(
                     goal,
                     result.is_ok(),
                     started_at.elapsed(),
+                    prompt_tokens,
+                    completion_tokens,
                 );
                 let _result: Result<(String, String), String> =
                     result.map_err(|e| e.to_string()).map(|(r, report)| {
@@ -290,20 +330,38 @@ impl MySisyphusBridge {
                 };
                 let start_node = graph.graph.node_indices().next();
                 if start_node.is_none() {
+                    let (prompt_tokens, completion_tokens) = if usage_lease {
+                        let after = bridge.llm_token_usage_snapshot();
+                        bridge.end_llm_task();
+                        crate::quality_record::token_usage_delta(usage_before, after)
+                    } else {
+                        (None, None)
+                    };
                     crate::quality_record::record_sop_execution(
                         &sop_id,
                         false,
                         started_at.elapsed(),
+                        prompt_tokens,
+                        completion_tokens,
                     );
                     return;
                 }
                 let result = kernel
                     .execute_with_cognition(graph, &sop_id, Some(&project_id), None, Some(tx), None)
                     .await;
+                let (prompt_tokens, completion_tokens) = if usage_lease {
+                    let after = bridge.llm_token_usage_snapshot();
+                    bridge.end_llm_task();
+                    crate::quality_record::token_usage_delta(usage_before, after)
+                } else {
+                    (None, None)
+                };
                 crate::quality_record::record_sop_execution(
                     &sop_id,
                     result.is_ok(),
                     started_at.elapsed(),
+                    prompt_tokens,
+                    completion_tokens,
                 );
                 let _result: Result<(String, String), String> =
                     result.map_err(|e| e.to_string()).map(|(r, report, _)| {
@@ -603,12 +661,27 @@ impl MySisyphusBridge {
         // We use a unique sop_id for each jcode call to avoid collisions
         let sop_id = format!("jcode_{}", task_id);
         let started_at = std::time::Instant::now();
+        let usage_lease = self.begin_llm_task();
+        let usage_before = if usage_lease {
+            self.llm_token_usage_snapshot()
+        } else {
+            None
+        };
         let result =
             self.kernel.execute_goal(&goal, &sop_id, &project_id, None, Some(&context)).await;
+        let (prompt_tokens, completion_tokens) = if usage_lease {
+            let after = self.llm_token_usage_snapshot();
+            self.end_llm_task();
+            crate::quality_record::token_usage_delta(usage_before, after)
+        } else {
+            (None, None)
+        };
         crate::quality_record::record_jcode_execution(
             &task_id,
             result.is_ok(),
             started_at.elapsed(),
+            prompt_tokens,
+            completion_tokens,
         );
 
         match result {

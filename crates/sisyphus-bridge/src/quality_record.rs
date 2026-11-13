@@ -157,54 +157,78 @@ pub(crate) fn record_goal_execution(
 }
 
 /// HTTP `POST /api/execute/composite`：以请求级 composite id 归属。
-pub(crate) fn record_composite_execution(composite_id: &str, passed: bool, duration: Duration) {
+pub(crate) fn record_composite_execution(
+    composite_id: &str,
+    passed: bool,
+    duration: Duration,
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
+) {
     record_execution(
         "bridge-composite",
         "bridge-composite-execute",
         composite_id,
         passed,
         duration,
-        None,
-        None,
+        prompt_tokens,
+        completion_tokens,
     );
 }
 
 /// goal 流式执行（HTTP SSE / gRPC server-streaming）。
-pub(crate) fn record_goal_streaming(id_hint: &str, passed: bool, duration: Duration) {
+pub(crate) fn record_goal_streaming(
+    id_hint: &str,
+    passed: bool,
+    duration: Duration,
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
+) {
     record_execution(
         "bridge-goal-stream",
         "bridge-goal-streaming",
         id_hint,
         passed,
         duration,
-        None,
-        None,
+        prompt_tokens,
+        completion_tokens,
     );
 }
 
 /// 直接 SOP/工具执行（HTTP/gRPC `execute_sop`、gRPC stream 的非 goal 分支）。
-pub(crate) fn record_sop_execution(sop_id: &str, passed: bool, duration: Duration) {
+pub(crate) fn record_sop_execution(
+    sop_id: &str,
+    passed: bool,
+    duration: Duration,
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
+) {
     record_execution(
         "bridge-sop",
         "bridge-sop-execute",
         sop_id,
         passed,
         duration,
-        None,
-        None,
+        prompt_tokens,
+        completion_tokens,
     );
 }
 
 /// gRPC `call_jcode` 的 goal 执行。
-pub(crate) fn record_jcode_execution(task_id: &str, passed: bool, duration: Duration) {
+pub(crate) fn record_jcode_execution(
+    task_id: &str,
+    passed: bool,
+    duration: Duration,
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
+) {
     record_execution(
         "bridge-jcode",
         "bridge-jcode-execute",
         task_id,
         passed,
         duration,
-        None,
-        None,
+        prompt_tokens,
+        completion_tokens,
     );
 }
 
@@ -217,6 +241,27 @@ fn write_record(dir: &Path, task_id: &str, record: &TaskRecord) -> std::io::Resu
     std::fs::write(&tmp, json)?;
     std::fs::rename(tmp, path)?;
     Ok(())
+}
+
+/// 计算任务级 token 用量增量（best-effort）。
+///
+/// `before`/`after` 为 LLM 客户端累计快照；仅在调用方已确认「观测窗口内无并发
+/// 归因冲突」时才有意义（见 `MySisyphusBridge::begin_llm_task`）。
+/// - `after == None` → provider 未上报 usage，返回 `(None, None)`（未知 ≠ 0）
+/// - `before == None` → 视作累计基线为 0（客户端在无记录时返回 `None`）
+/// - 正常情况返回饱和差值
+pub(crate) fn token_usage_delta(
+    before: Option<sisyphus_types::LlmTokenUsage>,
+    after: Option<sisyphus_types::LlmTokenUsage>,
+) -> (Option<u64>, Option<u64>) {
+    let Some(after) = after else {
+        return (None, None);
+    };
+    let before = before.unwrap_or_default();
+    (
+        Some(after.prompt_tokens.saturating_sub(before.prompt_tokens)),
+        Some(after.completion_tokens.saturating_sub(before.completion_tokens)),
+    )
 }
 
 #[cfg(test)]
@@ -318,5 +363,45 @@ mod tests {
         assert_eq!(parsed.status, TaskStatus::Pass);
         assert_eq!(parsed.fix_attempts, 0);
         assert!(!parsed.regressed);
+    }
+
+    #[test]
+    fn token_usage_delta_returns_none_when_provider_omits_usage() {
+        assert_eq!(token_usage_delta(None, None), (None, None));
+        assert_eq!(
+            token_usage_delta(
+                Some(sisyphus_types::LlmTokenUsage {
+                    prompt_tokens: 10,
+                    completion_tokens: 5,
+                    calls: 1,
+                }),
+                None
+            ),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn token_usage_delta_computes_saturating_difference() {
+        let before = Some(sisyphus_types::LlmTokenUsage {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            calls: 2,
+        });
+        let after = Some(sisyphus_types::LlmTokenUsage {
+            prompt_tokens: 160,
+            completion_tokens: 35,
+            calls: 3,
+        });
+        assert_eq!(token_usage_delta(before, after), (Some(60), Some(15)));
+        // 基线未知（首次观测前客户端未上报）时按 0 计
+        assert_eq!(token_usage_delta(None, after), (Some(160), Some(35)));
+        // 防御性饱和：after 小于 before 不应下溢
+        let weird_after = Some(sisyphus_types::LlmTokenUsage {
+            prompt_tokens: 50,
+            completion_tokens: 10,
+            calls: 3,
+        });
+        assert_eq!(token_usage_delta(before, weird_after), (Some(0), Some(0)));
     }
 }

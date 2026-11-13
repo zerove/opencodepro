@@ -3,7 +3,7 @@ use crate::jcode_caller::DebugSocketToolCaller;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -76,6 +76,9 @@ pub struct MySisyphusBridge {
     pub(crate) experience_bank: Arc<sisyphus_mem::experience_bank::VectorExperienceBank>,
     pub(crate) skill_loader: Arc<SkillLoader>,
     pub(crate) llm_client: Arc<dyn LlmClient>,
+    /// LLM 任务级用量互斥计数：独占任务（`begin_llm_task` 返回 true）时可
+    /// 对同一任务采集 before/after usage 增量；并发任务返回 false，保持 `None`。
+    pub(crate) llm_in_flight: Arc<AtomicUsize>,
     pub(crate) plugin_manager: Arc<dyn PluginManagerTrait>,
     pub(crate) jcode_caller: Arc<dyn JcodeToolCaller>,
     pub(crate) chaos_runner: Arc<sisyphus_core::ChaosRunner>,
@@ -131,6 +134,7 @@ impl Clone for MySisyphusBridge {
             experience_bank: self.experience_bank.clone(),
             skill_loader: self.skill_loader.clone(),
             llm_client: self.llm_client.clone(),
+            llm_in_flight: self.llm_in_flight.clone(),
             plugin_manager: self.plugin_manager.clone(),
             jcode_caller: self.jcode_caller.clone(),
             chaos_runner: self.chaos_runner.clone(),
@@ -856,6 +860,7 @@ impl MySisyphusBridge {
             experience_bank,
             skill_loader: Arc::new(loader),
             llm_client: llm_client_for_bridge,
+            llm_in_flight: Arc::new(AtomicUsize::new(0)),
             consensus,
             event_bus: tokio::sync::broadcast::channel(1024).0,
             plugin_manager,
@@ -969,6 +974,31 @@ impl MySisyphusBridge {
     }
     pub(crate) fn default_fuel(&self) -> u64 {
         self.default_fuel
+    }
+
+    /// 尝试获取「任务级 LLM 用量观测」独占租约。
+    ///
+    /// bridge 的 `DynamicLlmClient` 暴露的是**进程累计**计数器且被所有并发请求共享；
+    /// 只有在无其他并发观测任务时，`before/after` 差值才能安全归因到当前任务。
+    /// 返回 `true` 表示租约已获取（调用方必须在任务结束时调用 [`end_llm_task`]）；
+    /// `false` 表示存在并发观测，调用方应将 token 记为 `None`（未知 ≠ 0），
+    /// 不得把他人用量归因到本任务。
+    ///
+    /// 注意：这只是 best-effort 归因闸门，不会阻塞其他 LLM 请求本身；若并发请求
+    /// 在租约持有期间发生了未被本闸门计入的 LLM 调用，差值仍可能污染，但该情况
+    /// 要求调用方也走本闸门协议（当前 bridge 记录路径已统一接入）。
+    pub(crate) fn begin_llm_task(&self) -> bool {
+        self.llm_in_flight.compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire).is_ok()
+    }
+
+    /// 释放 [`begin_llm_task`] 获取的独占租约。
+    pub(crate) fn end_llm_task(&self) {
+        self.llm_in_flight.store(0, Ordering::Release);
+    }
+
+    /// 读取当前累计 LLM token 用量快照（provider 未上报时为 `None`）。
+    pub(crate) fn llm_token_usage_snapshot(&self) -> Option<sisyphus_types::LlmTokenUsage> {
+        self.llm_client.token_usage()
     }
 
     #[expect(dead_code)]
