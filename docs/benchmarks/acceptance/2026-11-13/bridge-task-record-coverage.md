@@ -176,7 +176,7 @@ sisyphus metrics quality --records <tmp>/records --json
   路径仍缺（需要能产出合法 SOP JSON 的模型/可用云端凭据）。
   `qwen2.5-coder:3b` 在有 LLM 的情况下仍因 proposal/reflection JSON 解析失败（见上），
   `gemma4:e4b` 在本机 CPU 上 290s 内无响应，均不足以完成成功路径验收。
-- **token usage** 为 `null`（无可得 provider usage，不伪造 0）。
+- **token usage（探测）**：`209e4d2` 后已接线 best-effort 独占租约采集；在 `44085ae`/`209e4d2`（clean）上对 HTTP unary goal 与 gRPC `execute_sop` 各做一次独占 live 探测（本机 ollama `qwen2.5-coder:3b`，执行因模型 proposal/reflection JSON 解析失败），记录 `prompt_tokens/completion_tokens` 仍为 `null`。实现单测覆盖 delta 语义（`cargo test -p sisyphus-bridge --lib quality_record` 6 passed），但本环境未产出可归因的 provider usage 增量，故按口径保持 `null`（未知 ≠ 0）。探测记录归档于 `runs/bridge-record-coverage/token-probe/`。
 - `fix_rate=0.0` 来自“初次失败且最终失败”样本的既有聚合口径；bridge 无自动修复循环，
   该值不可解读为修复能力。
-- 原始记录与聚合输出归档于 `runs/bridge-record-coverage/`（含 `grpc-sop/` 下 gRPC execute_sop 失败样本与聚合）。
+- 原始记录与聚合输出归档于 `runs/bridge-record-coverage/`（含 `grpc-sop/`、`token-probe/` 等子目录）。

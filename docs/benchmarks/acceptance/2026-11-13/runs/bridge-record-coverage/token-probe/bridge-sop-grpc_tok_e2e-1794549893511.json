@@ -1,0 +1,15 @@
+{
+  "task_id": "bridge-sop-grpc_tok_e2e-1794549893511",
+  "scenario": "bridge-sop-execute",
+  "status": "fail",
+  "initial_verify_passed": false,
+  "final_verify_passed": false,
+  "fix_attempts": 0,
+  "regressed": false,
+  "duration_ms": 38544,
+  "prompt_tokens": null,
+  "completion_tokens": null,
+  "engine_commit": "209e4d293a8a",
+  "engine_dirty": false,
+  "recorded_at": "2026-11-13T06:04:53.511381483+00:00"
+}
