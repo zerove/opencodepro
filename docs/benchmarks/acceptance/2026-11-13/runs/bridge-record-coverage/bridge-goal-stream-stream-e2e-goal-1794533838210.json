@@ -1,0 +1,15 @@
+{
+  "task_id": "bridge-goal-stream-stream-e2e-goal-1794533838210",
+  "scenario": "bridge-goal-streaming",
+  "status": "fail",
+  "initial_verify_passed": false,
+  "final_verify_passed": false,
+  "fix_attempts": 0,
+  "regressed": false,
+  "duration_ms": 32,
+  "prompt_tokens": null,
+  "completion_tokens": null,
+  "engine_commit": "02ce4abf94aa",
+  "engine_dirty": true,
+  "recorded_at": "2026-11-13T01:37:18.210121095+00:00"
+}

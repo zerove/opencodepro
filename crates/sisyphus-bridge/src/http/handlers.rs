@@ -537,13 +537,16 @@ pub(super) async fn goal_stream_handler(
     let pid_clone = project_id.clone();
 
     tokio::spawn(async move {
-        if let Err(e) = bridge_clone
+        let started_at = std::time::Instant::now();
+        let result = bridge_clone
             .kernel()
             .execute_goal_streaming(&goal_clone, "stream_task", &pid_clone, Some(tx), None)
-            .await
-        {
+            .await;
+        let passed = result.is_ok();
+        if let Err(e) = &result {
             tracing::error!(error = %e, "Goal streaming execution failed");
         }
+        crate::quality_record::record_goal_streaming(&goal_clone, passed, started_at.elapsed());
     });
 
     let stream = stream::unfold(rx, |mut rx| async move {
@@ -605,6 +608,7 @@ pub(super) async fn execute_composite_handler(
     let goal_refs: Vec<&str> = goals.iter().map(String::as_str).collect();
     let project = project_id.as_deref().unwrap_or("default");
 
+    let started_at = std::time::Instant::now();
     let result = kernel.execute_goals_with_events(&goal_refs, project, event_tx.clone()).await;
 
     // 等待转发器排空，确保执行末尾事件送达（理由同 execute_goal）
@@ -615,6 +619,11 @@ pub(super) async fn execute_composite_handler(
 
     match result {
         Ok(output) => {
+            crate::quality_record::record_composite_execution(
+                &composite_sop_id,
+                true,
+                started_at.elapsed(),
+            );
             let response = CompositeExecuteResponse {
                 results: output.results.into_iter().map(|(id, (out, _))| (id, out)).collect(),
                 execution_order: output.execution_order,
@@ -631,6 +640,11 @@ pub(super) async fn execute_composite_handler(
             }
         },
         Err(e) => {
+            crate::quality_record::record_composite_execution(
+                &composite_sop_id,
+                false,
+                started_at.elapsed(),
+            );
             let msg = e.to_string();
             let hint = if msg.contains("without any real execution result")
                 || msg.contains("StrategicPivot")

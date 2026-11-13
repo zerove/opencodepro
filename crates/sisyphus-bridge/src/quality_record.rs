@@ -1,7 +1,10 @@
 //! Bridge 路径的任务级质量记录（TaskRecord）落盘。
 //!
-//! 最小实现：为 HTTP `execute_goal` 成功/失败结果写入 `TaskRecord`，
-//! 供 `sisyphus metrics quality` 聚合。落盘为 best-effort，不影响执行响应。
+//! 为 bridge 的 goal / SOP 执行路径写入 `TaskRecord`，供
+//! `sisyphus metrics quality` 聚合。落盘为 best-effort，不影响执行响应。
+//!
+//! 覆盖入口：HTTP `execute_goal` / composite / goal streaming；
+//! gRPC `execute_sop` / `stream_execution`（goal 与 SOP 分支）/ `call_jcode`。
 //!
 //! 口径见 `docs/plans/bridge-task-record-metrics.md` 与
 //! `docs/plans/single-node-quality-metrics.md`。
@@ -100,9 +103,60 @@ fn sanitize_for_filename(s: &str) -> String {
     }
 }
 
-/// 为一次 goal 执行构建并 best-effort 落盘 TaskRecord。
-pub(crate) fn record_goal_execution(
-    sop_id: &str,
+/// 构建任务 ID：`<prefix>-<sanitized hint>-<ms>`。
+///
+/// 拆成纯函数便于单测：ID 必须单次执行唯一（timestamp 保证），且文件名
+/// 只用 ASCII 安全字符（hint 可能来自用户 goal / sop_id）。
+fn build_task_id(prefix: &str, id_hint: &str, ts_ms: u128) -> String {
+    format!("{prefix}-{}-{ts_ms}", sanitize_for_filename(id_hint))
+}
+
+/// 构建一条 bridge 执行记录（纯函数，便于单测字段映射）。
+#[allow(clippy::too_many_arguments)]
+fn build_record(
+    task_prefix: &str,
+    scenario: &str,
+    id_hint: &str,
+    passed: bool,
+    duration: Duration,
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
+    revision: Option<&EngineRevision>,
+    ts_ms: u128,
+    recorded_at: String,
+) -> TaskRecord {
+    TaskRecord {
+        task_id: build_task_id(task_prefix, id_hint, ts_ms),
+        scenario: scenario.to_string(),
+        status: if passed {
+            TaskStatus::Pass
+        } else {
+            TaskStatus::Fail
+        },
+        // bridge 执行没有 dev 式客观闸门循环：首轮/最终与结果一致，
+        // 不虚构「修复前失败」样本污染修复率分母。
+        initial_verify_passed: passed,
+        final_verify_passed: passed,
+        fix_attempts: 0,
+        regressed: false,
+        duration_ms: duration.as_millis().min(u128::from(u64::MAX)) as u64,
+        prompt_tokens,
+        completion_tokens,
+        engine_commit: revision.map(|r| r.commit.clone()),
+        engine_dirty: revision.map(|r| r.dirty),
+        recorded_at,
+    }
+}
+
+/// 为一次执行构建并 best-effort 落盘 TaskRecord。
+///
+/// `task_prefix` 决定文件名/`task_id` 前缀，`scenario` 决定聚合分组；
+/// 两者分开是因为同一类入口（如 goal）会来自多个传输入口。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn record_execution(
+    task_prefix: &str,
+    scenario: &str,
+    id_hint: &str,
     passed: bool,
     duration: Duration,
     prompt_tokens: Option<u64>,
@@ -113,37 +167,98 @@ pub(crate) fn record_goal_execution(
     };
 
     let revision = engine_revision();
-    let ts = now_ms();
-    let sop = sanitize_for_filename(sop_id);
-    let task_id = format!("bridge-goal-{sop}-{ts}");
-    let record = TaskRecord {
-        task_id: task_id.clone(),
-        scenario: "bridge-goal-execute".to_string(),
-        status: if passed {
-            TaskStatus::Pass
-        } else {
-            TaskStatus::Fail
-        },
-        initial_verify_passed: passed,
-        final_verify_passed: passed,
-        fix_attempts: 0,
-        regressed: false,
-        duration_ms: duration.as_millis().min(u128::from(u64::MAX)) as u64,
+    let record = build_record(
+        task_prefix,
+        scenario,
+        id_hint,
+        passed,
+        duration,
         prompt_tokens,
         completion_tokens,
-        engine_commit: revision.as_ref().map(|r| r.commit.clone()),
-        engine_dirty: revision.as_ref().map(|r| r.dirty),
-        recorded_at: chrono::Utc::now().to_rfc3339(),
-    };
+        revision.as_ref(),
+        now_ms(),
+        chrono::Utc::now().to_rfc3339(),
+    );
 
-    if let Err(e) = write_record(&dir, &task_id, &record) {
+    if let Err(e) = write_record(&dir, &record.task_id, &record) {
         tracing::warn!(
             error = %e,
-            task_id = %task_id,
+            task_id = %record.task_id,
             dir = %dir.display(),
             "failed to write bridge quality task record (best-effort)"
         );
     }
+}
+
+/// HTTP unary `POST /api/execute/goal`。
+pub(crate) fn record_goal_execution(
+    sop_id: &str,
+    passed: bool,
+    duration: Duration,
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
+) {
+    record_execution(
+        "bridge-goal",
+        "bridge-goal-execute",
+        sop_id,
+        passed,
+        duration,
+        prompt_tokens,
+        completion_tokens,
+    );
+}
+
+/// HTTP `POST /api/execute/composite`：以请求级 composite id 归属。
+pub(crate) fn record_composite_execution(composite_id: &str, passed: bool, duration: Duration) {
+    record_execution(
+        "bridge-composite",
+        "bridge-composite-execute",
+        composite_id,
+        passed,
+        duration,
+        None,
+        None,
+    );
+}
+
+/// goal 流式执行（HTTP SSE / gRPC server-streaming）。
+pub(crate) fn record_goal_streaming(id_hint: &str, passed: bool, duration: Duration) {
+    record_execution(
+        "bridge-goal-stream",
+        "bridge-goal-streaming",
+        id_hint,
+        passed,
+        duration,
+        None,
+        None,
+    );
+}
+
+/// 直接 SOP/工具执行（HTTP/gRPC `execute_sop`、gRPC stream 的非 goal 分支）。
+pub(crate) fn record_sop_execution(sop_id: &str, passed: bool, duration: Duration) {
+    record_execution(
+        "bridge-sop",
+        "bridge-sop-execute",
+        sop_id,
+        passed,
+        duration,
+        None,
+        None,
+    );
+}
+
+/// gRPC `call_jcode` 的 goal 执行。
+pub(crate) fn record_jcode_execution(task_id: &str, passed: bool, duration: Duration) {
+    record_execution(
+        "bridge-jcode",
+        "bridge-jcode-execute",
+        task_id,
+        passed,
+        duration,
+        None,
+        None,
+    );
 }
 
 fn write_record(dir: &Path, task_id: &str, record: &TaskRecord) -> std::io::Result<()> {
@@ -176,6 +291,64 @@ mod tests {
             Some("5869d3dbae51")
         );
         assert_eq!(normalize_sha("bad"), None);
+    }
+
+    #[test]
+    fn build_task_id_includes_prefix_and_sanitized_hint() {
+        assert_eq!(
+            build_task_id("bridge-goal", "sop/main:v1", 1700000000000),
+            "bridge-goal-sop_main_v1-1700000000000"
+        );
+    }
+
+    #[test]
+    fn build_record_maps_pass_fail_without_faking_repair_semantics() {
+        let rev = EngineRevision {
+            commit: "abcdef123456".into(),
+            dirty: true,
+        };
+        let ok = build_record(
+            "bridge-composite",
+            "bridge-composite-execute",
+            "composite-x",
+            true,
+            Duration::from_millis(12),
+            None,
+            None,
+            Some(&rev),
+            42,
+            "2026-11-13T00:00:00Z".into(),
+        );
+        assert_eq!(ok.task_id, "bridge-composite-composite-x-42");
+        assert_eq!(ok.scenario, "bridge-composite-execute");
+        assert_eq!(ok.status, TaskStatus::Pass);
+        assert!(ok.initial_verify_passed);
+        assert!(ok.final_verify_passed);
+        assert_eq!(ok.fix_attempts, 0);
+        assert!(!ok.regressed);
+        assert_eq!(ok.duration_ms, 12);
+        assert_eq!(ok.engine_commit.as_deref(), Some("abcdef123456"));
+        assert_eq!(ok.engine_dirty, Some(true));
+
+        let failed = build_record(
+            "bridge-sop",
+            "bridge-sop-execute",
+            "sop-1",
+            false,
+            Duration::from_millis(1),
+            None,
+            None,
+            None,
+            43,
+            "2026-11-13T00:00:01Z".into(),
+        );
+        assert_eq!(failed.status, TaskStatus::Fail);
+        assert!(!failed.initial_verify_passed);
+        assert!(!failed.final_verify_passed);
+        assert_eq!(failed.fix_attempts, 0);
+        assert!(!failed.regressed);
+        assert_eq!(failed.engine_commit, None);
+        assert_eq!(failed.engine_dirty, None);
     }
 
     #[test]

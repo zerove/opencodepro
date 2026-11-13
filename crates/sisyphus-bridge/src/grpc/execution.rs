@@ -61,7 +61,27 @@ impl MySisyphusBridge {
             )),
         });
 
-        let (result_str, _final_id) = self.run_execution(sop_id.clone(), &project_id, None).await?;
+        let (result_str, _final_id) = {
+            let started_at = std::time::Instant::now();
+            match self.run_execution(sop_id.clone(), &project_id, None).await {
+                Ok(v) => {
+                    crate::quality_record::record_sop_execution(
+                        &sop_id,
+                        true,
+                        started_at.elapsed(),
+                    );
+                    v
+                },
+                Err(e) => {
+                    crate::quality_record::record_sop_execution(
+                        &sop_id,
+                        false,
+                        started_at.elapsed(),
+                    );
+                    return Err(e);
+                },
+            }
+        };
 
         // 大 payload 检测（TODO 8.1.2）：unary execute_sop 把 result 整体放进
         // string response。如果 >1MB，建议改用 stream_execution（server-streaming），
@@ -225,11 +245,10 @@ impl MySisyphusBridge {
 
         tokio::spawn(async move {
             let project_id = project_id.clone();
-            let _result: Result<(String, String), String> = if let Some(goal) =
-                sop_id.strip_prefix("goal:")
-            {
+            if let Some(goal) = sop_id.strip_prefix("goal:") {
                 let synthesized_sop_id = format!("synth_{}", goal);
-                kernel
+                let started_at = std::time::Instant::now();
+                let result = kernel
                     .execute_goal(
                         goal,
                         &synthesized_sop_id,
@@ -237,15 +256,21 @@ impl MySisyphusBridge {
                         Some(tx.clone()),
                         None,
                     )
-                    .await
-                    .map_err(|e| e.to_string())
-                    .map(|(r, report)| {
+                    .await;
+                crate::quality_record::record_goal_streaming(
+                    goal,
+                    result.is_ok(),
+                    started_at.elapsed(),
+                );
+                let _result: Result<(String, String), String> =
+                    result.map_err(|e| e.to_string()).map(|(r, report)| {
                         (
                             format!("Result: {} | Cognition: {}", r, report),
                             synthesized_sop_id,
                         )
-                    })
+                    });
             } else {
+                let started_at = std::time::Instant::now();
                 let graph = match kernel.load_sop(&sop_id, &project_id).await {
                     Ok(g) => g,
                     Err(_) => {
@@ -263,18 +288,28 @@ impl MySisyphusBridge {
                         Arc::new(g)
                     },
                 };
-                let _start_node = match graph.graph.node_indices().next() {
-                    Some(n) => n,
-                    None => return,
-                };
-                kernel
+                let start_node = graph.graph.node_indices().next();
+                if start_node.is_none() {
+                    crate::quality_record::record_sop_execution(
+                        &sop_id,
+                        false,
+                        started_at.elapsed(),
+                    );
+                    return;
+                }
+                let result = kernel
                     .execute_with_cognition(graph, &sop_id, Some(&project_id), None, Some(tx), None)
-                    .await
-                    .map_err(|e| e.to_string())
-                    .map(|(r, report, _)| {
+                    .await;
+                crate::quality_record::record_sop_execution(
+                    &sop_id,
+                    result.is_ok(),
+                    started_at.elapsed(),
+                );
+                let _result: Result<(String, String), String> =
+                    result.map_err(|e| e.to_string()).map(|(r, report, _)| {
                         (format!("Result: {} | Cognition: {:?}", r, report), sop_id)
-                    })
-            };
+                    });
+            }
         });
 
         let output_stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx).map(
@@ -567,8 +602,14 @@ impl MySisyphusBridge {
         // Execute the goal autonomously using the kernel
         // We use a unique sop_id for each jcode call to avoid collisions
         let sop_id = format!("jcode_{}", task_id);
+        let started_at = std::time::Instant::now();
         let result =
             self.kernel.execute_goal(&goal, &sop_id, &project_id, None, Some(&context)).await;
+        crate::quality_record::record_jcode_execution(
+            &task_id,
+            result.is_ok(),
+            started_at.elapsed(),
+        );
 
         match result {
             Ok((output, report)) => {

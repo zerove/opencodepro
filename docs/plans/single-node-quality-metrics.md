@@ -44,6 +44,19 @@
   `sisyphus_http_requests_total`。
   （此前脚本里写的 `sisyphus_llm_requests_total` / `sisyphus_llm_tokens_total`
   **并不存在**，导致 bridge 在线时仍恒为 `null`，已修正。）
+- **Bridge 执行记录（opt-in）**：设置 `SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR=<dir>`
+  后，bridge 会为执行入口 best-effort 写入 `TaskRecord`（未设置则不写）。当前覆盖
+  HTTP `execute_goal` / composite / goal streaming，以及 gRPC `execute_sop` /
+  `stream_execution` / `call_jcode`；`scenario` 分别为 `bridge-goal-execute`、
+  `bridge-composite-execute`、`bridge-goal-streaming`、`bridge-sop-execute`、
+  `bridge-jcode-execute`。口径约束：bridge 执行**没有** dev 式客观闸门循环，
+  `initial/final_verify_passed` 与终态一致、`fix_attempts=0`、`regressed=false`
+  （不污染修复率/回归率分母）；`Pass` 仅表示执行路径完成，**不等于**外部验收通过。
+  token usage 在可得前保持 `null`。
+  首次 live E2E（失败路径）证据见
+  `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`；覆盖扩展
+  （composite 成功 / streaming 失败）证据见
+  `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-coverage.md`。
 - **证据目录**：`scripts/single-node-acceptance-evidence.sh --run-l0` 已自动化 L0；L3 待环境。
 
 ## 3. 采集脚本
@@ -118,5 +131,6 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records
 - `docs/plans/automation-development-plan-2026-11.md`（T4.1）
 - `docs/plans/single-node-performance-baseline.md`
 - `crates/sisyphus-metrics/src/quality.rs`（记录模型与聚合）
+- `crates/sisyphus-bridge/src/quality_record.rs`（bridge 执行记录落盘）
 - `crates/sisyphus-cli/src/handle_metrics.rs`、`crates/sisyphus-cli/src/handle_verify.rs`
 - `scripts/single-node-bench-sample.sh`
