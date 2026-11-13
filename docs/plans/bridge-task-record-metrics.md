@@ -97,3 +97,22 @@
 - `engine_commit`/`engine_dirty` 填充规则与 CLI 一致；无法获取时显式为 `None`（不猜测）。
 - 落盘失败不影响原有 HTTP 响应/状态码/SSE 行为（回归测试覆盖）。
 - 文档同步（计划状态、质量指标口径、配置示例如适用）。
+
+## 8. 执行级确定性 token 来源（设计，待实现）
+
+**现状**：`DynamicLlmClient` 仅维护进程级累计计数（`TokenUsageCounters`）并通过 `token_usage()` 暴露快照；bridge 以「独占租约 + 累计差值」在单执行独占时归因，已在 live 中验证可产出真实增量，但并发/租约缺失/跨任务交错时无法确定性归因（保持 `null`，不伪造）。
+
+**候选方案（需评估后选型）**：
+
+1. **执行作用域累加器（推荐方向）**：在 LLM 调用记录点同时写入“当前执行作用域”的累加器。
+   - 形态：`sisyphus-tools-llm` 提供作用域 API（如 `UsageScope` guard / `tokio::task_local!` + `scope`），`record()` 在更新全局累计的同时，若存在活动作用域则原子累加到该作用域；bridge/内核在执行入口包裹 scope，结束后直接读取作用域快照作为该次执行的 usage（不再依赖全局差值与独占租约）。
+   - 优点：不改变 `LlmClient` trait 签名（对调用者透明），可与全局累计并存；单执行/并发均可确定性归因（前提：同一执行内的 LLM 调用在 scope 内完成，或显式传递 scope）。
+   - 风险/成本：`tokio::spawn` 不自动继承 task-local，内核若在执行期跨 spawn 调用 LLM 需显式传播 scope（或改为 `scope` 包裹整个执行 future）；需审计调用路径与测试覆盖。
+2. **按调用返回 usage 并向上聚合**：让 provider/client 在每次 `chat` 返回 `(content, usage)` 或 side-channel，并在执行上下文累加。
+   - 优点：归因最直接、与全局计数解耦。
+   - 风险/成本：需改 `LlmClient` trait 与所有实现/调用者（`generate/chat` 签名或新增方法），影响面大，需全量审计；与当前“不改 trait 签名而不审计所有调用者”约束冲突，适合作为较大重构单独推进。
+3. **执行隔离 client 实例**：每次执行构造/持有独立的计数域或 client 包装器。
+   - 优点：隔离天然确定。
+   - 风险/成本：client/registry/连接池生命周期与配置热更新需梳理；可能增加资源开销与改造面。
+
+**落地建议（最小增量）**：优先验证方案 1 —— 在 `DynamicLlmClient`（及 provider-registry 路径可达的记录点）增加可选 execution-scope 累加；bridge 从“租约+全局差值”切换为“scope 快照”并保留 `null` 语义（无上报仍 `null`）；补单测（并发两执行互不污染）与一条 live 证据。实现前需确认内核执行期 LLM 调用的 task/spawn 边界并补齐 scope 传播。
