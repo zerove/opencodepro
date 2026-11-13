@@ -45,6 +45,14 @@ pub struct DynamicLlmClient {
     prompt_truncated: Arc<std::sync::atomic::AtomicBool>,
 }
 
+tokio::task_local! {
+    /// 当前执行作用域的 token 累加器（可选）。存在时，`TokenUsageCounters::record`
+    /// 会同时写入全局累计与该作用域，用于执行级确定性归因（不依赖全局差值/租约）。
+    /// 需通过 `DynamicLlmClient::scope_usage` 在 async 作用域内激活；跨 `tokio::spawn`
+    /// 的子任务不会自动继承，调用方需在需要归因的边界显式包裹。
+    static EXECUTION_USAGE_SCOPE: Arc<TokenUsageCounters>;
+}
+
 /// provider 上报的 token 计数（原子累加）。
 #[derive(Debug, Default)]
 struct TokenUsageCounters {
@@ -67,6 +75,17 @@ impl TokenUsageCounters {
             self.completion_tokens.fetch_add(v, Ordering::Relaxed);
         }
         self.calls.fetch_add(1, Ordering::Relaxed);
+
+        // 同步写入当前执行作用域（若已激活），实现执行级归因。
+        let _ = EXECUTION_USAGE_SCOPE.try_with(|scope| {
+            if let Some(v) = prompt {
+                scope.prompt_tokens.fetch_add(v, Ordering::Relaxed);
+            }
+            if let Some(v) = completion {
+                scope.completion_tokens.fetch_add(v, Ordering::Relaxed);
+            }
+            scope.calls.fetch_add(1, Ordering::Relaxed);
+        });
     }
 
     fn snapshot(&self) -> sisyphus_types::LlmTokenUsage {
@@ -76,6 +95,12 @@ impl TokenUsageCounters {
             completion_tokens: self.completion_tokens.load(Ordering::Relaxed),
             calls: self.calls.load(Ordering::Relaxed),
         }
+    }
+
+    /// 转为对外可见快照；从未收到 provider 上报 usage 时返回 `None`（未知 ≠ 0）。
+    fn snapshot_option(&self) -> Option<sisyphus_types::LlmTokenUsage> {
+        let snap = self.snapshot();
+        (snap.calls > 0).then_some(snap)
     }
 }
 
@@ -304,6 +329,29 @@ impl DynamicLlmClient {
             let api_key = Self::resolve_api_key(&cfg.llm.api_key);
             (api_key, cfg.llm.endpoint.clone(), cfg.llm.model.clone())
         }
+    }
+
+    /// 在“执行级 token 作用域”内运行 future，并返回作用域内累计的 provider 上报 usage。
+    ///
+    /// - `TokenUsageCounters::record` 会在更新全局累计的同时写入当前作用域（若存在），
+    ///   因而在作用域覆盖到所有相关 LLM 调用时可实现确定性归因（不依赖全局差值/租约）。
+    /// - `tokio::spawn` 的子任务不会自动继承 task-local；若执行在子任务中发起 LLM 调用，
+    ///   需在相应边界显式传播/包裹作用域，否则该部分 usage 无法归因到本作用域（返回 `None`
+    ///   或部分计数，按实际可见调用而定；调用方不得臆造）。
+    /// - 作用域内从未收到 provider 上报 usage 时返回 `None`（未知 ≠ 0）。
+    pub async fn scope_usage<Fut, T>(fut: Fut) -> (T, Option<sisyphus_types::LlmTokenUsage>)
+    where
+        Fut: std::future::Future<Output = T>,
+    {
+        let scope = Arc::new(TokenUsageCounters::default());
+        let result = EXECUTION_USAGE_SCOPE.scope(scope.clone(), fut).await;
+        (result, scope.snapshot_option())
+    }
+
+    /// 返回当前执行作用域的累计 usage 快照（若处于 `scope_usage` 作用域内且有上报）。
+    /// 不在作用域内或无上报时返回 `None`。
+    pub fn current_scope_usage_snapshot() -> Option<sisyphus_types::LlmTokenUsage> {
+        EXECUTION_USAGE_SCOPE.try_with(|scope| scope.snapshot_option()).ok().flatten()
     }
 }
 
@@ -783,5 +831,47 @@ mod tests {
         client.chat("", "hi", false).await.expect("mock 响应应成功");
 
         assert!(client.token_usage().is_none(), "未上报 usage 时应为 None");
+    }
+
+    #[tokio::test]
+    async fn scope_usage_captures_reported_tokens_deterministically() {
+        let endpoint = mock_server_once(
+            r#"{"model":"m","choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":11,"completion_tokens":7}}"#,
+        );
+        let mut cfg = Config::default();
+        cfg.llm.endpoint = endpoint;
+        let client = Arc::new(DynamicLlmClient::new(Arc::new(RwLock::new(cfg))));
+        let c = client.clone();
+
+        let (res, usage) =
+            DynamicLlmClient::scope_usage(async move { c.chat("", "hi", false).await }).await;
+        res.expect("mock 响应应成功");
+        let usage = usage.expect("作用域内应捕获上报 usage");
+        assert_eq!(usage.prompt_tokens, 11);
+        assert_eq!(usage.completion_tokens, 7);
+        assert_eq!(usage.calls, 1);
+        // 全局累计仍应可见
+        let global = client.token_usage().expect("全局也应有 usage");
+        assert_eq!(global.prompt_tokens, 11);
+        assert_eq!(global.completion_tokens, 7);
+    }
+
+    #[tokio::test]
+    async fn scope_usage_is_unknown_when_provider_omits_usage() {
+        let endpoint =
+            mock_server_once(r#"{"model":"m","choices":[{"message":{"content":"ok"}}]}"#);
+        let mut cfg = Config::default();
+        cfg.llm.endpoint = endpoint;
+        let client = Arc::new(DynamicLlmClient::new(Arc::new(RwLock::new(cfg))));
+        let c = client.clone();
+
+        let (res, usage) =
+            DynamicLlmClient::scope_usage(async move { c.chat("", "hi", false).await }).await;
+        res.expect("mock 响应应成功");
+        assert!(
+            usage.is_none(),
+            "未上报 usage 时作用域应为 None（未知 ≠ 0）"
+        );
+        assert!(DynamicLlmClient::current_scope_usage_snapshot().is_none());
     }
 }

@@ -1,6 +1,6 @@
 # Bridge 路径 TaskRecord 落盘与 `metrics quality` 覆盖（最小设计）
 
-> 状态：**已覆盖主要执行入口**（2026-11-13）。HTTP `execute_goal` / composite / goal streaming，以及 gRPC `execute_sop` / `stream_execution`（goal 与非 goal 分支）/ `call_jcode` 均已接线 best-effort 落盘；单测与聚合兼容性验证完成。live E2E 已覆盖 `execute_goal` 失败路径、`composite` 成功 + `goal streaming` 失败、gRPC `execute_sop` 失败、gRPC `stream_execution`（goal 分支与非 goal/SOP 分支）失败、gRPC `call_jcode` 失败（含非 null token 样本，见 `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`、`docs/benchmarks/acceptance/2026-11-13/bridge-task-record-coverage.md` 与 `runs/bridge-record-coverage/grpc-stream-calljcode/`、`grpc-stream-sop/`）。**待后续**：`execute_goal` 成功路径 live、执行级确定性 token usage 来源（当前为累计差值 best-effort）。
+> 状态：**已覆盖主要执行入口**（2026-11-13）。HTTP `execute_goal` / composite / goal streaming，以及 gRPC `execute_sop` / `stream_execution`（goal 与非 goal 分支）/ `call_jcode` 均已接线 best-effort 落盘；单测与聚合兼容性验证完成。live E2E 已覆盖 `execute_goal` 失败路径、`composite` 成功 + `goal streaming` 失败、gRPC `execute_sop` 失败、gRPC `stream_execution`（goal 分支与非 goal/SOP 分支）失败、gRPC `call_jcode` 失败（含非 null token 样本，见 `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`、`docs/benchmarks/acceptance/2026-11-13/bridge-task-record-coverage.md` 与 `runs/bridge-record-coverage/grpc-stream-calljcode/`、`grpc-stream-sop/`）。token 归因已引入 **执行作用域（task-local）优先**：`DynamicLlmClient::scope_usage` + bridge `run_with_usage_scope`，不可用时回退独占租约+累计差值（仍 best-effort，跨 `tokio::spawn` 未传播的调用可能无法归因）。**待后续**：`execute_goal` 成功路径 live、scope 传播/跨 spawn 覆盖与并发归因证据。
 >
 > 背景：`sisyphus dev` / `sisyphus verify` 已可通过 `--record` 产出 `TaskRecord`（`sisyphus-metrics::quality`）并由 `sisyphus metrics quality` 聚合；bridge 侧当前**无 Developer/dev 闭环执行路径**，因此 dev 语义的质量记录无法直接复用。bridge 可观测、可执行的是 **goal/SOP 执行**（HTTP/gRPC/SSE），需要定义与现有指标口径兼容且不伪造语义的最小落盘方案。
 
@@ -69,7 +69,7 @@
    - **已完成（最小）**：`quality_record` 模块实现原子写入与 best-effort 告警；通过 `SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR` 环境变量 opt-in 启用（未设置则不写）。
 3. **接线 `execute_goal_handler`**：计时开始/结束；在成功与失败分支组装记录并调用 writer；补充 `tracing` 字段（`task_id`/`duration_ms`/`status`）便于排查。
    - **已完成**：HTTP `/api/execute/goal` 成功/失败（含响应序列化失败）分支写入 `scenario=bridge-goal-execute` 记录。
-   - **token usage（best-effort，已接入）**：bridge 的 `DynamicLlmClient` 暴露的是**进程累计**计数器且被并发共享；各记录入口在执行前后尝试获取独占观测租约（`begin_llm_task` / `end_llm_task`），仅在租约独占且 provider 上报 usage 时写入饱和差值，否则保持 `null`（未知 ≠ 0）。这避免并发归因污染，但**不保证**在高并发/未走同一租约协议的调用下严格准确；待内核/客户端支持执行级用量后可替换为确定性来源。`token_usage_delta` 辅助函数与单测已覆盖（`None`→`None`、基线未知按 0、饱和差值）。
+   - **token usage（best-effort，已增强）**：优先使用 **执行作用域归因**（`DynamicLlmClient::scope_usage` / task-local，`bridge.run_with_usage_scope`）：在作用域内可见的 provider 上报 usage 会同步写入全局累计与当前作用域，记录取作用域快照（不依赖全局差值）；`tokio::spawn` 子任务不自动继承 scope，跨 spawn 的 LLM 调用可能无法归因。无 scope 客户端/不可用时回退为独占租约 + 累计差值；并发/无 usage 时仍保持 `null`（未知 ≠ 0）。`token_usage_delta` 与 scope 单测已覆盖（`scope_usage_captures_reported_tokens_deterministically` 等）。
    - **已扩展**：同一 writer 现覆盖 HTTP composite（`bridge-composite-execute`）、HTTP/gRPC goal streaming（`bridge-goal-streaming`）、gRPC `execute_sop` 与流式 SOP/工具分支（`bridge-sop-execute`）、gRPC `call_jcode`（`bridge-jcode-execute`）。各入口均接入同一 best-effort token 采集，不改执行路径。
 4. **配置与开关**：增加最小配置（env/Config 字段二选一，按现有模式）；更新 `config.example.toml` 与 `book/`（若引入 Config 字段）。
    - **当前进展**：采用 env opt-in（`SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR`），未新增 `Config` schema 字段，故未修改 `config.example.toml`/`book/` 配置章节。
@@ -115,4 +115,7 @@
    - 优点：隔离天然确定。
    - 风险/成本：client/registry/连接池生命周期与配置热更新需梳理；可能增加资源开销与改造面。
 
-**落地建议（最小增量）**：优先验证方案 1 —— 在 `DynamicLlmClient`（及 provider-registry 路径可达的记录点）增加可选 execution-scope 累加；bridge 从“租约+全局差值”切换为“scope 快照”并保留 `null` 语义（无上报仍 `null`）；补单测（并发两执行互不污染）与一条 live 证据。实现前需确认内核执行期 LLM 调用的 task/spawn 边界并补齐 scope 传播。
+**实现进展（2026-11-13，方案 1 最小增量）**：
+- `sisyphus-tools-llm`：新增 task-local 执行作用域（`EXECUTION_USAGE_SCOPE`），`TokenUsageCounters::record` 同步写入全局累计与当前作用域；提供 `DynamicLlmClient::scope_usage` / `current_scope_usage_snapshot()`；补单测 `scope_usage_captures_reported_tokens_deterministically`、`scope_usage_is_unknown_when_provider_omits_usage`（`cargo test -p sisyphus-tools-llm --lib scope_usage` 2 passed）。
+- `sisyphus-bridge`：持有可选具体 `DynamicLlmClient`（默认构造路径），新增 `run_with_usage_scope`（scope 优先，回退租约+差值），HTTP/gRPC 记录入口已切换为该路径；`cargo check/clippy -p sisyphus-tools-llm -p sisyphus-bridge`、`cargo test -p sisyphus-bridge --lib quality_record` 6 passed。
+- **限制**：scope 不跨 `tokio::spawn` 自动传播，内核/执行链若在子任务中调用 LLM 仍可能部分不可归因（保持 `null` 或部分计数均按可见上报，不伪造）；并发两执行互不污染单测与 live 对照证据待补。

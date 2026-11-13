@@ -76,6 +76,10 @@ pub struct MySisyphusBridge {
     pub(crate) experience_bank: Arc<sisyphus_mem::experience_bank::VectorExperienceBank>,
     pub(crate) skill_loader: Arc<SkillLoader>,
     pub(crate) llm_client: Arc<dyn LlmClient>,
+    /// 默认构造时持有的具体 DynamicLlmClient，用于执行级 token 作用域
+    /// （`DynamicLlmClient::scope_usage`）。override 为 `dyn LlmClient` 时为 `None`，
+    /// 此时回退到 best-effort 租约+累计差值采集。
+    pub(crate) llm_usage_scope_client: Option<Arc<DynamicLlmClient>>,
     /// LLM 任务级用量互斥计数：独占任务（`begin_llm_task` 返回 true）时可
     /// 对同一任务采集 before/after usage 增量；并发任务返回 false，保持 `None`。
     pub(crate) llm_in_flight: Arc<AtomicUsize>,
@@ -134,6 +138,7 @@ impl Clone for MySisyphusBridge {
             experience_bank: self.experience_bank.clone(),
             skill_loader: self.skill_loader.clone(),
             llm_client: self.llm_client.clone(),
+            llm_usage_scope_client: self.llm_usage_scope_client.clone(),
             llm_in_flight: self.llm_in_flight.clone(),
             plugin_manager: self.plugin_manager.clone(),
             jcode_caller: self.jcode_caller.clone(),
@@ -419,10 +424,18 @@ impl MySisyphusBridge {
             registry.register_all(hooks);
         }
 
-        // Create shared DynamicLlmClient for all LLM-dependent components
-        let dyn_llm_client = match llm_client_override {
-            Some(client) => client,
-            None => Arc::new(DynamicLlmClient::new(shared_config.clone())),
+        // Create shared DynamicLlmClient for all LLM-dependent components.
+        // Keep concrete client when we own it so bridge can use execution-scoped token
+        // attribution (`DynamicLlmClient::scope_usage`) instead of global lease+delta.
+        let (dyn_llm_client, llm_usage_scope_client): (
+            Arc<dyn LlmClient>,
+            Option<Arc<DynamicLlmClient>>,
+        ) = match llm_client_override {
+            Some(client) => (client, None),
+            None => {
+                let c = Arc::new(DynamicLlmClient::new(shared_config.clone()));
+                (c.clone() as Arc<dyn LlmClient>, Some(c))
+            },
         };
         let llm_client_for_bridge = dyn_llm_client.clone();
 
@@ -860,6 +873,7 @@ impl MySisyphusBridge {
             experience_bank,
             skill_loader: Arc::new(loader),
             llm_client: llm_client_for_bridge,
+            llm_usage_scope_client,
             llm_in_flight: Arc::new(AtomicUsize::new(0)),
             consensus,
             event_bus: tokio::sync::broadcast::channel(1024).0,
@@ -999,6 +1013,62 @@ impl MySisyphusBridge {
     /// 读取当前累计 LLM token 用量快照（provider 未上报时为 `None`）。
     pub(crate) fn llm_token_usage_snapshot(&self) -> Option<sisyphus_types::LlmTokenUsage> {
         self.llm_client.token_usage()
+    }
+
+    /// 在执行级 token 归因上下文中运行 future，返回 `(结果, usage)`。
+    ///
+    /// - 若可用具体 `DynamicLlmClient`，优先使用 task-local 执行作用域
+    ///   （`DynamicLlmClient::scope_usage`），对作用域内可见的 LLM 调用实现确定性归因，
+    ///   不依赖全局累计差值与独占租约。
+    /// - 否则回退到 best-effort 租约+累计差值：仅在独占观测租约下采集，
+    ///   并发/不可归因时返回 `None`（未知 ≠ 0，不伪造）。
+    pub(crate) async fn run_with_usage_scope<Fut, T>(
+        &self,
+        fut: Fut,
+    ) -> (T, Option<sisyphus_types::LlmTokenUsage>)
+    where
+        Fut: std::future::Future<Output = T>,
+    {
+        if self.llm_usage_scope_client.is_some() {
+            // 执行作用域归因（确定性，作用域内可见调用）。
+            return DynamicLlmClient::scope_usage(fut).await;
+        }
+
+        // 回退：独占租约 + 全局累计差值（best-effort）。
+        let usage_lease = self.begin_llm_task();
+        let usage_before = if usage_lease {
+            self.llm_token_usage_snapshot()
+        } else {
+            None
+        };
+        let result = fut.await;
+        let usage = if usage_lease {
+            let after = self.llm_token_usage_snapshot();
+            self.end_llm_task();
+            crate::quality_record::token_usage_delta(usage_before, after)
+        } else {
+            (None, None)
+        };
+        let (p, c) = usage;
+        let usage = match (p, c) {
+            (None, None) => None,
+            (Some(prompt), Some(completion)) => Some(sisyphus_types::LlmTokenUsage {
+                prompt_tokens: prompt,
+                completion_tokens: completion,
+                calls: 0,
+            }),
+            (Some(prompt), None) => Some(sisyphus_types::LlmTokenUsage {
+                prompt_tokens: prompt,
+                completion_tokens: 0,
+                calls: 0,
+            }),
+            (None, Some(completion)) => Some(sisyphus_types::LlmTokenUsage {
+                prompt_tokens: 0,
+                completion_tokens: completion,
+                calls: 0,
+            }),
+        };
+        (result, usage)
     }
 
     #[expect(dead_code)]

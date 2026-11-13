@@ -12,6 +12,7 @@ use sisyphus_bridge_api::{
 use sisyphus_core::{SOPGraph, WasmSOPNode};
 use sisyphus_metrics::record_bridge_request;
 use sisyphus_tools_agent::team::TeamGoal;
+use sisyphus_tools_llm::DynamicLlmClient;
 use sisyphus_types::ToolExecutor;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -63,21 +64,14 @@ impl MySisyphusBridge {
 
         let (result_str, _final_id) = {
             let started_at = std::time::Instant::now();
-            let usage_lease = self.begin_llm_task();
-            let usage_before = if usage_lease {
-                self.llm_token_usage_snapshot()
-            } else {
-                None
-            };
-            match self.run_execution(sop_id.clone(), &project_id, None).await {
+            let (run_result, usage) = self
+                .run_with_usage_scope(self.run_execution(sop_id.clone(), &project_id, None))
+                .await;
+            let (prompt_tokens, completion_tokens) = usage
+                .map(|u| (Some(u.prompt_tokens), Some(u.completion_tokens)))
+                .unwrap_or((None, None));
+            match run_result {
                 Ok(v) => {
-                    let (prompt_tokens, completion_tokens) = if usage_lease {
-                        let after = self.llm_token_usage_snapshot();
-                        self.end_llm_task();
-                        crate::quality_record::token_usage_delta(usage_before, after)
-                    } else {
-                        (None, None)
-                    };
                     crate::quality_record::record_sop_execution(
                         &sop_id,
                         true,
@@ -88,13 +82,6 @@ impl MySisyphusBridge {
                     v
                 },
                 Err(e) => {
-                    let (prompt_tokens, completion_tokens) = if usage_lease {
-                        let after = self.llm_token_usage_snapshot();
-                        self.end_llm_task();
-                        crate::quality_record::token_usage_delta(usage_before, after)
-                    } else {
-                        (None, None)
-                    };
                     crate::quality_record::record_sop_execution(
                         &sop_id,
                         false,
@@ -270,103 +257,124 @@ impl MySisyphusBridge {
 
         tokio::spawn(async move {
             let project_id = project_id.clone();
-            let usage_lease = bridge.begin_llm_task();
+            let scope_available = bridge.llm_usage_scope_client.is_some();
+            let usage_lease = if scope_available {
+                false
+            } else {
+                bridge.begin_llm_task()
+            };
             let usage_before = if usage_lease {
                 bridge.llm_token_usage_snapshot()
             } else {
                 None
             };
-            if let Some(goal) = sop_id.strip_prefix("goal:") {
-                let synthesized_sop_id = format!("synth_{}", goal);
-                let started_at = std::time::Instant::now();
-                let result = kernel
-                    .execute_goal(
-                        goal,
-                        &synthesized_sop_id,
-                        &project_id,
-                        Some(tx.clone()),
-                        None,
-                    )
-                    .await;
-                let (prompt_tokens, completion_tokens) = if usage_lease {
-                    let after = bridge.llm_token_usage_snapshot();
-                    bridge.end_llm_task();
-                    crate::quality_record::token_usage_delta(usage_before, after)
-                } else {
-                    (None, None)
-                };
-                crate::quality_record::record_goal_streaming(
-                    goal,
-                    result.is_ok(),
-                    started_at.elapsed(),
-                    prompt_tokens,
-                    completion_tokens,
-                );
-                let _result: Result<(String, String), String> =
-                    result.map_err(|e| e.to_string()).map(|(r, report)| {
-                        (
-                            format!("Result: {} | Cognition: {}", r, report),
-                            synthesized_sop_id,
-                        )
-                    });
-            } else {
-                let started_at = std::time::Instant::now();
-                let graph = match kernel.load_sop(&sop_id, &project_id).await {
-                    Ok(g) => g,
-                    Err(_) => {
-                        let mut g = SOPGraph::new();
-                        let tool_id = sop_id.clone();
-                        let node = Arc::new(WasmSOPNode {
-                            name: format!("node_{}", tool_id),
-                            tool_id,
-                            executor: kernel.execution_manager.tool_router.clone(),
-                            fuel_limit: default_fuel,
-                            // 调用方只给了工具名，未给入参。
-                            args: Vec::new(),
-                        });
-                        g.add_node(node);
-                        Arc::new(g)
-                    },
-                };
-                let start_node = graph.graph.node_indices().next();
-                if start_node.is_none() {
-                    let (prompt_tokens, completion_tokens) = if usage_lease {
+
+            let body = async {
+                let usage_pair = |usage_lease: bool,
+                                  usage_before: Option<sisyphus_types::LlmTokenUsage>,
+                                  bridge: &MySisyphusBridge|
+                 -> (Option<u64>, Option<u64>) {
+                    if let Some(u) = DynamicLlmClient::current_scope_usage_snapshot() {
+                        (Some(u.prompt_tokens), Some(u.completion_tokens))
+                    } else if usage_lease {
                         let after = bridge.llm_token_usage_snapshot();
                         bridge.end_llm_task();
                         crate::quality_record::token_usage_delta(usage_before, after)
                     } else {
                         (None, None)
-                    };
-                    crate::quality_record::record_sop_execution(
-                        &sop_id,
-                        false,
+                    }
+                };
+
+                if let Some(goal) = sop_id.strip_prefix("goal:") {
+                    let synthesized_sop_id = format!("synth_{}", goal);
+                    let started_at = std::time::Instant::now();
+                    let result = kernel
+                        .execute_goal(
+                            goal,
+                            &synthesized_sop_id,
+                            &project_id,
+                            Some(tx.clone()),
+                            None,
+                        )
+                        .await;
+                    let (prompt_tokens, completion_tokens) =
+                        usage_pair(usage_lease, usage_before, &bridge);
+                    crate::quality_record::record_goal_streaming(
+                        goal,
+                        result.is_ok(),
                         started_at.elapsed(),
                         prompt_tokens,
                         completion_tokens,
                     );
-                    return;
-                }
-                let result = kernel
-                    .execute_with_cognition(graph, &sop_id, Some(&project_id), None, Some(tx), None)
-                    .await;
-                let (prompt_tokens, completion_tokens) = if usage_lease {
-                    let after = bridge.llm_token_usage_snapshot();
-                    bridge.end_llm_task();
-                    crate::quality_record::token_usage_delta(usage_before, after)
+                    let _result: Result<(String, String), String> =
+                        result.map_err(|e| e.to_string()).map(|(r, report)| {
+                            (
+                                format!("Result: {} | Cognition: {}", r, report),
+                                synthesized_sop_id,
+                            )
+                        });
                 } else {
-                    (None, None)
-                };
-                crate::quality_record::record_sop_execution(
-                    &sop_id,
-                    result.is_ok(),
-                    started_at.elapsed(),
-                    prompt_tokens,
-                    completion_tokens,
-                );
-                let _result: Result<(String, String), String> =
-                    result.map_err(|e| e.to_string()).map(|(r, report, _)| {
-                        (format!("Result: {} | Cognition: {:?}", r, report), sop_id)
-                    });
+                    let started_at = std::time::Instant::now();
+                    let graph = match kernel.load_sop(&sop_id, &project_id).await {
+                        Ok(g) => g,
+                        Err(_) => {
+                            let mut g = SOPGraph::new();
+                            let tool_id = sop_id.clone();
+                            let node = Arc::new(WasmSOPNode {
+                                name: format!("node_{}", tool_id),
+                                tool_id,
+                                executor: kernel.execution_manager.tool_router.clone(),
+                                fuel_limit: default_fuel,
+                                // 调用方只给了工具名，未给入参。
+                                args: Vec::new(),
+                            });
+                            g.add_node(node);
+                            Arc::new(g)
+                        },
+                    };
+                    let start_node = graph.graph.node_indices().next();
+                    if start_node.is_none() {
+                        let (prompt_tokens, completion_tokens) =
+                            usage_pair(usage_lease, usage_before, &bridge);
+                        crate::quality_record::record_sop_execution(
+                            &sop_id,
+                            false,
+                            started_at.elapsed(),
+                            prompt_tokens,
+                            completion_tokens,
+                        );
+                        return;
+                    }
+                    let result = kernel
+                        .execute_with_cognition(
+                            graph,
+                            &sop_id,
+                            Some(&project_id),
+                            None,
+                            Some(tx),
+                            None,
+                        )
+                        .await;
+                    let (prompt_tokens, completion_tokens) =
+                        usage_pair(usage_lease, usage_before, &bridge);
+                    crate::quality_record::record_sop_execution(
+                        &sop_id,
+                        result.is_ok(),
+                        started_at.elapsed(),
+                        prompt_tokens,
+                        completion_tokens,
+                    );
+                    let _result: Result<(String, String), String> =
+                        result.map_err(|e| e.to_string()).map(|(r, report, _)| {
+                            (format!("Result: {} | Cognition: {:?}", r, report), sop_id)
+                        });
+                }
+            };
+
+            if scope_available {
+                let _ = DynamicLlmClient::scope_usage(body).await;
+            } else {
+                body.await;
             }
         });
 
@@ -661,21 +669,18 @@ impl MySisyphusBridge {
         // We use a unique sop_id for each jcode call to avoid collisions
         let sop_id = format!("jcode_{}", task_id);
         let started_at = std::time::Instant::now();
-        let usage_lease = self.begin_llm_task();
-        let usage_before = if usage_lease {
-            self.llm_token_usage_snapshot()
-        } else {
-            None
-        };
-        let result =
-            self.kernel.execute_goal(&goal, &sop_id, &project_id, None, Some(&context)).await;
-        let (prompt_tokens, completion_tokens) = if usage_lease {
-            let after = self.llm_token_usage_snapshot();
-            self.end_llm_task();
-            crate::quality_record::token_usage_delta(usage_before, after)
-        } else {
-            (None, None)
-        };
+        let (result, usage) = self
+            .run_with_usage_scope(self.kernel.execute_goal(
+                &goal,
+                &sop_id,
+                &project_id,
+                None,
+                Some(&context),
+            ))
+            .await;
+        let (prompt_tokens, completion_tokens) = usage
+            .map(|u| (Some(u.prompt_tokens), Some(u.completion_tokens)))
+            .unwrap_or((None, None));
         crate::quality_record::record_jcode_execution(
             &task_id,
             result.is_ok(),
