@@ -10,8 +10,10 @@ PASS  mcp call 参数缺失返回 isError
 PASS  mcp resources 包含 welcome
 PASS  mcp resources 包含 status
 PASS  mcp resources 自动合并分页资源
+PASS  mcp resources 包含资源模板
 PASS  mcp read-resource 返回文本内容
 PASS  mcp read-resource 读取分页资源
+PASS  mcp read-resource 读取模板实例 URI
 PASS  mcp prompts 列出 greet
 PASS  mcp prompts 列出 summary
 PASS  mcp prompts 自动合并分页提示
@@ -24,8 +26,10 @@ PASS  HTTP 传输 mcp call sum(20,22) = 42
 PASS  HTTP 传输参数缺失返回 isError
 PASS  HTTP 传输列出资源 memo://welcome
 PASS  HTTP 传输自动合并分页资源
+PASS  HTTP 传输列出资源模板
 PASS  HTTP 传输读取资源内容
 PASS  HTTP 传输读取分页资源
+PASS  HTTP 传输读取模板实例 URI
 PASS  HTTP 传输列出 prompts
 PASS  HTTP 传输自动合并分页提示
 PASS  HTTP 传输 get-prompt 渲染
@@ -39,6 +43,7 @@ PASS  引擎调用 HTTP 传输的 MCP 工具 l3http:sum(1,2)
 PASS  引擎 /api/mcp/resources 含 l3 服务资源
 PASS  引擎 /api/mcp/resources 含 memo://welcome
 PASS  引擎 /api/mcp/resources 含分页资源 memo://paged
+PASS  引擎 /api/mcp/resources 含资源模板
 PASS  引擎 /api/mcp/resources 含 l3http 服务资源
 PASS  引擎 /api/mcp/prompts 含 greet
 PASS  引擎 /api/mcp/prompts 含分页提示 paged_prompt
@@ -46,8 +51,9 @@ PASS  引擎 /api/mcp/prompts 含 l3http
 PASS  引擎代理 resources/read 返回资源内容
 PASS  引擎代理 resources/read（HTTP MCP）返回状态
 PASS  引擎代理 resources/read 读取分页资源
+PASS  引擎代理 resources/read 读取模板实例 URI
 PASS  引擎代理 prompts/get 返回渲染消息
 PASS  引擎代理 prompts/get 获取分页提示
 PASS  引擎代理 prompts/get（HTTP MCP）返回摘要提示
 
-PASS=48 FAIL=0
+PASS=54 FAIL=0

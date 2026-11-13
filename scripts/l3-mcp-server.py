@@ -80,6 +80,15 @@ RESOURCES_PAGE2 = [
     },
 ]
 
+RESOURCE_TEMPLATES = [
+    {
+        "uriTemplate": "memo://note/{name}",
+        "name": "note",
+        "description": "按名字读取笔记模板",
+        "mimeType": "text/plain",
+    },
+]
+
 # 兼容旧引用（如有）
 RESOURCES = RESOURCES_PAGE1 + RESOURCES_PAGE2
 
@@ -158,7 +167,11 @@ def handle(msg):
         if cursor == "page2":
             result = {"resources": RESOURCES_PAGE2}
         else:
-            result = {"resources": RESOURCES_PAGE1, "nextCursor": "page2"}
+            result = {
+                "resources": RESOURCES_PAGE1,
+                "resourceTemplates": RESOURCE_TEMPLATES,
+                "nextCursor": "page2",
+            }
     elif method == "resources/read":
         uri = params.get("uri")
         body = {
@@ -166,6 +179,10 @@ def handle(msg):
             "memo://status": "status: ok",
             "memo://paged": "paged resource body",
         }.get(uri)
+        if body is None and isinstance(uri, str) and uri.startswith("memo://note/"):
+            name = uri.split("/", 3)[-1]
+            if name:
+                body = f"note: {name}"
         if body is None:
             return {
                 "jsonrpc": "2.0",
