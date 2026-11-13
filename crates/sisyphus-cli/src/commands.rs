@@ -304,12 +304,14 @@ pub enum Commands {
         timeout_secs: u64,
         ///客观验收命令（例如 `cargo clippy -- -D warnings`）。
         ///步骤自带的验证由模型自选，可能与目标不一致；该命令是唯一的成功判据：
-        ///未通过则整体判失败，并带着输出自动修复（次数见 --verify-fix-attempts）
+        ///未通过则整体判失败，并带着输出自动修复（次数见 --verify-fix-attempts）。
+        ///未指定时使用 [dev].verify_cmd（同样受 SISYPHUS_DEV_VERIFY_CMD 覆盖）
         #[arg(long = "verify-cmd")]
         verify_cmd: Option<String>,
-        ///验收命令失败后的自动修复尝试次数（0 = 只判定不修复，默认 2）
-        #[arg(long = "verify-fix-attempts", default_value_t = 2)]
-        verify_fix_attempts: usize,
+        ///验收命令失败后的自动修复尝试次数（0 = 只判定不修复）。
+        ///未指定时使用 [dev].verify_fix_attempts（默认 2）
+        #[arg(long = "verify-fix-attempts")]
+        verify_fix_attempts: Option<usize>,
         ///把本次闭环落成一条任务级质量记录（T4.1）；必须同时指定 --verify-cmd。
         ///闸门失败也会落记录（失败样本是成功率的分母）
         #[arg(long = "record")]

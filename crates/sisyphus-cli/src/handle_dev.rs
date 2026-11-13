@@ -16,14 +16,23 @@ pub(crate) async fn handle_dev(
     resume: bool,
     timeout_secs: u64,
     verify_cmd: &Option<String>,
-    verify_fix_attempts: usize,
+    verify_fix_attempts: Option<usize>,
     record: &Option<PathBuf>,
     scenario: &str,
     yes: bool,
     cli_perms: &sisyphus_cli::permission::CliPermission,
     sisyphus_cfg: &sisyphus_types::Config,
 ) -> Result<()> {
-    ensure_recordable(record, verify_cmd)?;
+    // CLI 参数优先；未显式提供时回退 `[dev]` 配置默认值（含环境变量覆盖）。
+    // 不能直接用 `main` 传入的 Config：那条路径不会自动应用 env 覆盖，
+    // 而 `SISYPHUS_DEV_VERIFY_CMD` / `SISYPHUS_DEV_VERIFY_FIX_ATTEMPTS`
+    // 是文档承诺的覆盖入口。
+    let mut effective_cfg = sisyphus_cfg.clone();
+    effective_cfg.apply_env_overrides();
+    let (verify_cmd, verify_fix_attempts) =
+        resolve_gate(verify_cmd, verify_fix_attempts, &effective_cfg);
+
+    ensure_recordable(record, &verify_cmd)?;
 
     println!("🧠 Sisyphus developer agent");
     println!("Goal: {goal}");
@@ -207,6 +216,28 @@ fn detect_deleted_public_apis() -> Vec<String> {
 /// `--record` 必须配 `--verify-cmd`：没有客观闸门就没有「成败」可记录。
 ///
 /// 记录一条没有判据的「成功」会直接污染质量指标，因此这里直接拒绝。
+/// 解析本次 dev 运行的有效闸门参数。
+///
+/// 优先级：CLI 显式参数 > `[dev]` 配置（调用方应已应用 env 覆盖）> 内置默认。
+/// 空白命令视同未设置（避免 `--verify-cmd ""` 变成一个永远失败的命令）。
+fn resolve_gate(
+    cli_verify_cmd: &Option<String>,
+    cli_fix_attempts: Option<usize>,
+    cfg: &sisyphus_types::Config,
+) -> (Option<String>, usize) {
+    let config_verify_cmd = {
+        let v = cfg.dev.verify_cmd.trim().to_string();
+        (!v.is_empty()).then_some(v)
+    };
+    let verify_cmd = cli_verify_cmd
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or(config_verify_cmd);
+    let attempts = cli_fix_attempts.unwrap_or(cfg.dev.verify_fix_attempts);
+    (verify_cmd, attempts)
+}
+
 fn ensure_recordable(record: &Option<PathBuf>, verify_cmd: &Option<String>) -> Result<()> {
     if record.is_some() && verify_cmd.is_none() {
         anyhow::bail!("--record 需要同时指定 --verify-cmd（没有客观闸门无法判定任务成败）");
@@ -295,6 +326,38 @@ mod tests {
         assert!(ensure_recordable(&record, &None).is_err());
         assert!(ensure_recordable(&record, &Some("cargo check".to_string())).is_ok());
         assert!(ensure_recordable(&None, &None).is_ok());
+    }
+
+    fn cfg_with_dev(cmd: &str, attempts: usize) -> sisyphus_types::Config {
+        let mut cfg = sisyphus_types::Config::default();
+        cfg.dev.verify_cmd = cmd.to_string();
+        cfg.dev.verify_fix_attempts = attempts;
+        cfg
+    }
+
+    #[test]
+    fn resolve_gate_cli_overrides_config() {
+        let cfg = cfg_with_dev("cargo test", 5);
+        let (cmd, attempts) = resolve_gate(&Some("cargo check".to_string()), Some(1), &cfg);
+        assert_eq!(cmd.as_deref(), Some("cargo check"));
+        assert_eq!(attempts, 1);
+    }
+
+    #[test]
+    fn resolve_gate_falls_back_to_config() {
+        let cfg = cfg_with_dev("cargo test", 4);
+        let (cmd, attempts) = resolve_gate(&None, None, &cfg);
+        assert_eq!(cmd.as_deref(), Some("cargo test"));
+        assert_eq!(attempts, 4);
+    }
+
+    #[test]
+    fn resolve_gate_ignores_blank_cli_and_config_cmd() {
+        let cfg = cfg_with_dev("   ", 4);
+        let (cmd, attempts) = resolve_gate(&Some("  ".to_string()), None, &cfg);
+        assert_eq!(cmd, None);
+        // 没有有效命令时仍解析 attempts，但调用方不会装配闸门。
+        assert_eq!(attempts, 4);
     }
 
     #[test]

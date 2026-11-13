@@ -406,8 +406,8 @@ sisyphus dev "<目标>" \
 | `--parallel` | 并行执行步骤（最多 4 并发，写冲突由编排层串行化） |
 | `--resume` | 从 checkpoint 恢复，跳过已完成步骤 |
 | `--timeout-secs` | 整体超时（默认 300s）；本地/慢速模型需调大 |
-| `--verify-cmd` | **客观验收命令**。通过才判定目标达成；未通过则自动修复，仍失败则整体判失败 |
-| `--verify-fix-attempts` | 闸门失败后的自动修复次数（默认 2，`0` 表示只判定不修复） |
+| `--verify-cmd` | **客观验收命令**。通过才判定目标达成；未通过则自动修复，仍失败则整体判失败。未指定时读取 `[dev].verify_cmd`（可通过 `SISYPHUS_DEV_VERIFY_CMD` 覆盖） |
+| `--verify-fix-attempts` | 闸门失败后的自动修复次数（`0` 表示只判定不修复）。未指定时读取 `[dev].verify_fix_attempts`（默认 2，可通过 `SISYPHUS_DEV_VERIFY_FIX_ATTEMPTS` 覆盖） |
 | `--record` | 把本次闭环写成一条任务级质量记录（JSON）；**必须同时指定 `--verify-cmd`**，否则直接拒绝 |
 | `--scenario` | 记录里的场景标签（默认 `dev-closed-loop`），如 `diagnose-fix` / `quality-gate` / `feature` |
 | `--yes` | 自动放行「需要人工确认」的命令。默认：交互式终端问 `[Y/n]`，**非交互环境直接拒绝**（fail-safe） |
