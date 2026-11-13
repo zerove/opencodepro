@@ -5,6 +5,7 @@
 > 范围：验证新接线的 bridge 执行入口可产出可聚合 `TaskRecord`：
 > HTTP composite（成功路径）、HTTP goal streaming（失败路径）、HTTP unary goal（失败路径）。
 > gRPC `execute_sop` / `stream_execution` / `call_jcode` 已接线但**未做 live E2E**（环境无 grpcurl / 可用执行目标）。
+> 另记录一次「本地 LLM 可用但模型能力不足」的 unary 失败样本，证明记录链路在真实执行下仍如实落盘。
 
 ## 环境与步骤
 
@@ -88,6 +89,21 @@ curl -sS -N --max-time 20 http://127.0.0.1:15493/api/execute/goal/stream-e2e-goa
 3 条记录场景均为 `bridge-goal-execute`（`fail`，`5096ms` / `50ms` / `37ms`）。
 原始记录见 `runs/bridge-record-coverage/unary-goal/`。
 
+### 4) HTTP unary goal —— 有可用本地 LLM 时仍失败（模型能力边界）
+
+后续确认本机 ollama `qwen2.5-coder:3b` 可用后，以宽超时（`request_timeout_secs=240`）
+重试 `POST /api/execute/goal`（goal：`读取 README.md 的前 5 行并原样输出`）：
+
+- 执行耗时 **133877ms** 后失败：`Swarm audit failed: Failed to parse proposal JSON:
+  invalid type: map, expected a tuple of size 2`；
+- 3B 模型生成的 SOP 节点 `args` 形态不符合 `SOPGraphConfig` 反序列化要求，
+  属**模型能力边界**，不是记录链路问题；
+- 记录如实落盘：`status=fail`、`engine_commit=3977830110a8`、`engine_dirty=false`
+  （此时工作区已提交干净），见
+  `runs/bridge-record-coverage/unary-goal-with-llm/`。
+
+> 失败样本被保留（失败是成功率分母），不因「想要成功样本」而丢弃。
+
 ## 聚合
 
 ```bash
@@ -122,7 +138,9 @@ sisyphus metrics quality --records <tmp>/records --json
   实际抓取了 `https://example.com` 的内容 —— 与输入 goal 的意图未必一致；这类执行语义
   由既有合成/执行逻辑决定，本记录只反映其终态。
 - **未覆盖**：gRPC 三个入口未做 live E2E（无 grpcurl、无可用执行目标）；HTTP unary
-  `execute_goal` 的成功路径仍缺（需要可用 LLM/审计环境）。
+  `execute_goal` 的成功路径仍缺（需要能产出合法 SOP JSON 的模型/可用云端凭据）。
+  `qwen2.5-coder:3b` 在有 LLM 的情况下仍因 proposal JSON 解析失败（见上），
+  `gemma4:e4b` 在本机 CPU 上 290s 内无响应，均不足以完成成功路径验收。
 - **token usage** 为 `null`（无可得 provider usage，不伪造 0）。
 - `fix_rate=0.0` 来自“初次失败且最终失败”样本的既有聚合口径；bridge 无自动修复循环，
   该值不可解读为修复能力。

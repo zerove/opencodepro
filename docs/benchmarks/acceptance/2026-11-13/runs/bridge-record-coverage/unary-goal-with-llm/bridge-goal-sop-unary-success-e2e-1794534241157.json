@@ -1,0 +1,15 @@
+{
+  "task_id": "bridge-goal-sop-unary-success-e2e-1794534241157",
+  "scenario": "bridge-goal-execute",
+  "status": "fail",
+  "initial_verify_passed": false,
+  "final_verify_passed": false,
+  "fix_attempts": 0,
+  "regressed": false,
+  "duration_ms": 133877,
+  "prompt_tokens": null,
+  "completion_tokens": null,
+  "engine_commit": "3977830110a8",
+  "engine_dirty": false,
+  "recorded_at": "2026-11-13T01:44:01.157762616+00:00"
+}
