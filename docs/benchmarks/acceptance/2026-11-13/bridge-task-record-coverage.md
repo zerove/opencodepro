@@ -1,12 +1,12 @@
 # Bridge TaskRecord 覆盖扩展 E2E 证据（composite / streaming / unary / gRPC）
 
-> 日期：2026-11-13
-> 引擎提交（记录内）：`02ce4abf94aa`，`engine_dirty=true`（运行时工作区含未提交的覆盖扩展改动；记录如实标记，不冒充干净版本）
+> 日期：2026-11-13（gRPC live E2E 补充）
+> 引擎提交（记录内）：样本按运行时如实归因，见各子目录记录（早期覆盖扩展为 `02ce4abf94aa`+`engine_dirty=true`；token 探测/捕获含 `209e4d293a8a`/`17cd20c08533`/`17cd20c08533+dirty`；gRPC stream/call_jcode live 为 `5f2e2043b0f9` clean）
 > 范围：验证新接线的 bridge 执行入口可产出可聚合 `TaskRecord`：
 > HTTP composite（成功路径）、HTTP goal streaming（失败路径）、HTTP unary goal（失败路径）、
-> gRPC `execute_sop`（失败路径，LLM 能力边界）。
-> gRPC `stream_execution` / `call_jcode` 已接线但**未做 live E2E**（环境无 grpcurl / 可用执行目标）。
-> 另记录一次「本地 LLM 可用但模型能力不足」的 unary 失败样本，证明记录链路在真实执行下仍如实落盘。
+> gRPC `execute_sop`（失败路径，LLM 能力边界）、gRPC `stream_execution`（goal 分支，失败路径，live）、
+> gRPC `call_jcode`（失败路径，live）。
+> 另记录「本地 LLM 可用但模型能力不足」的 unary 失败样本，证明记录链路在真实执行下仍如实落盘。
 
 ## 环境与步骤
 
@@ -168,15 +168,26 @@ sisyphus metrics quality --records <tmp>/records --json
 ## 结论与限制
 
 - **结论**：新接线入口在真实 bridge 运行中产出 schema 正确、可被 `sisyphus metrics quality`
-  聚合的记录；composite 成功与 streaming/unary/gRPC 失败路径均有样本，场景标签可区分。
+  聚合的记录；HTTP composite 成功与 HTTP streaming/unary 失败、gRPC `execute_sop` 失败、
+  gRPC `stream_execution`(goal 分支) 失败、gRPC `call_jcode` 失败均有 live 样本，场景标签可区分。
 - **`Pass` 语义**：仅表示执行路径完成，**不是**外部客观验收。本次 composite 的合成计划
   实际抓取了 `https://example.com` 的内容 —— 与输入 goal 的意图未必一致；这类执行语义
   由既有合成/执行逻辑决定，本记录只反映其终态。
-- **未覆盖**：gRPC `stream_execution` / `call_jcode` live E2E；HTTP unary `execute_goal` 的成功
-  路径仍缺（需要能产出合法 SOP JSON 的模型/可用云端凭据）。
-  `qwen2.5-coder:3b` 在有 LLM 的情况下仍因 proposal/reflection JSON 解析失败（见上），
+- **未覆盖**：HTTP unary `execute_goal` 的**成功**路径仍缺（需要能产出合法 SOP JSON 的
+  模型/可用云端凭据）；gRPC `stream_execution` 的 **非 goal（SOP/工具）分支** 未单独做
+  live E2E（该分支代码路径已接线并复用 `bridge-sop-execute` 场景，另有 gRPC `execute_sop`
+  样本佐证）。`qwen2.5-coder:3b` 在有 LLM 的情况下仍因 proposal/reflection JSON 解析失败，
   `gemma4:e4b` 在本机 CPU 上 290s 内无响应，均不足以完成成功路径验收。
-- **token usage**：`209e4d2` 后已接线 best-effort 独占租约采集。初次 live 探测（HTTP unary goal / gRPC `execute_sop` / composite，clean build）记录仍为 `null`（归档 `runs/bridge-record-coverage/token-probe/`），但后续对 HTTP `execute_goal` 的独占 live 运行（本机 ollama `qwen2.5-coder:3b`，执行因模型 proposal JSON 解析失败；运行时构建含临时观测日志，故记录标记 `engine_dirty=true`）成功采集并落盘 **prompt_tokens=538 / completion_tokens=427 / total=965**（`calls=2` 的累计差值），聚合 `mean_*_tokens` 正确（`runs/bridge-record-coverage/token-captured/`，`sisyphus metrics quality --json`）。**结论**：机制可在 provider 上报 usage 且租约独占时产出真实增量；无 usage/非独占/无法归因时仍按口径保持 `null`（未知 ≠ 0，不伪造）。(delta 单测 2 项 + quality_record 6 passed)
+- **gRPC `stream_execution` / `call_jcode` live（2026-11-13，`5f2e2043b0f9` clean）**：
+  通过临时 tonic 客户端对运行中的 debug bridge 发起调用（本机 ollama `qwen2.5-coder:3b`，
+  独占执行），两条记录均落盘且 **token 非 null**（失败路径由模型能力边界导致，但 LLM 调用
+  与 usage 上报真实发生）：
+  - `bridge-goal-streaming`（`stream_execution` goal 分支，`task_id=bridge-goal-stream-grpc_stream_token_probe-1794557149858`）：`status=fail`，`duration_ms=84590`，`prompt_tokens=517`，`completion_tokens=481`，`engine_dirty=false`（流式响应事件 0 条，但执行与记录链路完成）。
+  - `bridge-jcode-execute`（`call_jcode`，`task_id=bridge-jcode-grpc-jcode-probe-1794557229010`）：`status=fail`（proposal JSON 解析/类型不匹配），`duration_ms=77172`，`prompt_tokens=519`，`completion_tokens=486`，`engine_dirty=false`。
+  - 聚合（`sisyphus metrics quality --json`）：`total=2, failed=2, mean_total_tokens=1001.5`。
+  归档：`runs/bridge-record-coverage/grpc-stream-calljcode/`（记录 + `aggregate.json`）。
+- **token usage**：`209e4d2` 后已接线 best-effort 独占租约采集。初次 live 探测（HTTP unary goal / gRPC `execute_sop` / composite，clean build）记录为 `null`（`runs/bridge-record-coverage/token-probe/`）；后续 HTTP `execute_goal` 独占运行采集到 **538/427**（`runs/bridge-record-coverage/token-captured/`，`engine_dirty=true`，如实归因）；本轮 gRPC `stream_execution`(goal)/`call_jcode` 独占运行在 clean `5f2e2043b0f9` 上采集到 **517/481** 与 **519/486**。**结论**：机制可在 provider 上报 usage 且租约独占时产出真实增量；无 usage/非独占/无法归因时仍按口径保持 `null`（未知 ≠ 0，不伪造）。
 - `fix_rate=0.0` 来自“初次失败且最终失败”样本的既有聚合口径；bridge 无自动修复循环，
   该值不可解读为修复能力。
-- 原始记录与聚合输出归档于 `runs/bridge-record-coverage/`（含 `grpc-sop/`、`token-probe/` 等子目录）。
+- 原始记录与聚合输出归档于 `runs/bridge-record-coverage/`（含 `grpc-sop/`、`token-probe/`、
+  `token-captured/`、`grpc-stream-calljcode/` 等子目录）。

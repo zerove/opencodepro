@@ -56,7 +56,8 @@
   并发/无 usage 时保持 `null`（未知 ≠ 0，不伪造）。
   首次 live E2E（失败路径）证据见
   `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`；覆盖扩展
-  （composite 成功 / streaming 失败）证据见
+  （composite 成功 / streaming 失败 / gRPC `execute_sop`、`stream_execution`(goal)、`call_jcode`，
+  含 token-captured 与 grpc-stream-calljcode 样本）证据见
   `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-coverage.md`。
 - **证据目录**：`scripts/single-node-acceptance-evidence.sh --run-l0` 已自动化 L0；L3 待环境。
 

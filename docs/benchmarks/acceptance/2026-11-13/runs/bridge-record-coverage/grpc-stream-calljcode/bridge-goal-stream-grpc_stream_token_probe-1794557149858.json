@@ -1,0 +1,15 @@
+{
+  "task_id": "bridge-goal-stream-grpc_stream_token_probe-1794557149858",
+  "scenario": "bridge-goal-streaming",
+  "status": "fail",
+  "initial_verify_passed": false,
+  "final_verify_passed": false,
+  "fix_attempts": 0,
+  "regressed": false,
+  "duration_ms": 84590,
+  "prompt_tokens": 517,
+  "completion_tokens": 481,
+  "engine_commit": "5f2e2043b0f9",
+  "engine_dirty": false,
+  "recorded_at": "2026-11-13T08:05:49.858050404+00:00"
+}

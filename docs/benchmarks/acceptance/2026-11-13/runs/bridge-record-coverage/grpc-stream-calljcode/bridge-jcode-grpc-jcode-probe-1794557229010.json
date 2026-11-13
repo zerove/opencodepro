@@ -1,0 +1,15 @@
+{
+  "task_id": "bridge-jcode-grpc-jcode-probe-1794557229010",
+  "scenario": "bridge-jcode-execute",
+  "status": "fail",
+  "initial_verify_passed": false,
+  "final_verify_passed": false,
+  "fix_attempts": 0,
+  "regressed": false,
+  "duration_ms": 77172,
+  "prompt_tokens": 519,
+  "completion_tokens": 486,
+  "engine_commit": "5f2e2043b0f9",
+  "engine_dirty": false,
+  "recorded_at": "2026-11-13T08:07:09.010147491+00:00"
+}
