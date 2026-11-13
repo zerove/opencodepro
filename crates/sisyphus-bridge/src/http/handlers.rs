@@ -319,6 +319,7 @@ pub(super) async fn execute_goal_handler(
     maybe_trace_id: Option<Extension<sisyphus_types::trace::TraceId>>,
     Json(req): Json<GoalExecuteRequest>,
 ) -> impl IntoResponse {
+    let started_at = std::time::Instant::now();
     let kernel = state.bridge.kernel();
     let sop_id = req.sop_id.clone();
 
@@ -347,19 +348,42 @@ pub(super) async fn execute_goal_handler(
     }
 
     match result {
-        Ok((output, report)) => (
-            StatusCode::OK,
-            match serde_json::to_value(GoalExecuteResponse { output, report }) {
-                Ok(val) => Json(val),
-                Err(_) => {
-                    return (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(serde_json::json!({ "error": "Failed to serialize response" })),
-                    )
-                },
+        Ok((output, report)) => match serde_json::to_value(GoalExecuteResponse {
+            output: output.clone(),
+            report: report.clone(),
+        }) {
+            Ok(val) => {
+                crate::quality_record::record_goal_execution(
+                    &sop_id,
+                    true,
+                    started_at.elapsed(),
+                    None,
+                    None,
+                );
+                (StatusCode::OK, Json(val))
             },
-        ),
+            Err(_) => {
+                crate::quality_record::record_goal_execution(
+                    &sop_id,
+                    false,
+                    started_at.elapsed(),
+                    None,
+                    None,
+                );
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": "Failed to serialize response" })),
+                )
+            },
+        },
         Err(e) => {
+            crate::quality_record::record_goal_execution(
+                &sop_id,
+                false,
+                started_at.elapsed(),
+                None,
+                None,
+            );
             let msg = e.to_string();
             let hint = if msg.contains("without any real execution result")
                 || msg.contains("StrategicPivot")

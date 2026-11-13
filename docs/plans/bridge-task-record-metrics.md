@@ -1,6 +1,6 @@
 # Bridge 路径 TaskRecord 落盘与 `metrics quality` 覆盖（最小设计）
 
-> 状态：**设计草案**（2026-11-13）。用于落实计划中的“bridge 路径 TaskRecord 落盘 / `metrics quality` 覆盖”，在实现前明确执行落点、记录契约与归因口径。
+> 状态：**最小实现进行中**（2026-11-13）。已落地 HTTP `execute_goal` 路径的 best-effort 落盘与单测/聚合兼容性验证；尚未覆盖 gRPC/composite/streaming，也未产出 live bridge E2E 记录证据。
 >
 > 背景：`sisyphus dev` / `sisyphus verify` 已可通过 `--record` 产出 `TaskRecord`（`sisyphus-metrics::quality`）并由 `sisyphus metrics quality` 聚合；bridge 侧当前**无 Developer/dev 闭环执行路径**，因此 dev 语义的质量记录无法直接复用。bridge 可观测、可执行的是 **goal/SOP 执行**（HTTP/gRPC/SSE），需要定义与现有指标口径兼容且不伪造语义的最小落盘方案。
 
@@ -62,13 +62,21 @@
 ## 5. 实现步骤（最小可交付）
 
 1. **抽取引擎版本探测 helper**：从 CLI `dev/verify` 记录路径复用或提取到共享位置（避免三处重复且口径漂移）。
+   - **当前进展**：在 `crates/sisyphus-bridge/src/quality_record.rs` 内实现了与 CLI 一致口径的 git 版本探测（`CARGO_MANIFEST_DIR` + short sha + dirty；取不到按未知/保守处理），尚未抽取为跨 crate 共享 helper。
 2. **Bridge 记录写入模块**：新增轻量 writer（依赖 `sisyphus-metrics::quality::TaskRecord`），负责序列化、目录创建、原子写文件、best-effort 错误处理。
+   - **已完成（最小）**：`quality_record` 模块实现原子写入与 best-effort 告警；通过 `SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR` 环境变量 opt-in 启用（未设置则不写）。
 3. **接线 `execute_goal_handler`**：计时开始/结束；在成功与失败分支组装记录并调用 writer；补充 `tracing` 字段（`task_id`/`duration_ms`/`status`）便于排查。
+   - **已完成（最小）**：HTTP `/api/execute/goal` 成功/失败（含响应序列化失败）分支写入 `scenario=bridge-goal-execute` 记录；token usage 当前为 `None`（无可靠来源时不伪造）。
 4. **配置与开关**：增加最小配置（env/Config 字段二选一，按现有模式）；更新 `config.example.toml` 与 `book/`（若引入 Config 字段）。
+   - **当前进展**：采用 env opt-in（`SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR`），未新增 `Config` schema 字段，故未修改 `config.example.toml`/`book/` 配置章节。
 5. **测试**：
    - 单元测试：记录映射（成功/失败/无 token/dirty 归因）与 JSON 往返。
+     - **已完成**：`cargo test -p sisyphus-bridge --lib quality_record` → 3 passed（文件名清洗、sha 规范化、原子写入与反序列化）。
+   - 聚合兼容性：样本记录可被 `sisyphus metrics quality --records <dir> --json` 正确解析（成功率/耗时/版本归因符合预期，fix/regression 为 `null`）。
    - 集成测试：在可控 bridge 执行路径下断言记录文件生成且 `sisyphus metrics quality` 可聚合（注意 bridge 测试在 CI 的 OOM 约束与 `#[ignore]` 策略，按仓库惯例处理）。
+     - **待完成**：live bridge `execute_goal` E2E 记录产出与落盘证据（需可控执行环境/依赖）。
 6. **文档与证据**：更新 `docs/plans/single-node-quality-metrics.md`、`docs/plans/automation-development-plan-2026-11.md` 状态与边界说明；产出一次真实运行的记录与聚合快照作为证据。
+   - **当前进展**：本设计文档已更新实现状态；其余文档与 live 证据待后续补齐。
 
 ## 6. 风险与开放问题
 
