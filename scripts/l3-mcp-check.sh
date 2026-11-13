@@ -49,6 +49,23 @@ mkdir -p "$WORKDIR"
 PASS=0
 FAIL=0
 
+# 后台进程统一在最早处登记并清理：HTTP fixture 在级别 1b 启动，而 trap 若等到
+# 级别 2 才安装，中间任何 `exit 1`（例如端口被占、fixture 未就绪）都会把
+# fixture 留成孤儿进程，下次运行直接因「端口已被占用」失败。
+HTTP_PID=""
+BPID=""
+cleanup() {
+  if [ -n "$BPID" ]; then
+    kill "$BPID" 2>/dev/null
+    wait "$BPID" 2>/dev/null
+  fi
+  if [ -n "$HTTP_PID" ]; then
+    kill "$HTTP_PID" 2>/dev/null
+    wait "$HTTP_PID" 2>/dev/null
+  fi
+}
+trap cleanup EXIT INT TERM
+
 check() { # check <name> <expected-substring> <actual>
   local name="$1" expect="$2" actual="$3"
   if printf '%s' "$actual" | grep -qF -- "$expect"; then
@@ -84,6 +101,12 @@ check "mcp call word_count = 3" '"text": "3"' "$wc_out"
 err_out="$(timeout 60 "$CLI" mcp call sum '{}' python3 "$SERVER" 2>&1)"
 check "mcp call 参数缺失返回 isError" '"isError": true' "$err_out"
 
+err_tool_out="$(timeout 60 "$CLI" mcp call no_such_tool '{}' python3 "$SERVER" 2>&1)"
+check "mcp call 未知工具返回 isError" '"isError": true' "$err_tool_out"
+check "mcp call 未知工具错误信息" 'unknown tool: no_such_tool' "$err_tool_out"
+err_echo_out="$(timeout 60 "$CLI" mcp call echo '{}' python3 "$SERVER" 2>&1)"
+check "mcp call 缺少 text 参数返回 isError" '"isError": true' "$err_echo_out"
+
 res_out="$(timeout 60 "$CLI" mcp resources python3 "$SERVER" 2>&1)"
 check "mcp resources 包含 welcome" '"memo://welcome"' "$res_out"
 check "mcp resources 包含 status" '"memo://status"' "$res_out"
@@ -95,6 +118,8 @@ read_paged_out="$(timeout 60 "$CLI" mcp read-resource 'memo://paged' python3 "$S
 check "mcp read-resource 读取分页资源" 'paged resource body' "$read_paged_out"
 read_tmpl_out="$(timeout 60 "$CLI" mcp read-resource 'memo://note/alice' python3 "$SERVER" 2>&1)"
 check "mcp read-resource 读取模板实例 URI" 'note: alice' "$read_tmpl_out"
+read_missing_out="$(timeout 60 "$CLI" mcp read-resource 'memo://missing' python3 "$SERVER" 2>&1)"
+check "mcp read-resource 未知 URI 返回错误" 'resource not found: memo://missing' "$read_missing_out"
 prompts_out="$(timeout 60 "$CLI" mcp prompts python3 "$SERVER" 2>&1)"
 check "mcp prompts 列出 greet" '"greet"' "$prompts_out"
 check "mcp prompts 列出 summary" '"summary"' "$prompts_out"
@@ -103,6 +128,8 @@ prompt_out="$(timeout 60 "$CLI" mcp get-prompt greet '{"name":"Sisyphus"}' pytho
 check "mcp get-prompt 返回渲染消息" 'Say hello to Sisyphus' "$prompt_out"
 prompt_paged_out="$(timeout 60 "$CLI" mcp get-prompt paged_prompt '{}' python3 "$SERVER" 2>&1)"
 check "mcp get-prompt 获取分页提示" 'Paged prompt message.' "$prompt_paged_out"
+prompt_missing_out="$(timeout 60 "$CLI" mcp get-prompt missing '{}' python3 "$SERVER" 2>&1)"
+check "mcp get-prompt 未知提示返回错误" 'prompt not found: missing' "$prompt_missing_out"
 
 # 客户端 ↔ 自家 MCP server（`sisyphus mcp serve`）：同一套协议的两端。
 # 这里同时守住「自家 server 不得回复 notification」——否则滞留在管道里的响应
@@ -113,7 +140,7 @@ check "自家 MCP server 工具名 metis_analyse" "metis_analyse" "$self_out"
 
 # ── 级别 1b：HTTP 传输（Streamable HTTP）────────────────────────
 if (exec 3<>"/dev/tcp/127.0.0.1/$HTTP_MCP_PORT") 2>/dev/null; then
-  echo "FAIL  HTTP MCP 端口 $HTTP_MCP_PORT 已被占用（可能残留旧服务）" >&2
+  echo "FAIL  HTTP MCP 端口 $HTTP_MCP_PORT 已被占用（可能残留旧服务；可先 pkill -f l3-mcp-http-server.py）" >&2
   exit 1
 fi
 python3 "$HTTP_SERVER" --port "$HTTP_MCP_PORT" >"$WORKDIR/http-server.log" 2>&1 &
@@ -139,6 +166,8 @@ http_sum="$(timeout 60 "$CLI" mcp call sum '{"a":20,"b":22}' "$HTTP_URL" 2>&1)"
 check "HTTP 传输 mcp call sum(20,22) = 42" '"text": "42"' "$http_sum"
 http_err="$(timeout 60 "$CLI" mcp call sum '{}' "$HTTP_URL" 2>&1)"
 check "HTTP 传输参数缺失返回 isError" '"isError": true' "$http_err"
+http_err_tool="$(timeout 60 "$CLI" mcp call no_such_tool '{}' "$HTTP_URL" 2>&1)"
+check "HTTP 传输未知工具返回 isError" '"isError": true' "$http_err_tool"
 http_res="$(timeout 60 "$CLI" mcp resources "$HTTP_URL" 2>&1)"
 check "HTTP 传输列出资源 memo://welcome" '"memo://welcome"' "$http_res"
 check "HTTP 传输自动合并分页资源" '"memo://paged"' "$http_res"
@@ -149,6 +178,8 @@ http_read_paged="$(timeout 60 "$CLI" mcp read-resource 'memo://paged' "$HTTP_URL
 check "HTTP 传输读取分页资源" 'paged resource body' "$http_read_paged"
 http_read_tmpl="$(timeout 60 "$CLI" mcp read-resource 'memo://note/bob' "$HTTP_URL" 2>&1)"
 check "HTTP 传输读取模板实例 URI" 'note: bob' "$http_read_tmpl"
+http_read_missing="$(timeout 60 "$CLI" mcp read-resource 'memo://missing' "$HTTP_URL" 2>&1)"
+check "HTTP 传输未知 URI 返回错误" 'resource not found: memo://missing' "$http_read_missing"
 http_prompts="$(timeout 60 "$CLI" mcp prompts "$HTTP_URL" 2>&1)"
 check "HTTP 传输列出 prompts" '"greet"' "$http_prompts"
 check "HTTP 传输自动合并分页提示" '"paged_prompt"' "$http_prompts"
@@ -156,6 +187,8 @@ http_prompt="$(timeout 60 "$CLI" mcp get-prompt greet '{"name":"Sisyphus"}' "$HT
 check "HTTP 传输 get-prompt 渲染" 'Say hello to Sisyphus' "$http_prompt"
 http_prompt_paged="$(timeout 60 "$CLI" mcp get-prompt paged_prompt '{}' "$HTTP_URL" 2>&1)"
 check "HTTP 传输获取分页提示" 'Paged prompt message.' "$http_prompt_paged"
+http_prompt_missing="$(timeout 60 "$CLI" mcp get-prompt missing '{}' "$HTTP_URL" 2>&1)"
+check "HTTP 传输未知提示返回错误" 'prompt not found: missing' "$http_prompt_missing"
 
 # ── 级别 2：引擎（bridge）侧注册与调用 ───────────────────────
 if [ "$CLI_ONLY" -eq 1 ]; then
@@ -199,13 +232,6 @@ BRIDGE_LOG="$WORKDIR/bridge.log"
 # bridge 从 SISYPHUS_CONFIG 读配置（没有 --config 选项）
 SISYPHUS_CONFIG="$CFG" "$BRIDGE_BIN" >"$BRIDGE_LOG" 2>&1 &
 BPID=$!
-cleanup() {
-  [ -n "${BPID:-}" ] && kill "$BPID" 2>/dev/null
-  wait "${BPID:-}" 2>/dev/null
-  [ -n "${HTTP_PID:-}" ] && kill "$HTTP_PID" 2>/dev/null
-  wait "${HTTP_PID:-}" 2>/dev/null
-}
-trap cleanup EXIT
 
 READY=0
 for _ in $(seq 1 60); do
@@ -256,6 +282,12 @@ else
   mcp_read_tmpl_out="$(curl -sf --max-time 15 -G "$BASE/api/mcp/resources/read" \
     --data-urlencode 'server=l3' --data-urlencode 'uri=memo://note/alice' 2>&1)"
   check "引擎代理 resources/read 读取模板实例 URI" 'note: alice' "$mcp_read_tmpl_out"
+  mcp_read_missing_out="$(curl -sS --max-time 15 -G "$BASE/api/mcp/resources/read" \
+    --data-urlencode 'server=l3' --data-urlencode 'uri=memo://missing' 2>&1)"
+  check "引擎代理 resources/read 未知 URI 返回错误" 'resource not found: memo://missing' "$mcp_read_missing_out"
+  mcp_read_unknown_server="$(curl -sS --max-time 10 -G "$BASE/api/mcp/resources/read" \
+    --data-urlencode 'server=nope' --data-urlencode 'uri=memo://welcome' 2>&1)"
+  check "引擎代理 resources/read 未知 server 返回错误" 'MCP server not found: nope' "$mcp_read_unknown_server"
   mcp_get_prompt_out="$(curl -sf --max-time 15 -X POST "$BASE/api/mcp/prompts/get" \
     -H 'content-type: application/json' \
     -d '{"server":"l3","name":"greet","arguments":{"name":"Bridge"}}' 2>&1)"
@@ -268,6 +300,10 @@ else
     -H 'content-type: application/json' \
     -d '{"server":"l3http","name":"summary","arguments":{}}' 2>&1)"
   check "引擎代理 prompts/get（HTTP MCP）返回摘要提示" 'Summarize the context.' "$mcp_get_prompt_http_out"
+  mcp_get_prompt_missing_out="$(curl -sS --max-time 15 -X POST "$BASE/api/mcp/prompts/get" \
+    -H 'content-type: application/json' \
+    -d '{"server":"l3","name":"missing","arguments":{}}' 2>&1)"
+  check "引擎代理 prompts/get 未知提示返回错误" 'prompt not found: missing' "$mcp_get_prompt_missing_out"
 fi
 
 echo

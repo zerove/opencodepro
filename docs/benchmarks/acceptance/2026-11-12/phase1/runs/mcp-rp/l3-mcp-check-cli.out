@@ -7,20 +7,40 @@ PASS  mcp info 工具名 word_count
 PASS  mcp call sum(2,3) = 5
 PASS  mcp call word_count = 3
 PASS  mcp call 参数缺失返回 isError
-PASS  mcp resources 列出 2 个资源
+PASS  mcp call 未知工具返回 isError
+PASS  mcp call 未知工具错误信息
+PASS  mcp call 缺少 text 参数返回 isError
+PASS  mcp resources 包含 welcome
 PASS  mcp resources 包含 status
+PASS  mcp resources 自动合并分页资源
+PASS  mcp resources 包含资源模板
 PASS  mcp read-resource 返回文本内容
+PASS  mcp read-resource 读取分页资源
+PASS  mcp read-resource 读取模板实例 URI
+PASS  mcp read-resource 未知 URI 返回错误
 PASS  mcp prompts 列出 greet
 PASS  mcp prompts 列出 summary
+PASS  mcp prompts 自动合并分页提示
 PASS  mcp get-prompt 返回渲染消息
+PASS  mcp get-prompt 获取分页提示
+PASS  mcp get-prompt 未知提示返回错误
 PASS  自家 MCP server 可被协议客户端读取工具列表
 PASS  自家 MCP server 工具名 metis_analyse
 PASS  HTTP 传输握手并列出 3 个工具
 PASS  HTTP 传输 mcp call sum(20,22) = 42
 PASS  HTTP 传输参数缺失返回 isError
+PASS  HTTP 传输未知工具返回 isError
 PASS  HTTP 传输列出资源 memo://welcome
+PASS  HTTP 传输自动合并分页资源
+PASS  HTTP 传输列出资源模板
 PASS  HTTP 传输读取资源内容
+PASS  HTTP 传输读取分页资源
+PASS  HTTP 传输读取模板实例 URI
+PASS  HTTP 传输未知 URI 返回错误
 PASS  HTTP 传输列出 prompts
+PASS  HTTP 传输自动合并分页提示
 PASS  HTTP 传输 get-prompt 渲染
+PASS  HTTP 传输获取分页提示
+PASS  HTTP 传输未知提示返回错误
 
-PASS=21 FAIL=0（--cli-only，跳过引擎级检查）
+PASS=41 FAIL=0（--cli-only，跳过引擎级检查）
