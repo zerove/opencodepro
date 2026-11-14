@@ -32,20 +32,35 @@ fn handle_quality(records_dir: &Path, json: bool) -> Result<()> {
     Ok(())
 }
 
-/// 读取目录下全部任务记录并聚合。
+/// 递归收集目录下全部 `.json` 任务记录（按路径排序，保证确定性）。
+///
+/// 轮转策略（`bridge-task-record-metrics.md` §6）按 `recorded_at` 月份把记录
+/// 轮转到 `records/YYYY-MM/` 子目录；聚合必须递归，否则轮转后样本「消失」
+/// （顶层比率不变但分母偷偷变小，比率失真）。子目录读取失败同样向上传播，
+/// 不静默跳过（与顶层目录错误同口径）。
+fn collect_record_paths(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    let entries = std::fs::read_dir(dir)
+        .with_context(|| format!("读取任务记录目录失败: {}", dir.display()))?;
+    for entry in entries {
+        let path = entry.with_context(|| format!("读取目录项失败: {}", dir.display()))?.path();
+        if path.is_dir() {
+            collect_record_paths(&path, out)?;
+        } else if path.extension().is_some_and(|ext| ext == "json") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// 读取目录下（含轮转子目录）全部任务记录并聚合。
 ///
 /// 目录不存在或没有记录时返回「空指标」（各比率为 `None`），不伪造 0 值。
 pub fn aggregate_dir(records_dir: &Path) -> Result<QualityMetrics> {
     let mut records: Vec<TaskRecord> = Vec::new();
 
     if records_dir.is_dir() {
-        let entries = std::fs::read_dir(records_dir)
-            .with_context(|| format!("读取任务记录目录失败: {}", records_dir.display()))?;
-        let mut paths: Vec<PathBuf> = entries
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
-            .collect();
+        let mut paths: Vec<PathBuf> = Vec::new();
+        collect_record_paths(records_dir, &mut paths)?;
         paths.sort();
 
         for path in paths {
@@ -165,6 +180,24 @@ mod tests {
         assert_eq!(metrics.failed, 1);
         assert_eq!(metrics.success_rate, Some(0.5));
         assert_eq!(metrics.fix_rate, Some(0.0));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn aggregates_records_recursively_after_rotation() {
+        // §6 轮转：记录按月份落入 records/YYYY-MM/ 子目录后，聚合仍须全量计入。
+        let dir = std::env::temp_dir().join("sisyphus_metrics_rotated_test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("2026-11")).expect("创建轮转子目录");
+
+        write_record(&dir, "t0", "pass", true, true, 0);
+        write_record(&dir.join("2026-11"), "t1", "fail", true, false, 1);
+
+        let metrics = aggregate_dir(&dir).unwrap();
+        assert_eq!(metrics.total, 2);
+        assert_eq!(metrics.passed, 1);
+        assert_eq!(metrics.failed, 1);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

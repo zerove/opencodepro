@@ -200,6 +200,9 @@ jobs:
   lint-sandbox:
     timeout-minutes: 25
     name: Lint Sandbox
+    # 成本观察（ADR-021 后续）：本 job 冷构建含 wasmtime（sisyphus-sandbox
+    # 直接依赖），首跑常 > 10min。先观察 2 个迭代：若持续 > 15min，
+    # 拆到 nightly 专用 job，避免拖慢 PR 门禁。
     runs-on: ubuntu-latest
     needs: fmt
     steps:

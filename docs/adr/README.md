@@ -23,6 +23,7 @@
 | [016](./016-federated-experience-aggregation.md) | 联邦经验聚合（入站经验质量门槛） | Implemented（2026-11-05） | 2026-11-05 |
 | [017](./017-strategy-weights-consensus.md) | 集群策略权重同步（每节点快照 + generation 取新） | Implemented（2026-11-06） | 2026-11-06 |
 | [020](./020-cluster-control-plane-rest-scheduler-integration.md) | Cluster control plane — REST 写入 / scheduler lease integration | Accepted（REST 写入=否 / 调度器 B=不接入） | 2026-11-10 |
+| [021](./021-quality-gate-degradation-audit.md) | 质量门禁退化审计（静态证据 + 语义退化检查，绝不静默放行） | Accepted | 2026-11-14 |
 
 ## 编号说明
 

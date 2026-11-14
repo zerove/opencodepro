@@ -3,8 +3,9 @@
 #
 # 输出 JSON 到 docs/benchmarks/quality-metrics/<YYYY-MM-DD>-<commit>.json
 # 来源：
-#   - bridge /api/metrics（sisyphus_llm_requests_total / sisyphus_llm_tokens_total），
-#     未运行时记 null（不伪造）
+#   - bridge /api/metrics（sisyphus_token_budget_usage / sisyphus_http_requests_total），
+#     未运行时记 null（不伪造）。指标名以 /api/metrics 实际 exposition 为准
+#     （旧文档里的 sisyphus_llm_requests_total / sisyphus_llm_tokens_total 并不存在）。
 #   - 任务级指标（成功率/修复率/回归率/单任务耗时/token 成本）：由
 #     `sisyphus metrics quality` 从任务记录目录聚合（记录由
 #     `sisyphus verify --record <path>` 或 `sisyphus dev --record <path>` 产生）；
@@ -63,8 +64,15 @@ if curl -sf --max-time 2 "${BRIDGE_HTTP}/health" >/dev/null 2>&1; then
 fi
 
 # 任务级指标：调用 CLI 聚合（未构建 CLI 或无记录时回退为 null）
+# 失败必须可见（ADR-021）：二进制旧于聚合源码时静默产出旧口径结果（轮转前
+# 扁平读取），比直接报错更危险；此处显式警告。
 TASK_METRICS_JSON="null"
 if [ -x "$SISYPHUS_BIN" ]; then
+  SRC_STAMP="$(stat -c %Y crates/sisyphus-cli/src/handle_metrics.rs 2>/dev/null || echo 0)"
+  BIN_STAMP="$(stat -c %Y "$SISYPHUS_BIN" 2>/dev/null || echo 0)"
+  if [ "$BIN_STAMP" -lt "$SRC_STAMP" ]; then
+    echo "warn: ${SISYPHUS_BIN} 旧于 handle_metrics.rs（聚合递归修复未编译进去）；先 cargo build -p sisyphus-cli" >&2
+  fi
   if TASK_METRICS_JSON="$("$SISYPHUS_BIN" metrics quality --records "$RECORDS_DIR" --json 2>/dev/null)"; then
     :
   else
@@ -109,6 +117,17 @@ try:
 except (TypeError, ValueError):
     task_metrics = None
 
+# 样本规模自检：文件数与字节数。比率接近阈值时先看分母，
+# 而不是盲信数字（样本量过小会让成功率/修复率失去统计意义）。
+records_count = 0
+records_bytes = 0
+if records_dir and os.path.isdir(records_dir):
+    for root, _dirs, files in os.walk(records_dir):
+        for name in files:
+            if name.endswith(".json"):
+                records_bytes += os.path.getsize(os.path.join(root, name))
+                records_count += 1
+
 metrics = {
     "collected_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     "commit": commit,
@@ -122,6 +141,8 @@ metrics = {
     "token_budget_exhausted": as_int(token_budget_exhausted),
     "http_requests_total": as_int(http_requests_total),
     "records_dir": records_dir,
+    "records_count": records_count,
+    "records_bytes": records_bytes,
 }
 # 任务级指标：无记录时保持 null（不伪造 0 值）
 if task_metrics:

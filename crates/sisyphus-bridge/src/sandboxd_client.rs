@@ -38,6 +38,26 @@ pub struct SandboxdClient {
     next_id: AtomicU64,
 }
 
+/// spawn 失败时的诊断信息：附带二进制路径、是否存在、IO 错误种类与 errno。
+///
+/// 覆盖三类高频误诊场景：路径不存在（ENOENT 被通用错误消息吞掉）、
+/// 无执行权限（EACCES，CI 以 root 运行时尤为常见）、PATH 查找失败。
+fn spawn_failure_diagnostic(sandboxd_path: &str, err: &std::io::Error) -> String {
+    let exists = std::path::Path::new(sandboxd_path).exists();
+    let path_hint = if exists {
+        "存在".to_string()
+    } else if err.kind() == std::io::ErrorKind::NotFound {
+        "不存在（或 PATH 中找不到该二进制）".to_string()
+    } else {
+        "存在但无法访问（检查执行权限/挂载命名空间）".to_string()
+    };
+    format!(
+        "Failed to spawn sandboxd: {err}\n  path: {sandboxd_path}\n  path status: {path_hint}\n  io kind: {:?}, raw os error: {:?}",
+        err.kind(),
+        err.raw_os_error(),
+    )
+}
+
 impl SandboxdClient {
     /// Spawn the `sisyphus-sandboxd` child process and return a client handle.
     ///
@@ -61,7 +81,7 @@ impl SandboxdClient {
             .spawn()
             .map_err(|e| TypesError::ToolExecutionError {
                 tool_id: "spawn".into(),
-                details: format!("Failed to spawn sandboxd: {e}"),
+                details: spawn_failure_diagnostic(sandboxd_path, &e),
             })?;
 
         let stdin = child.stdin.take().ok_or_else(|| TypesError::ToolExecutionError {
@@ -378,6 +398,21 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
 mod tests {
     use super::*;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn spawn_diagnostic_names_path_and_existence() {
+        let d = spawn_failure_diagnostic(
+            "/nonexistent/sisyphus-sandboxd",
+            &std::io::Error::from_raw_os_error(2),
+        );
+        assert!(d.contains("/nonexistent/sisyphus-sandboxd"), "{d}");
+        assert!(d.contains("不存在"), "{d}");
+        assert!(d.contains("raw os error: Some(2)"), "{d}");
+
+        let eacces =
+            spawn_failure_diagnostic("/root/no-exec", &std::io::Error::from_raw_os_error(13));
+        assert!(eacces.contains("无法访问"), "{eacces}");
+    }
 
     /// Locate the real `sisyphus-sandboxd` binary built alongside these tests.
     ///
