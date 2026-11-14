@@ -22,6 +22,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BRIDGE_BIN="${BRIDGE_BIN:-$ROOT/target/debug/sisyphus-bridge}"
 SISYPHUS_BIN="${SISYPHUS_BIN:-$ROOT/target/debug/sisyphus}"
 
+# 脚本可从任意 cwd 调用（CI/本地均可能），构建与二进制路径以仓库根为准。
+cd "$ROOT"
+
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/bridge-record-smoke.XXXXXX")"
 PORT="${PORT:-8199}"
 GRPC_ADDR="${GRPC_ADDR:-http://127.0.0.1:51951}"
