@@ -386,6 +386,23 @@ mod tests {
     }
 
     #[test]
+    fn legacy_json_without_scenario_breakdown_still_deserializes() {
+        // 向后兼容：历史快照/消费方不含 scenario_breakdown 字段时，反序列化
+        // 不得失败（#[serde(default)]），分组为空 map。
+        let legacy = r#"{
+            "total": 1, "passed": 1, "failed": 0, "blocked": 0,
+            "success_rate": 1.0, "fix_rate": null, "regression_rate": null,
+            "mean_duration_ms": 100.0, "mean_prompt_tokens": null,
+            "mean_completion_tokens": null, "mean_total_tokens": null,
+            "engine_commits": ["aaa111"], "engine_unknown": 0
+        }"#;
+        let metrics: QualityMetrics =
+            serde_json::from_str(legacy).expect("历史 JSON 必须可反序列化");
+        assert_eq!(metrics.total, 1);
+        assert!(metrics.scenario_breakdown.is_empty());
+    }
+
+    #[test]
     fn scenario_breakdown_round_trips_through_json() {
         let mut r = record("t1", TaskStatus::Pass, true, true, 0, false);
         r.scenario = "bridge-sop-execute".to_string();
