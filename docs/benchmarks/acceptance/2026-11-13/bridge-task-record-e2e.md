@@ -70,3 +70,4 @@ HTTP 响应（预期失败，LLM 不可用）：
 - **结论**：bridge `execute_goal` 路径在失败分支可产出 schema 正确、可被 `sisyphus metrics quality` 聚合的 `TaskRecord`，且包含引擎版本归因与耗时。
 - **限制**：本次未获得成功路径（`Pass`）的 live 记录（需可执行的 goal/LLM 环境）；token usage 为 `null`；未覆盖 composite/gRPC/streaming 路径。`fix_rate=0.0` 源于无闸门语义下 `initial/final` 同为失败且计入初次失败样本的聚合表现，需结合 `scenario=bridge-goal-execute` 解读（见设计文档口径约束）。
 - **后续**：gRPC `execute_sop` live E2E（fail 路径）已于 `bridge-task-record-coverage.md` 归档；`execute_goal` 成功路径、gRPC `stream_execution`/`call_jcode` 与 token usage 提取仍待后续。
+  > 后续（2026-11-14）：上述项均已补齐（成功路径 live 见 `../2026-11-14/goal-success-path.md`；gRPC 与 token 样本见 `bridge-task-record-coverage.md`）。

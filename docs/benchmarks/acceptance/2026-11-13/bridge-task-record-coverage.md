@@ -176,6 +176,9 @@ sisyphus metrics quality --records <tmp>/records --json
 - **未覆盖**：HTTP unary `execute_goal` 的**成功**路径仍缺（需要能产出合法 SOP JSON 的
   模型/可用云端凭据）。`qwen2.5-coder:3b` 在有 LLM 的情况下仍因 proposal/reflection JSON 解析失败，
   `gemma4:e4b` 在本机 CPU 上 290s 内无响应，均不足以完成成功路径验收。
+  > 后续（2026-11-14）：成功路径已补齐 —— 经 Swarm 审计降级与 LLM JSON 栅栏提取两处修复后，
+  > `execute_goal` live 产出 `status=pass` 且 token 非 null，见
+  > `../2026-11-14/goal-success-path.md`。
 - **gRPC `stream_execution` / `call_jcode` live（2026-11-13）**：
   通过临时 tonic 客户端对运行中的 debug bridge 发起调用（本机 ollama `qwen2.5-coder:3b`，
   独占执行），记录均落盘且 **token 非 null**（失败路径由模型能力边界导致，但 LLM 调用
