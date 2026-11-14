@@ -45,14 +45,6 @@ pub struct DynamicLlmClient {
     prompt_truncated: Arc<std::sync::atomic::AtomicBool>,
 }
 
-tokio::task_local! {
-    /// 当前执行作用域的 token 累加器（可选）。存在时，`TokenUsageCounters::record`
-    /// 会同时写入全局累计与该作用域，用于执行级确定性归因（不依赖全局差值/租约）。
-    /// 需通过 `DynamicLlmClient::scope_usage` 在 async 作用域内激活；跨 `tokio::spawn`
-    /// 的子任务不会自动继承，调用方需在需要归因的边界显式包裹。
-    static EXECUTION_USAGE_SCOPE: Arc<TokenUsageCounters>;
-}
-
 /// provider 上报的 token 计数（原子累加）。
 #[derive(Debug, Default)]
 struct TokenUsageCounters {
@@ -77,15 +69,9 @@ impl TokenUsageCounters {
         self.calls.fetch_add(1, Ordering::Relaxed);
 
         // 同步写入当前执行作用域（若已激活），实现执行级归因。
-        let _ = EXECUTION_USAGE_SCOPE.try_with(|scope| {
-            if let Some(v) = prompt {
-                scope.prompt_tokens.fetch_add(v, Ordering::Relaxed);
-            }
-            if let Some(v) = completion {
-                scope.completion_tokens.fetch_add(v, Ordering::Relaxed);
-            }
-            scope.calls.fetch_add(1, Ordering::Relaxed);
-        });
+        // 作用域本身由 `sisyphus_types::usage_scope` 提供：执行编排层（core 的
+        // DAG 执行器）也依赖它来跨 spawn 传播，因此两边必须是同一个 task-local。
+        sisyphus_types::usage_scope::record_current(prompt, completion);
     }
 
     fn snapshot(&self) -> sisyphus_types::LlmTokenUsage {
@@ -95,12 +81,6 @@ impl TokenUsageCounters {
             completion_tokens: self.completion_tokens.load(Ordering::Relaxed),
             calls: self.calls.load(Ordering::Relaxed),
         }
-    }
-
-    /// 转为对外可见快照；从未收到 provider 上报 usage 时返回 `None`（未知 ≠ 0）。
-    fn snapshot_option(&self) -> Option<sisyphus_types::LlmTokenUsage> {
-        let snap = self.snapshot();
-        (snap.calls > 0).then_some(snap)
     }
 }
 
@@ -339,19 +319,21 @@ impl DynamicLlmClient {
     ///   需在相应边界显式传播/包裹作用域，否则该部分 usage 无法归因到本作用域（返回 `None`
     ///   或部分计数，按实际可见调用而定；调用方不得臆造）。
     /// - 作用域内从未收到 provider 上报 usage 时返回 `None`（未知 ≠ 0）。
+    ///
+    /// 实现委托给 [`sisyphus_types::usage_scope::with_scope`]：执行编排层
+    /// （`sisyphus-core`）需要同一个 task-local 才能在 `JoinSet::spawn` 等边界
+    /// 传播作用域，因此作用域不再由本 crate 私有持有。
     pub async fn scope_usage<Fut, T>(fut: Fut) -> (T, Option<sisyphus_types::LlmTokenUsage>)
     where
         Fut: std::future::Future<Output = T>,
     {
-        let scope = Arc::new(TokenUsageCounters::default());
-        let result = EXECUTION_USAGE_SCOPE.scope(scope.clone(), fut).await;
-        (result, scope.snapshot_option())
+        sisyphus_types::usage_scope::with_scope(fut).await
     }
 
     /// 返回当前执行作用域的累计 usage 快照（若处于 `scope_usage` 作用域内且有上报）。
     /// 不在作用域内或无上报时返回 `None`。
     pub fn current_scope_usage_snapshot() -> Option<sisyphus_types::LlmTokenUsage> {
-        EXECUTION_USAGE_SCOPE.try_with(|scope| scope.snapshot_option()).ok().flatten()
+        sisyphus_types::usage_scope::current_snapshot()
     }
 }
 

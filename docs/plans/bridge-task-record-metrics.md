@@ -1,6 +1,6 @@
 # Bridge 路径 TaskRecord 落盘与 `metrics quality` 覆盖（最小设计）
 
-> 状态：**已覆盖主要执行入口**（2026-11-13）。HTTP `execute_goal` / composite / goal streaming，以及 gRPC `execute_sop` / `stream_execution`（goal 与非 goal 分支）/ `call_jcode` 均已接线 best-effort 落盘；单测与聚合兼容性验证完成。live E2E 已覆盖 `execute_goal` 失败路径、`composite` 成功 + `goal streaming` 失败、gRPC `execute_sop` 失败、gRPC `stream_execution`（goal 分支与非 goal/SOP 分支）失败、gRPC `call_jcode` 失败（含非 null token 样本，见 `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`、`docs/benchmarks/acceptance/2026-11-13/bridge-task-record-coverage.md` 与 `runs/bridge-record-coverage/grpc-stream-calljcode/`、`grpc-stream-sop/`）。token 归因已引入 **执行作用域（task-local）优先**：`DynamicLlmClient::scope_usage` + bridge `run_with_usage_scope`，不可用时回退独占租约+累计差值（仍 best-effort，跨 `tokio::spawn` 未传播的调用可能无法归因）。**待后续**：`execute_goal` 成功路径 live、scope 传播/跨 spawn 覆盖与并发归因证据。
+> 状态：**已覆盖主要执行入口**（2026-11-13）。HTTP `execute_goal` / composite / goal streaming，以及 gRPC `execute_sop` / `stream_execution`（goal 与非 goal 分支）/ `call_jcode` 均已接线 best-effort 落盘；单测与聚合兼容性验证完成。live E2E 已覆盖 `execute_goal` 失败路径、`composite` 成功 + `goal streaming` 失败、gRPC `execute_sop` 失败、gRPC `stream_execution`（goal 分支与非 goal/SOP 分支）失败、gRPC `call_jcode` 失败（含非 null token 样本，见 `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`、`docs/benchmarks/acceptance/2026-11-13/bridge-task-record-coverage.md` 与 `runs/bridge-record-coverage/grpc-stream-calljcode/`、`grpc-stream-sop/`）。token 归因已引入 **执行作用域（task-local）优先**：`DynamicLlmClient::scope_usage`（实现下沉为 `sisyphus_types::usage_scope`）+ bridge `run_with_usage_scope`，跨 `tokio::spawn` 边界由 `sisyphus-core` 编排层显式传播，不可用时回退独占租约+累计差值（仍 best-effort，未走传播原语的第三方自 spawn 调用可能无法归因）。**待后续**：无（2026-11-14 已补齐 `execute_goal` 成功路径 live 与 scope 跨 spawn 传播证据，见 `../2026-11-14/goal-success-path.md`）。
 >
 > 背景：`sisyphus dev` / `sisyphus verify` 已可通过 `--record` 产出 `TaskRecord`（`sisyphus-metrics::quality`）并由 `sisyphus metrics quality` 聚合；bridge 侧当前**无 Developer/dev 闭环执行路径**，因此 dev 语义的质量记录无法直接复用。bridge 可观测、可执行的是 **goal/SOP 执行**（HTTP/gRPC/SSE），需要定义与现有指标口径兼容且不伪造语义的最小落盘方案。
 
@@ -79,21 +79,21 @@
    - 聚合兼容性：样本记录可被 `sisyphus metrics quality --records <dir> --json` 正确解析（成功率/耗时/版本归因符合预期，fix/regression 为 `null`）。
    - 集成测试：在可控 bridge 执行路径下断言记录文件生成且 `sisyphus metrics quality` 可聚合（注意 bridge 测试在 CI 的 OOM 约束与 `#[ignore]` 策略，按仓库惯例处理）。
      - **已完成（live）**：HTTP `execute_goal` 失败路径（`bridge-task-record-e2e.md`）；composite 成功 + goal streaming 失败（`bridge-task-record-coverage.md`）；gRPC `execute_sop` 失败；gRPC `stream_execution` goal 分支与非 goal/SOP 分支失败、gRPC `call_jcode` 失败（含非 null token，`runs/bridge-record-coverage/grpc-stream-calljcode/`、`grpc-stream-sop/`）。
-     - **待后续**：HTTP `execute_goal` 成功路径；更多可控场景/成功路径复核。
+     - **已完成（live）**：HTTP `execute_goal` 成功路径（`docs/benchmarks/acceptance/2026-11-14/goal-success-path.md`，`status=pass`，`prompt=2378`/`completion=720`，执行作用域归因）；失败路径、composite/streaming/gRPC 各入口见 2026-11-13 覆盖文档。
 6. **文档与证据**：更新 `docs/plans/single-node-quality-metrics.md`、`docs/plans/automation-development-plan-2026-11.md` 状态与边界说明；产出一次真实运行的记录与聚合快照作为证据。
-   - **当前进展**：设计文档与 2026-11-13 E2E/覆盖扩展/gRPC live 证据已归档（含 token-captured 与 grpc-stream-calljcode）；质量指标文档已同步 bridge 记录语义；自动化计划的系统性状态同步与成功路径证据待后续补齐。
+   - **已完成**：设计文档、2026-11-13 E2E/覆盖扩展/gRPC live 证据、2026-11-14 成功路径 live 证据均已归档；质量指标文档与自动化计划状态已同步（含作用域传播与审计降级说明）。
 
 ## 6. 风险与开放问题
 
 - **多路径覆盖**：仅接线 HTTP goal 会遗漏 gRPC/composite/streaming；需在后续迭代下沉到共享执行层并补齐验收。
-- **token/usage 来源**：**已实现 best-effort 采集**（独占租约 + 累计差值，见 §3 步骤 3）：provider 上报且租约独占时可产出真实增量；并发/无 usage 时仍为 `None`（不伪造 0）。执行级确定性来源仍待内核/客户端支持。
+- **token/usage 来源**：**已实现执行级确定性归因**：task-local 执行作用域（`sisyphus_types::usage_scope`，对外经 `DynamicLlmClient::scope_usage` 暴露）为首选路径，作用域覆盖到的 provider 上报 usage 直接计入作用域快照；跨 spawn 边界由编排层显式传播；不可用时回退独占租约+累计差值（best-effort）；并发/无 usage 时仍为 `None`（不伪造 0）。
 - **并发与高频写入**：原子写与唯一文件名可缓解；若执行量增大需考虑轮转/索引（非本次范围）。
 - **语义误读**：`Pass` 不等于外部验收通过；需在 metrics 输出或文档中提示按 `scenario` 区分来源。
 
 ## 7. 验收标准（实现阶段）
 
 - 至少 1 条来自 bridge `execute_goal` 的 `TaskRecord` 落盘（成功路径）与 1 条失败路径记录，字段完整、可被 `sisyphus metrics quality` 正确解析聚合。
-  - **当前进度**：`execute_goal` 失败路径已满足；成功路径未取得（需要可用 LLM/审计环境）。成功路径记录已由 composite 入口产出（`bridge-composite-execute`），但**不能替代** `execute_goal` 的验收。
+  - **已完成（live，2026-11-14）**：成功路径 `status=pass` + 失败路径样本齐全，见 `docs/benchmarks/acceptance/2026-11-14/goal-success-path.md`；成功路径含非 null token（执行作用域归因）。
 - `engine_commit`/`engine_dirty` 填充规则与 CLI 一致；无法获取时显式为 `None`（不猜测）。
 - 落盘失败不影响原有 HTTP 响应/状态码/SSE 行为（回归测试覆盖）。
 - 文档同步（计划状态、质量指标口径、配置示例如适用）。
@@ -119,4 +119,6 @@
 - `sisyphus-tools-llm`：新增 task-local 执行作用域（`EXECUTION_USAGE_SCOPE`），`TokenUsageCounters::record` 同步写入全局累计与当前作用域；提供 `DynamicLlmClient::scope_usage` / `current_scope_usage_snapshot()`；补单测 `scope_usage_captures_reported_tokens_deterministically`、`scope_usage_is_unknown_when_provider_omits_usage`、`scope_usage_isolates_concurrent_scopes`（`cargo test -p sisyphus-tools-llm --lib scope_usage` 3 passed）。
 - `sisyphus-bridge`：持有可选具体 `DynamicLlmClient`（默认构造路径），新增 `run_with_usage_scope`（scope 优先，回退租约+差值），HTTP/gRPC 记录入口已切换为该路径；`cargo check/clippy -p sisyphus-tools-llm -p sisyphus-bridge`、`cargo test -p sisyphus-bridge --lib quality_record` 6 passed。
 - **live 证据（scope 路径）**：HTTP `execute_goal` 独占运行（`33c36f1ffb5a+dirty`，作用域路径）产出 `prompt_tokens=515` / `completion_tokens=479`（`runs/bridge-record-coverage/token-scope-captured/`，失败路径/模型能力边界，归因非 null）。
-- **限制**：scope 不跨 `tokio::spawn` 自动传播，内核/执行链若在子任务中调用 LLM 仍可能部分不可归因（保持 `null` 或部分计数均按可见上报，不伪造）；跨 spawn 传播与更多并发/成功路径 live 对照待补。
+- **跨 spawn 传播（2026-11-14 落地）**：作用域实现从 `sisyphus-tools-llm` 私有 task-local 下沉为共享原语 `sisyphus_types::usage_scope`（`UsageScope` 累加器 + `with_scope` / `captured_scope` / `attach_scope` / `spawn_in_scope` / `record_current` / `current_snapshot`），原因：执行编排层（`sisyphus-core`）生产代码不依赖 LLM 客户端 crate，只有放在共享类型层才能让「记录方」与「编排方」共用同一 task-local。`sisyphus-core` 已在所有会发起 LLM 调用的 spawn 边界显式传播：DAG 节点执行（`executor.rs` 两处 `JoinSet::spawn`）、推测预测、认知内化、自编程循环（`cognitive_loop.rs`）、composite 子 SOP（`kernel/execution.rs` 两处 `JoinSet::spawn`）。`sisyphus-types` 补 8 个单测（捕获/未知语义/部分上报/跨 spawn 传播/普通 spawn 反向对照/无作用域语义/并发隔离/嵌套不泄漏）；`sisyphus-tools-llm` 原 `scope_usage` / `current_scope_usage_snapshot` API 改为委托实现，3 个原单测保持通过。剩余未传播风险：第三方 crate 内自 spawn 且未走本原语的路径（当前审计未发现）。
+- **审计循环健壮性（2026-11-14 落地）**：`sisyphus-core::swarm_coordinator` 的 Swarm 审计循环对弱模型输出做了三处降级（不中止执行）：架构师提案不可解析/LLM 失败 → 维持当前配置继续审计；审计员意见不可解析 → 记为「不批准」并带说明性 feedback（绝不静默批准）；refine 失败 → 维持上一版提案（迭代上限强制收尾）。同时把 LLM JSON 提取统一为 `sisyphus_intel::json_extract::extract_json`（剥离 ```json 栅栏），接线批判/反思/演进 ops/合成/审计提案共 5 处解析点（此前弱模型带栅栏返回会直接整体失败）。集成测试 `swarm_audit_degrades_when_architect_proposal_is_unparseable`（`crates/sisyphus-tests/tests/single_node_full_stack.rs`）覆盖提案损坏+批判带栅栏的端到端降级路径，`json_extract` 6 个单测。
+- **限制（2026-11-14 更新）**：跨 `tokio::spawn` 传播已由 `usage_scope` 原语解决（见上）；剩余风险仅为第三方 crate 内部自 spawn 且未走本原语的路径（当前代码库审计未发现此类 LLM 调用点）。成功路径 live 对照已补齐（`docs/benchmarks/acceptance/2026-11-14/goal-success-path.md`）。

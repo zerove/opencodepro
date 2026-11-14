@@ -489,7 +489,9 @@ impl StrategicManager {
 
                         // --- 触发自编程循环 ---
                         let sp_manager = Arc::clone(&self.sp_manager);
-                        tokio::spawn(async move {
+                        // 自编程循环会发起 LLM 调用（生成工具/技能），需继承执行作用域
+                        // 才能从 token 用量上归因到本次执行。
+                        sisyphus_types::usage_scope::spawn_in_scope(async move {
                             if let Err(e) = sp_manager.resolve_gap(gap).await {
                                 error!("Self-programming loop failed: {e}");
                             }

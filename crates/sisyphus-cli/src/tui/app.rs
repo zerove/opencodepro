@@ -791,12 +791,11 @@ impl App {
             None => return 0,
         };
         let mut line = 0usize;
-        for i in 0..msg_idx.min(session.messages.len()) {
+        for (i, msg) in
+            session.messages.iter().enumerate().take(msg_idx.min(session.messages.len()))
+        {
             line += 1; // role label
-            line += helpers::count_message_lines(
-                &session.messages[i].content,
-                self.is_thought_expanded(i),
-            );
+            line += helpers::count_message_lines(&msg.content, self.is_thought_expanded(i));
             line += 1; // blank separator
         }
         line

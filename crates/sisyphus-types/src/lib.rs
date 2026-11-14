@@ -36,6 +36,7 @@ pub mod node;
 pub mod skill;
 pub mod strategy_weights;
 pub mod types;
+pub mod usage_scope;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

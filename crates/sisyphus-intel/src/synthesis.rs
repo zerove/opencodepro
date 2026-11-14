@@ -370,7 +370,8 @@ impl FlowSynthesizer for DynamicSopSynthesizer {
             .await
             .map_err(|e| format!("LLM synthesis failed: {e}"))?;
 
-        let plan: DynamicSopPlan = serde_json::from_str(&response)
+        let json_text = crate::json_extract::extract_json(&response);
+        let plan: DynamicSopPlan = serde_json::from_str(&json_text)
             .map_err(|e| format!("Failed to parse SOP JSON: {e}. Response was: {response}"))?;
 
         let mut graph = SOPGraph::new();

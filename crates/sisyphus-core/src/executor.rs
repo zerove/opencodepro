@@ -182,7 +182,9 @@ impl Executor {
                 let ctx_clone = Arc::clone(&ctx);
                 let cache_clone = Arc::clone(&self.prediction_cache);
 
-                tokio::spawn(async move {
+                // 推测预测会发起 LLM 调用，且发生在独立任务中：必须显式继承
+                // 执行作用域，否则这部分 token 用量无法归因到本次执行。
+                sisyphus_types::usage_scope::spawn_in_scope(async move {
                     if let Ok(pred) = reflector_clone.predict(&name, &ctx_clone).await {
                         cache_clone.insert(name, pred);
                     }
@@ -253,7 +255,10 @@ impl Executor {
                 let exec_self = Arc::clone(&self);
                 let micro_ref = micro_reflector.clone();
 
-                join_set.spawn(async move {
+                let usage_scope = sisyphus_types::usage_scope::captured_scope();
+                join_set.spawn(sisyphus_types::usage_scope::attach_scope(
+                    usage_scope,
+                    async move {
                     let name = node_ref.name().to_string();
                     let node_span = tracing::info_span!("executor.node", node = %name);
                     let _enter = node_span.enter();
@@ -335,7 +340,8 @@ impl Executor {
 
                     tracing::debug!(node = %name, "Node execution completed");
                     (node, name, result)
-                });
+                },
+                ));
             }
         }
 
@@ -532,7 +538,10 @@ impl Executor {
                         let sem = Arc::clone(&self.concurrency_limit);
                         let exec_self = Arc::clone(&self);
                         let micro_ref = micro_reflector.clone();
-                        join_set.spawn(async move {
+                        let usage_scope = sisyphus_types::usage_scope::captured_scope();
+                        join_set.spawn(sisyphus_types::usage_scope::attach_scope(
+                            usage_scope,
+                            async move {
                             let name = node_ref.name().to_string();
                             let node_span = tracing::info_span!("executor.node", node = %name);
                             let _enter = node_span.enter();
@@ -614,7 +623,8 @@ impl Executor {
 
                             tracing::debug!(node = %name, "Node execution completed");
                             (target, name, result)
-                        });
+                        },
+                        ));
                     }
                 }
             }
@@ -749,7 +759,8 @@ impl Executor {
                         context: format!("{:?}", ctx),
                         correction: feedback.correction,
                     };
-                    tokio::spawn(async move {
+                    // 认知内化可能调用 LLM：同样需要继承执行作用域。
+                    sisyphus_types::usage_scope::spawn_in_scope(async move {
                         if let Err(e) = int_manager.internalize_feedback(int_req).await {
                             tracing::error!(error = %e, "Cognitive internalization failed for node {}", s);
                         }

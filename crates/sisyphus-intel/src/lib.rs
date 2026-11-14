@@ -18,6 +18,7 @@ pub mod evaluator;
 pub mod failure_pattern_evolver;
 pub mod formal_verification;
 pub mod fuel;
+pub mod json_extract;
 pub mod llm_synthesizer;
 pub mod micro_reflector;
 pub mod mock;

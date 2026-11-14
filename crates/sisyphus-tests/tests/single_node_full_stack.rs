@@ -74,6 +74,54 @@ impl LlmClient for MockLlmClient {
 }
 
 // ---------------------------------------------------------------------------
+// Mock：LLM（架构师提案损坏的降级路径用）
+// ---------------------------------------------------------------------------
+
+/// 与 `MockLlmClient` 相同，但架构师提案返回**不可解析**的内容，
+/// 用于验证 swarm 审计循环的降级：提案损坏时维持当前配置继续，
+/// 而不是中止整次 goal 执行。
+struct GarbageProposalLlmClient;
+
+#[async_trait]
+impl LlmClient for GarbageProposalLlmClient {
+    async fn generate(&self, prompt: &str) -> Result<String, sisyphus_types::TypesError> {
+        if prompt.contains("rigorous AI Architecture Critic") {
+            // 批判结果带 markdown 栅栏：验证 intelligence_manager 先提取再解析。
+            return Ok(format!(
+                "```json\n{}\n```",
+                r#"{"critical_findings":[],"risk_score":0.0,"suggested_refinement":"No critical findings; proceed.","should_proceed":true}"#
+            ));
+        }
+        Ok(format!("Mock response to: {}", prompt))
+    }
+    async fn chat(
+        &self,
+        _system: &str,
+        user: &str,
+        _stream: bool,
+    ) -> Result<String, sisyphus_types::TypesError> {
+        if user.contains("review this proposal") {
+            return Ok(r#"{"approved":true,"feedback":"Mock: proposal approved"}"#.to_string());
+        }
+        if user.contains("propose an optimized SOPGraphConfig") {
+            // 弱模型典型损坏形态：把 args 字节数组写成字符串数组。
+            return Ok(r#"{"nodes":[{"name":"n","kind":{"Wasm":{"tool_id":"mock","fuel_limit":1000000,"args":["123"]}}}],"edges":[]}"#.to_string());
+        }
+        Ok("Mock chat response".into())
+    }
+    fn get_params_for(&self, _agent_id: &str) -> (String, String, String) {
+        (
+            "test_key".into(),
+            "http://test:8080".into(),
+            "test-model".into(),
+        )
+    }
+    fn breaker(&self) -> CircuitBreaker {
+        CircuitBreaker::default()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Mock：工具执行
 // ---------------------------------------------------------------------------
 
@@ -208,6 +256,10 @@ impl sisyphus_intel::simulation::LogicalSimulator for MockLogicalSimulator {
 // ---------------------------------------------------------------------------
 
 async fn setup_kernel() -> SisyphusKernel {
+    setup_kernel_with_llm(Arc::new(MockLlmClient)).await
+}
+
+async fn setup_kernel_with_llm(llm_client: Arc<dyn sisyphus_types::LlmClient>) -> SisyphusKernel {
     let state_store = Arc::new(
         MfsStore::new("sqlite::memory:", &sisyphus_types::CacheConfig::default()).await.unwrap(),
     );
@@ -225,7 +277,6 @@ async fn setup_kernel() -> SisyphusKernel {
         Arc::new(StandardEvolver::new()),
     ));
 
-    let llm_client = Arc::new(MockLlmClient);
     let synthesizer = Arc::new(MockSynthesizer);
     let meta_learner = Arc::new(parking_lot::Mutex::new(MetaLearner::new(".omo/test_meta")));
 
@@ -306,4 +357,24 @@ async fn single_node_full_stack_end_to_end() {
         )
         .await;
     let (_output, _report) = result.expect("experience-guided execution should complete");
+}
+
+#[tokio::test]
+async fn swarm_audit_degrades_when_architect_proposal_is_unparseable() {
+    // 弱模型（本地 3B）会把 args 字节数组写成字符串数组，导致提案 JSON
+    // 反序列化失败。降级策略应维持合成配置继续审计与执行，而不是中止 goal。
+    let kernel = setup_kernel_with_llm(Arc::new(GarbageProposalLlmClient)).await;
+
+    let result = kernel
+        .execute_goal(
+            "process: run echo ok-bridge with bash_exec and return the output",
+            "garbage_proposal_sop",
+            "default",
+            None,
+            None,
+        )
+        .await;
+
+    let (output, _report) = result.expect("提案损坏时降级维持当前配置，执行应完成");
+    assert!(!output.to_string().is_empty(), "执行应有输出");
 }

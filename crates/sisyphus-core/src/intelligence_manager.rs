@@ -168,7 +168,8 @@ impl IntelligenceManager {
             },
         };
 
-        serde_json::from_str::<sisyphus_types::CritiqueResult>(&response).map_err(|e| {
+        let json_text = sisyphus_intel::json_extract::extract_json(&response);
+        serde_json::from_str::<sisyphus_types::CritiqueResult>(&json_text).map_err(|e| {
             sisyphus_types::IntelError::Internal(format!(
                 "Failed to parse critique JSON: {}. Response was: {}",
                 e, response

@@ -53,8 +53,9 @@
   `initial/final_verify_passed` 与终态一致、`fix_attempts=0`、`regressed=false`
   （不污染修复率/回归率分母）；`Pass` 仅表示执行路径完成，**不等于**外部验收通过。
   token usage 采用 **执行作用域优先 + best-effort 回退**：默认路径使用 task-local 执行作用域
-  （`DynamicLlmClient::scope_usage`）归因可见 LLM 调用，不可用/跨 `tokio::spawn` 未传播时回退独占租约+累计差值；
-  并发/无 usage 时保持 `null`（未知 ≠ 0，不伪造）。
+  （`sisyphus_types::usage_scope`，经 `DynamicLlmClient::scope_usage` 暴露）归因可见 LLM 调用；
+  跨 `tokio::spawn` 边界由 `sisyphus-core` 编排层显式传播（DAG 节点执行/推测预测/认知内化/自编程循环/composite 子 SOP），
+  传播不可用或回退路径时空出独占租约+累计差值；并发/无 usage 时保持 `null`（未知 ≠ 0，不伪造）。
   首次 live E2E（失败路径）证据见
   `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-e2e.md`；覆盖扩展
   （composite 成功 / streaming 失败 / gRPC `execute_sop`、`stream_execution`(goal)、`call_jcode`，

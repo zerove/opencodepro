@@ -104,8 +104,23 @@ impl SwarmCoordinator {
         };
 
         // 2. 架构师提出初始变更
+        //
+        // 降级策略：架构师提案解析失败（或 LLM 调用失败）时，回退到「维持当前配置」
+        // 继续审计，而不是中止整次 goal 执行。理由：swarm 审计的定位是「高层优化」
+        // 而非安全闸门；当前配置来自合成管线且随后仍要过逻辑仿真门禁。弱模型
+        // （如本地 3B）经常把 args 字节数组写成字符串数组导致 JSON 反序列化失败，
+        // 一次不可解析的提案不应让整条已合成、可仿真的计划流产。
         tracing::info!("Architect {} is proposing changes...", architect.id);
-        let mut proposal = self.real_agent_proposal(&architect, goal, current_config).await?;
+        let mut proposal = match self.real_agent_proposal(&architect, goal, current_config).await {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Architect proposal unavailable/unparseable; auditing current config unchanged"
+                );
+                current_config.clone()
+            },
+        };
 
         let mut iteration = 0;
         let max_iterations = 3;
@@ -115,8 +130,26 @@ impl SwarmCoordinator {
             tracing::info!("Audit Iteration {}/{}", iteration, max_iterations);
 
             // 3. 审计员审查提案
+            //
+            // 降级策略：审查意见解析失败时记为「不批准」并给出说明性 feedback，
+            // 让循环走进 refine（refine 失败同样降级为维持原提案）；
+            // 绝不因审计员 JSON 损坏而静默「批准」，也不直接中止执行。
             tracing::info!("Auditor {} is reviewing proposal...", auditor.id);
-            let review = self.real_agent_review(&auditor, &proposal).await?;
+            let review = match self.real_agent_review(&auditor, &proposal).await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "Auditor review unavailable/unparseable; treating as not-approved"
+                    );
+                    AuditReview {
+                        approved: false,
+                        feedback: format!(
+                            "Auditor response unavailable or unparseable: {e}. Proceeding without approval."
+                        ),
+                    }
+                },
+            };
 
             if review.approved {
                 tracing::info!("Proposal approved by Auditor.");
@@ -129,11 +162,28 @@ impl SwarmCoordinator {
             }
 
             // 4. 架构师根据审查意见完善
+            //
+            // 降级策略：refine 失败时维持上一版提案（审计循环仍会在
+            // max_iterations 后强制收尾），不因一次模型输出损坏而中止。
             tracing::info!(
                 "Architect {} is refining proposal based on feedback...",
                 architect.id
             );
-            proposal = self.real_agent_refine(&architect, &proposal, &review).await?;
+            let refined = match self.real_agent_refine(&architect, &proposal, &review).await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "Architect refine unavailable/unparseable; keeping previous proposal"
+                    );
+                    if iteration >= max_iterations {
+                        tracing::warn!("Max audit iterations reached. Forcing a decision.");
+                        break;
+                    }
+                    continue;
+                },
+            };
+            proposal = refined;
         }
 
         Ok(proposal)
@@ -176,7 +226,7 @@ impl SwarmCoordinator {
 
         let response = self.call_agent(agent, &user_message).await?;
 
-        let json_text = extract_json(&response);
+        let json_text = sisyphus_intel::json_extract::extract_json(&response);
         let new_config: SOPGraphConfig = serde_json::from_str(&json_text).map_err(|e| {
             CoreError::Internal(format!(
                 "Failed to parse proposal JSON: {}. Response: {}",
@@ -202,7 +252,7 @@ impl SwarmCoordinator {
         );
 
         let response = self.call_agent(agent, &user_message).await?;
-        let json_text = extract_json(&response);
+        let json_text = sisyphus_intel::json_extract::extract_json(&response);
 
         let review: AuditReview = serde_json::from_str(&json_text).map_err(|e| {
             CoreError::Internal(format!(
@@ -230,7 +280,7 @@ impl SwarmCoordinator {
         );
 
         let response = self.call_agent(agent, &user_message).await?;
-        let json_text = extract_json(&response);
+        let json_text = sisyphus_intel::json_extract::extract_json(&response);
 
         let refined_config: SOPGraphConfig = serde_json::from_str(&json_text).map_err(|e| {
             CoreError::Internal(format!(
@@ -248,23 +298,4 @@ impl SwarmCoordinator {
 pub struct AuditReview {
     pub approved: bool,
     pub feedback: String,
-}
-
-fn extract_json(text: &str) -> String {
-    // 先尝试 ```json ... ```
-    if let Some(start) = text.find("```json") {
-        let rest = &text[start + 7..];
-        if let Some(end) = rest.find("```") {
-            return rest[..end].trim().to_string();
-        }
-    }
-    // 再尝试 ``` ... ```
-    if let Some(start) = text.find("```") {
-        let rest = &text[start + 3..];
-        if let Some(end) = rest.find("```") {
-            return rest[..end].trim().to_string();
-        }
-    }
-    // 兜底：返回去除首尾空白后的全文
-    text.trim().to_string()
 }

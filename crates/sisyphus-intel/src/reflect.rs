@@ -1,4 +1,5 @@
 use crate::fuel::FuelPricer;
+use crate::json_extract::extract_json;
 use crate::simulation::SimulationResult;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -406,7 +407,8 @@ impl Reflector for LlmReflector {
                 },
             };
 
-        let parsed: serde_json::Value = serde_json::from_str(&response)
+        let json_text = extract_json(&response);
+        let parsed: serde_json::Value = serde_json::from_str(&json_text)
             .map_err(|e| format!("Failed to parse LLM reflection JSON: {e}"))?;
 
         let deviation = parsed["deviation"].as_f64().unwrap_or(0.5);
@@ -603,8 +605,9 @@ impl SOPEvolver for LlmEvolver {
                 },
             };
 
+        let json_text = extract_json(&response);
         let ops: Vec<sisyphus_types::EvolutionOp> =
-            serde_json::from_str(&response).map_err(|e| {
+            serde_json::from_str(&json_text).map_err(|e| {
                 format!("Failed to parse evolution ops JSON: {e}. Response: {response}")
             })?;
 

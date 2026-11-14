@@ -621,23 +621,27 @@ impl SisyphusKernel {
 
                     let pid = project_id_owned.clone();
                     let gate = Arc::clone(&sop_gate);
-                    join_set.spawn(async move {
-                        let Ok(_sop_permit) = gate.acquire().await else {
-                            return (
-                                sid,
-                                Err(CoreError::Internal(
-                                    "SOP concurrency gate closed unexpectedly".into(),
-                                )),
-                            );
-                        };
-                        let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &acc);
+                    let usage_scope = sisyphus_types::usage_scope::captured_scope();
+                    join_set.spawn(sisyphus_types::usage_scope::attach_scope(
+                        usage_scope,
+                        async move {
+                            let Ok(_sop_permit) = gate.acquire().await else {
+                                return (
+                                    sid,
+                                    Err(CoreError::Internal(
+                                        "SOP concurrency gate closed unexpectedly".into(),
+                                    )),
+                                );
+                            };
+                            let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &acc);
 
-                        let result = kernel
-                            .execute_with_cognition(graph, &sid, Some(&pid), dep_ctx, tx, None)
-                            .await;
+                            let result = kernel
+                                .execute_with_cognition(graph, &sid, Some(&pid), dep_ctx, tx, None)
+                                .await;
 
-                        (sid, result)
-                    });
+                            (sid, result)
+                        },
+                    ));
                 }
             }
         }
@@ -719,23 +723,27 @@ impl SisyphusKernel {
 
                     let pid = project_id_owned.clone();
                     let gate = Arc::clone(&sop_gate);
-                    join_set.spawn(async move {
-                        let Ok(_sop_permit) = gate.acquire().await else {
-                            return (
-                                sid,
-                                Err(CoreError::Internal(
-                                    "SOP concurrency gate closed unexpectedly".into(),
-                                )),
-                            );
-                        };
-                        let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &acc);
+                    let usage_scope = sisyphus_types::usage_scope::captured_scope();
+                    join_set.spawn(sisyphus_types::usage_scope::attach_scope(
+                        usage_scope,
+                        async move {
+                            let Ok(_sop_permit) = gate.acquire().await else {
+                                return (
+                                    sid,
+                                    Err(CoreError::Internal(
+                                        "SOP concurrency gate closed unexpectedly".into(),
+                                    )),
+                                );
+                            };
+                            let dep_ctx = build_dep_ctx_for(&sid, &composite_ref, &acc);
 
-                        let result = kernel
-                            .execute_with_cognition(graph, &sid, Some(&pid), dep_ctx, tx, None)
-                            .await;
+                            let result = kernel
+                                .execute_with_cognition(graph, &sid, Some(&pid), dep_ctx, tx, None)
+                                .await;
 
-                        (sid, result)
-                    });
+                            (sid, result)
+                        },
+                    ));
                 }
             }
         }

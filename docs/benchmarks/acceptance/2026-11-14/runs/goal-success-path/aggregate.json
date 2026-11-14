@@ -1,0 +1,17 @@
+{
+  "total": 9,
+  "passed": 1,
+  "failed": 8,
+  "blocked": 0,
+  "success_rate": 0.1111111111111111,
+  "fix_rate": 0.0,
+  "regression_rate": null,
+  "mean_duration_ms": 114063.44444444444,
+  "mean_prompt_tokens": 1392.0,
+  "mean_completion_tokens": 583.625,
+  "mean_total_tokens": 1975.625,
+  "engine_commits": [
+    "2cf57b0b7918+dirty"
+  ],
+  "engine_unknown": 0
+}
