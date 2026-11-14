@@ -37,7 +37,11 @@
   `verify` 链路目前拿不到后端 usage，恒为 `null`。
 - **聚合**：`sisyphus metrics quality --records <dir> [--json]` → 成功率 / 修复率 /
   回归率 / 平均耗时 / 平均 token / 样本涉及的引擎版本；无记录时各比率为 `null`
-  （不伪造 0 值）。
+  （不伪造 0 值）。另输出 `scenario_breakdown`（按 `scenario` 分组的 total/passed/
+  failed/blocked/success_rate）：bridge 样本（无闸门语义）与 CLI 样本（客观闸门）
+  混在同一目录时，**比率必须按分组解读**，顶层混合比率只作总览；分组为空 `{}`
+  表示无输入样本。冒烟回归：`make smoke-bridge-record`（无外部依赖，CI
+  `bridge-record-smoke` 作业同路径）。
 - **Bridge 指标**：`GET /api/metrics` → Prometheus 文本。当前采集的**真实**指标名：
   `sisyphus_token_budget_usage`（LLM 阶段 token 消耗估算，gauge）、
   `sisyphus_token_budget_capped`、`sisyphus_token_budget_exhausted`、

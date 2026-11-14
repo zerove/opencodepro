@@ -106,6 +106,29 @@ pub struct QualityMetrics {
     /// 实际上有一部分是「未知」——那部分的比率同样不可归因。
     #[serde(default)]
     pub engine_unknown: usize,
+    /// 按 `scenario` 分组的计数与成功率。
+    ///
+    /// bridge 执行记录与 CLI `dev/verify` 记录可能混在同一目录聚合；
+    /// 混合聚合的顶层比率不可直接横向比较（口径不同：无闸门语义 vs 客观闸门）。
+    /// 该字段让消费方可以按来源分组解读，也能在样本构成变化时定位「比率变化
+    /// 是能力变化还是构成变化」。空输入时为空的 `BTreeMap`（序列化为 `{}`）。
+    #[serde(default)]
+    pub scenario_breakdown: std::collections::BTreeMap<String, ScenarioCounts>,
+}
+
+/// 单个 `scenario` 的计数与成功率口径（与顶层 `QualityMetrics` 一致）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ScenarioCounts {
+    /// 该场景记录总数。
+    pub total: usize,
+    /// 通过数。
+    pub passed: usize,
+    /// 失败数。
+    pub failed: usize,
+    /// 无法判定数。
+    pub blocked: usize,
+    /// 场景内成功率（`pass / (pass + fail)`；无有效样本时 `None`）。
+    pub success_rate: Option<f64>,
 }
 
 /// 聚合任务记录。
@@ -176,6 +199,24 @@ pub fn aggregate(records: &[TaskRecord]) -> QualityMetrics {
     engine_commits.dedup();
     let engine_unknown = records.iter().filter(|r| r.engine_commit.is_none()).count();
 
+    // 按 scenario 分组：bridge 样本（无闸门语义）与 CLI 样本（客观闸门）
+    // 混聚合时，消费方应以下列分组为准，不直接读顶层混合比率。
+    let mut scenario_breakdown: std::collections::BTreeMap<String, ScenarioCounts> =
+        std::collections::BTreeMap::new();
+    for record in records {
+        let entry = scenario_breakdown.entry(record.scenario.clone()).or_default();
+        entry.total += 1;
+        match record.status {
+            TaskStatus::Pass => entry.passed += 1,
+            TaskStatus::Fail => entry.failed += 1,
+            TaskStatus::Blocked => entry.blocked += 1,
+        }
+    }
+    for counts in scenario_breakdown.values_mut() {
+        let judged = counts.passed + counts.failed;
+        counts.success_rate = (judged > 0).then(|| counts.passed as f64 / judged as f64);
+    }
+
     QualityMetrics {
         total,
         passed,
@@ -190,6 +231,7 @@ pub fn aggregate(records: &[TaskRecord]) -> QualityMetrics {
         mean_total_tokens,
         engine_commits,
         engine_unknown,
+        scenario_breakdown,
     }
 }
 
@@ -313,6 +355,48 @@ mod tests {
         ];
         let metrics = aggregate(&records);
         assert_eq!(metrics.regression_rate, Some(0.5));
+    }
+
+    #[test]
+    fn scenario_breakdown_groups_by_scenario() {
+        let mut cli_pass = record("t1", TaskStatus::Pass, false, true, 1, false);
+        cli_pass.scenario = "dev-closed-loop".to_string();
+        let mut cli_fail = record("t2", TaskStatus::Fail, false, false, 0, false);
+        cli_fail.scenario = "dev-closed-loop".to_string();
+        let mut bridge_pass = record("t3", TaskStatus::Pass, true, true, 0, false);
+        bridge_pass.scenario = "bridge-goal-execute".to_string();
+        let metrics = aggregate(&[cli_pass, cli_fail, bridge_pass]);
+
+        // 分组计数与场景内成功率正确（CLI 组 1/2，bridge 组 1/1）
+        let cli = metrics.scenario_breakdown.get("dev-closed-loop").expect("CLI 分组");
+        assert_eq!((cli.total, cli.passed, cli.failed), (2, 1, 1));
+        assert_eq!(cli.success_rate, Some(0.5));
+        let bridge = metrics.scenario_breakdown.get("bridge-goal-execute").expect("bridge 分组");
+        assert_eq!((bridge.total, bridge.passed, bridge.failed), (1, 1, 0));
+        assert_eq!(bridge.success_rate, Some(1.0));
+        // 顶层仍是混合口径，不因分组而改变
+        assert_eq!(metrics.total, 3);
+        assert_eq!(metrics.success_rate, Some(2.0 / 3.0));
+    }
+
+    #[test]
+    fn scenario_breakdown_is_empty_for_no_records() {
+        let metrics = aggregate(&[]);
+        assert!(metrics.scenario_breakdown.is_empty());
+    }
+
+    #[test]
+    fn scenario_breakdown_round_trips_through_json() {
+        let mut r = record("t1", TaskStatus::Pass, true, true, 0, false);
+        r.scenario = "bridge-sop-execute".to_string();
+        let metrics = aggregate(&[r]);
+        let json = serde_json::to_string(&metrics).expect("序列化");
+        assert!(
+            json.contains("bridge-sop-execute"),
+            "分组应出现在 JSON: {json}"
+        );
+        let back: QualityMetrics = serde_json::from_str(&json).expect("反序列化");
+        assert_eq!(back, metrics);
     }
 
     #[test]
