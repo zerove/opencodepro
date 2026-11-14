@@ -707,6 +707,10 @@ mod tests {
                     body
                 );
                 let _ = stream.write_all(resp.as_bytes());
+                // 写完后短暂持有 socket 再退出：立即 drop 会让 FIN 与客户端
+                // 读取 body 竞争，偶发「空 body → error decoding response body」
+                // 的假失败（与本用例想验证的超时钳制无关）。
+                std::thread::sleep(Duration::from_millis(200));
             }
         });
 
@@ -734,6 +738,8 @@ mod tests {
                     body
                 );
                 let _ = stream.write_all(resp.as_bytes());
+                // 同上：写完后短暂持有 socket，避免 FIN 与客户端读 body 竞争。
+                std::thread::sleep(Duration::from_millis(200));
             }
         });
         format!("http://{addr}/v1/chat/completions")

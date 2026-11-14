@@ -8,30 +8,31 @@ authors.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-sisyphus-core = { version = "0.4.0", path = "../sisyphus-core" }
-sisyphus-intel = { version = "0.4.0", path = "../sisyphus-intel" }
-sisyphus-mem = { version = "0.4.0", path = "../sisyphus-mem" }
-sisyphus-sandbox = { version = "0.4.0", path = "../sisyphus-sandbox" }
-sisyphus-types = { version = "0.4.0", path = "../sisyphus-types" }
-sisyphus-knowledge = { version = "0.4.0", path = "../sisyphus-knowledge" }
-sisyphus-tools-executor = { version = "0.4.0", path = "../sisyphus-tools-executor" }
-sisyphus_visual = { version = "0.4.0", path = "../sisyphus-visual" }
-tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
 serde_json = { workspace = true }
 async-trait = { workspace = true }
+parking_lot = "0.12"
+
+sisyphus-types = { version = "0.4.0", path = "../sisyphus-types" }
+tokio = { version = "1", features = ["full"] }
 petgraph = "0.6"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tempfile = "3.8"
 sisyphus-tools-llm = { version = "0.4.0", path = "../sisyphus-tools-llm" }
-sisyphus-roadmap = { version = "0.4.0", path = "../sisyphus-roadmap" }
-sisyphus-tools-llm-tools = { version = "0.4.0", path = "../sisyphus-tools-llm-tools" }
 sisyphus-tools-core = { version = "0.4.0", path = "../sisyphus-tools-core" }
-sisyphus-tools-agent = { version = "0.4.0", path = "../sisyphus-tools-agent" }
-parking_lot = "0.12"
 sisyphus-tools-build = { version = "0.4.0", path = "../sisyphus-tools-build" }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
-
-[dev-dependencies]
+sisyphus-mem = { version = "0.4.0", path = "../sisyphus-mem" }
+sisyphus-tools-llm-tools = { version = "0.4.0", path = "../sisyphus-tools-llm-tools" }
+sisyphus-intel = { version = "0.4.0", path = "../sisyphus-intel" }
+sisyphus-knowledge = { version = "0.4.0", path = "../sisyphus-knowledge" }
+sisyphus_visual = { version = "0.4.0", path = "../sisyphus-visual" }
+sisyphus-roadmap = { version = "0.4.0", path = "../sisyphus-roadmap" }
+sisyphus-core = { version = "0.4.0", path = "../sisyphus-core" }
+sisyphus-sandbox = { version = "0.4.0", path = "../sisyphus-sandbox" }
+sisyphus-tools-agent = { version = "0.4.0", path = "../sisyphus-tools-agent" }
+sisyphus-tools-executor = { version = "0.4.0", path = "../sisyphus-tools-executor" }
 sisyphus-bridge = { version = "0.4.0", path = "../sisyphus-bridge" }
 sisyphus-cli = { version = "0.4.0", path = "../sisyphus-cli" }

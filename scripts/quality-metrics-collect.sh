@@ -142,6 +142,8 @@ if task_metrics:
     # （不同版本的样本混在同一个 records/ 目录里聚合）。
     metrics["task_engine_commits"] = task_metrics.get("engine_commits")
     metrics["task_engine_unknown"] = task_metrics.get("engine_unknown")
+    # 来源维度分组：bridge 与 CLI 样本混聚合时，比率必须按 scenario 分组解读
+    metrics["task_scenario_breakdown"] = task_metrics.get("scenario_breakdown")
 else:
     metrics["task_total"] = None
     metrics["task_passed"] = None
@@ -156,6 +158,7 @@ else:
     metrics["task_cost_completion_tokens_per_task"] = None
     metrics["task_engine_commits"] = None
     metrics["task_engine_unknown"] = None
+    metrics["task_scenario_breakdown"] = None
 
 out_dir = "docs/benchmarks/quality-metrics"
 os.makedirs(out_dir, exist_ok=True)

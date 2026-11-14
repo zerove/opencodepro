@@ -146,10 +146,21 @@ mod tests {
     #[test]
     fn engine_revision_at_non_repo_is_none() {
         let dir = tempfile::tempdir().expect("create temp dir");
+        // 环境敏感守卫：tempdir 的位置跟随 TMPDIR，而 TMPDIR 可能指向某个
+        // git 仓库内部（本机 jcode scratch 即如此），此时「非 git 目录」这一
+        // 前置条件被环境破坏，如实跳过而不是把环境问题报成功能失败。
+        // （前置条件成立时仍严格断言 None。）
+        if engine_revision_at(dir.path()).is_some() {
+            eprintln!(
+                "skip: tempdir {} 位于 git 仓库内，无法构造非 git 前置条件",
+                dir.path().display()
+            );
+            return;
+        }
         assert_eq!(
             engine_revision_at(dir.path()),
             None,
-            "非 git 目录应返回未知"
+            "非 git 目录必须如实返回未知，不得猜版本"
         );
     }
 

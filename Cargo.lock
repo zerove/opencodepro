@@ -4452,7 +4452,6 @@ name = "sisyphus-bridge-api"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "futures",
  "metrics",
  "prost 0.13.5",
  "serde_json",
@@ -4551,7 +4550,6 @@ dependencies = [
  "petgraph 0.6.5",
  "proptest",
  "rand 0.8.6",
- "rayon",
  "serde",
  "serde_json",
  "sisyphus-metrics",
@@ -4569,13 +4567,11 @@ dependencies = [
 name = "sisyphus-knowledge"
 version = "0.4.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "metrics",
  "petgraph 0.6.5",
  "serde",
  "serde_json",
- "sisyphus-intel",
  "sisyphus-tools-llm",
  "sisyphus-types",
  "tempfile",
@@ -4624,7 +4620,6 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
- "sisyphus-types",
  "tempfile",
  "thiserror 1.0.69",
  "tracing",
@@ -4732,7 +4727,6 @@ dependencies = [
  "sisyphus-tools-core",
  "sisyphus-tools-executor",
  "sisyphus-tools-llm",
- "sisyphus-tools-llm-tools",
  "sisyphus-tools-system",
  "sisyphus-types",
  "tempfile",
@@ -4749,7 +4743,6 @@ version = "0.4.0"
 dependencies = [
  "ignore",
  "metrics",
- "regex",
  "serde",
  "serde_json",
  "sisyphus-tools-core",
@@ -4852,14 +4845,12 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
- "urlencoding",
 ]
 
 [[package]]
 name = "sisyphus-tools-scm"
 version = "0.4.0"
 dependencies = [
- "chrono",
  "metrics",
  "serde",
  "serde_json",
@@ -4873,8 +4864,6 @@ dependencies = [
 name = "sisyphus-tools-session"
 version = "0.4.0"
 dependencies = [
- "base64 0.22.1",
- "chrono",
  "metrics",
  "serde",
  "serde_json",
@@ -4894,7 +4883,6 @@ version = "0.4.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
- "chrono",
  "dashmap",
  "glob",
  "ignore",
@@ -4909,7 +4897,6 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
- "urlencoding",
 ]
 
 [[package]]
@@ -4964,13 +4951,11 @@ dependencies = [
 name = "sisyphus_visual"
 version = "0.4.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "metrics",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sisyphus-intel",
  "sisyphus-tools-llm",
  "sisyphus-types",
  "thiserror 1.0.69",
