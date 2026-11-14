@@ -29,7 +29,7 @@
 | gRPC Jcode | `call_jcode_impl` | goal 执行成功/失败 | 场景 `bridge-jcode-execute`；**已接线** |
 | 其他工具/会话执行 | 相关 handlers | 视具体语义 | 仅在可定义“任务级”完成判定时纳入 |
 
-**首选最小落点**：HTTP `execute_goal_handler` 的完成分支（成功/失败均写一条记录），因为上下文完整、语义清晰、易做集成测试与外部验证。后续将写入逻辑下沉到共享执行编排层以覆盖 gRPC/composite/streaming，避免重复与漏记。
+**首选最小落点**：HTTP `execute_goal_handler` 的完成分支（成功/失败均写一条记录），因为上下文完整、语义清晰、易做集成测试与外部验证。写入逻辑已覆盖全部 6 个入口（HTTP goal/composite/streaming、gRPC execute_sop/stream_execution/call_jcode）；共用的确定性部分（usage→token 映射）已收敛为 `quality_record::scope_usage_token_pair`，各入口的计时/分支/事件排空语义差异**刻意保持显式接线**（强行抽象会掩盖各入口的 pass/fail 判定差异）。
 
 ## 3. 记录契约与字段映射
 
