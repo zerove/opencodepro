@@ -176,6 +176,7 @@ sample_rate = 1.0
 | `SISYPHUS_JWT_ISSUER` | `jwt.issuer` | string | `"sisyphus-bridge"` |
 | `SISYPHUS_BRIDGE_ADDRESS` | `bridge_address` | string | `"http://[::1]:50051"` |
 | `SISYPHUS_HTTP_ADDRESS` | `http_address` | string | `"http://[::1]:8080"` |
+| `SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR` | （纯环境 opt-in，无对应 Config 字段） | string（目录路径） | 未设置 = 不写记录 |
 | `SISYPHUS_CHAOS_ENABLED` | `chaos.enabled` | bool | `false` |
 | `SISYPHUS_CHAOS_DEFAULT_FAULT_PROBABILITY` | `chaos.default_fault_probability` | f64 | `0.1` |
 | `SISYPHUS_CHAOS_DEFAULT_DURATION_SECONDS` | `chaos.default_duration_seconds` | u64 | `300` |
