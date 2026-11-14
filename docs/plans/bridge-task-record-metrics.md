@@ -70,7 +70,7 @@
 3. **接线 `execute_goal_handler`**：计时开始/结束；在成功与失败分支组装记录并调用 writer；补充 `tracing` 字段（`task_id`/`duration_ms`/`status`）便于排查。
    - **已完成**：HTTP `/api/execute/goal` 成功/失败（含响应序列化失败）分支写入 `scenario=bridge-goal-execute` 记录。
    - **token usage（best-effort，已增强）**：优先使用 **执行作用域归因**（`DynamicLlmClient::scope_usage` / task-local，`bridge.run_with_usage_scope`）：在作用域内可见的 provider 上报 usage 会同步写入全局累计与当前作用域，记录取作用域快照（不依赖全局差值）；`tokio::spawn` 子任务不自动继承 scope，跨 spawn 的 LLM 调用可能无法归因。无 scope 客户端/不可用时回退为独占租约 + 累计差值；并发/无 usage 时仍保持 `null`（未知 ≠ 0）。`token_usage_delta` 与 scope 单测已覆盖（`scope_usage_captures_reported_tokens_deterministically` 等）。
-   - **已扩展**：同一 writer 现覆盖 HTTP composite（`bridge-composite-execute`）、HTTP/gRPC goal streaming（`bridge-goal-streaming`）、gRPC `execute_sop` 与流式 SOP/工具分支（`bridge-sop-execute`）、gRPC `call_jcode`（`bridge-jcode-execute`）。各入口均接入同一 best-effort token 采集，不改执行路径。
+   - **已扩展**：同一 writer 现覆盖 HTTP composite（`bridge-composite-execute`）、HTTP/gRPC goal streaming（`bridge-goal-streaming`）、gRPC `execute_sop` 与流式 SOP/工具分支（`bridge-sop-execute`）、gRPC `call_jcode`（`bridge-jcode-execute`）。各入口均接入同一 best-effort token 采集，不改执行路径；usage→(prompt,completion) 映射收敛为 `quality_record::scope_usage_token_pair`（6 入口共用，含 None 语义单测，防「某入口把 None 写成 0」的口径漂移）。
 4. **配置与开关**：增加最小配置（env/Config 字段二选一，按现有模式）；更新 `config.example.toml` 与 `book/`（若引入 Config 字段）。
    - **当前进展**：采用 env opt-in（`SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR`），未新增 `Config` schema 字段，故未修改 `config.example.toml`/`book/` 配置章节。
 5. **测试**：

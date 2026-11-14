@@ -264,9 +264,32 @@ pub(crate) fn token_usage_delta(
     )
 }
 
+/// 执行作用域归因的标准后处理：usage 快照 → (prompt, completion) 二元组；
+/// 无归因（`None`）时如实返回 `(None, None)`（未知 ≠ 0，不伪造）。
+///
+/// 6 个执行入口（HTTP goal/composite/streaming、gRPC execute_sop/
+/// stream_execution/call_jcode）共用此映射，避免「某一入口把 None 写成 0」
+/// 的口径漂移（历史曾出现把「未上报」当 0 拉低均值的错误）。
+pub(crate) fn scope_usage_token_pair(
+    usage: Option<sisyphus_types::LlmTokenUsage>,
+) -> (Option<u64>, Option<u64>) {
+    usage.map(|u| (Some(u.prompt_tokens), Some(u.completion_tokens))).unwrap_or((None, None))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scope_usage_token_pair_maps_some_and_none() {
+        let some = sisyphus_types::LlmTokenUsage {
+            prompt_tokens: 11,
+            completion_tokens: 7,
+            calls: 1,
+        };
+        assert_eq!(scope_usage_token_pair(Some(some)), (Some(11), Some(7)));
+        assert_eq!(scope_usage_token_pair(None), (None, None));
+    }
 
     #[test]
     fn sanitize_for_filename_replaces_and_limits() {

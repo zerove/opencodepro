@@ -352,8 +352,7 @@ pub(super) async fn execute_goal_handler(
             result
         })
         .await;
-    let (prompt_tokens, completion_tokens) =
-        usage.map(|u| (Some(u.prompt_tokens), Some(u.completion_tokens))).unwrap_or((None, None));
+    let (prompt_tokens, completion_tokens) = crate::quality_record::scope_usage_token_pair(usage);
 
     match result {
         Ok((output, report)) => match serde_json::to_value(GoalExecuteResponse {
@@ -558,9 +557,8 @@ pub(super) async fn goal_stream_handler(
         if let Err(e) = &result {
             tracing::error!(error = %e, "Goal streaming execution failed");
         }
-        let (prompt_tokens, completion_tokens) = usage
-            .map(|u| (Some(u.prompt_tokens), Some(u.completion_tokens)))
-            .unwrap_or((None, None));
+        let (prompt_tokens, completion_tokens) =
+            crate::quality_record::scope_usage_token_pair(usage);
         crate::quality_record::record_goal_streaming(
             &goal_clone,
             passed,
@@ -643,8 +641,7 @@ pub(super) async fn execute_composite_handler(
             result
         })
         .await;
-    let (prompt_tokens, completion_tokens) =
-        usage.map(|u| (Some(u.prompt_tokens), Some(u.completion_tokens))).unwrap_or((None, None));
+    let (prompt_tokens, completion_tokens) = crate::quality_record::scope_usage_token_pair(usage);
 
     match result {
         Ok(output) => {

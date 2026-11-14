@@ -45,7 +45,6 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
-opentelemetry-semantic-conventions = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 
 # JWT Authentication

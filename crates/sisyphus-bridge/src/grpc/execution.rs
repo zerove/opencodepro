@@ -67,9 +67,8 @@ impl MySisyphusBridge {
             let (run_result, usage) = self
                 .run_with_usage_scope(self.run_execution(sop_id.clone(), &project_id, None))
                 .await;
-            let (prompt_tokens, completion_tokens) = usage
-                .map(|u| (Some(u.prompt_tokens), Some(u.completion_tokens)))
-                .unwrap_or((None, None));
+            let (prompt_tokens, completion_tokens) =
+                crate::quality_record::scope_usage_token_pair(usage);
             match run_result {
                 Ok(v) => {
                     crate::quality_record::record_sop_execution(
@@ -678,9 +677,8 @@ impl MySisyphusBridge {
                 Some(&context),
             ))
             .await;
-        let (prompt_tokens, completion_tokens) = usage
-            .map(|u| (Some(u.prompt_tokens), Some(u.completion_tokens)))
-            .unwrap_or((None, None));
+        let (prompt_tokens, completion_tokens) =
+            crate::quality_record::scope_usage_token_pair(usage);
         crate::quality_record::record_jcode_execution(
             &task_id,
             result.is_ok(),
