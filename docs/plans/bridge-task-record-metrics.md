@@ -85,9 +85,15 @@
 
 ## 6. 风险与开放问题
 
-- **多路径覆盖**：仅接线 HTTP goal 会遗漏 gRPC/composite/streaming；需在后续迭代下沉到共享执行层并补齐验收。
+- **多路径覆盖**：已覆盖 HTTP goal/composite/streaming 与 gRPC execute_sop/
+  stream_execution/call_jcode（2026-11-13 起）；后续增强方向为记录下沉到共享执行
+  编排层以减少入口级重复接线（非功能缺口）。
 - **token/usage 来源**：**已实现执行级确定性归因**：task-local 执行作用域（`sisyphus_types::usage_scope`，对外经 `DynamicLlmClient::scope_usage` 暴露）为首选路径，作用域覆盖到的 provider 上报 usage 直接计入作用域快照；跨 spawn 边界由编排层显式传播；不可用时回退独占租约+累计差值（best-effort）；并发/无 usage 时仍为 `None`（不伪造 0）。
-- **并发与高频写入**：原子写与唯一文件名可缓解；若执行量增大需考虑轮转/索引（非本次范围）。
+- **并发与高频写入**：原子写与唯一文件名可缓解；当前记录量未达轮转阈值。
+  轮转策略（2026-11-14 约定，触发再实施）：单目录记录数 > 1000 或目录体积 > 1 GB
+  时，按 `recorded_at` 月份轮转到 `records/YYYY-MM/` 子目录；聚合命令保持接受目录
+  （递归 glob 兼容），历史扁平目录不迁移；索引（如按 task_id 的 manifest）仅在轮转
+  落地后仍出现聚合延迟 > 10s 时再评估。
 - **语义误读**：`Pass` 不等于外部验收通过；需在 metrics 输出或文档中提示按 `scenario` 区分来源。
 
 ## 7. 验收标准（实现阶段）

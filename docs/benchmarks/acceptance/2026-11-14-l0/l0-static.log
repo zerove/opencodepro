@@ -1,0 +1,36 @@
+# L0 静态/契约门禁
+# 记录命令、退出码与关键输出摘要
+
+## 2026-11-14T12:05:52Z L0 quick run
+commit: e848ee5
+rustc: rustc 1.100.0 (0ef1bc386 2026-11-09)
+cargo: cargo 1.100.0 (3acc79c0c 2026-11-05)
+
+### validate-sop-templates
+cmd: ./scripts/validate-sop-templates.sh
+exit: 0
+```text
+-- /home/zeron/dev/opencodepro/docs/examples/sop-templates/parallel-explore-aggregate.json
+  ok: id=parallel_explore_aggregate_template nodes=4 edges=4
+-- /home/zeron/dev/opencodepro/docs/examples/sop-templates/parallel-triple-review.json
+  ok: id=parallel_triple_review_template nodes=5 edges=6
+-- /home/zeron/dev/opencodepro/docs/examples/sop-templates/quality-gate-sequence.json
+  ok: id=quality_gate_sequence_template nodes=4 edges=3
+-- /home/zeron/dev/opencodepro/docs/examples/sop-templates/scenario-code-review-gate.json
+  ok: id=scenario_code_review_gate_template nodes=5 edges=6
+-- /home/zeron/dev/opencodepro/docs/examples/sop-templates/scenario-diagnose-fix-verify.json
+  ok: id=scenario_diagnose_fix_verify_template nodes=4 edges=3
+-- /home/zeron/dev/opencodepro/docs/examples/sop-templates/verify-sequence.json
+  ok: id=verify_sequence_template nodes=2 edges=1
+== all template validations passed ==
+```
+
+### bash syntax (scripts)
+cmd: bash -n scripts/single-node-readiness-check.sh scripts/single-node-demo-flow.sh scripts/single-node-apply-sop-template.sh scripts/single-node-bench-sample.sh scripts/single-node-contract-smoke.sh scripts/single-node-acceptance-evidence.sh
+exit: 0
+```text
+
+```
+
+### contract-smoke --quick
+skipped (set L0_FULL_SMOKE=1 to enable)

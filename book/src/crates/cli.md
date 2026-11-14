@@ -469,7 +469,10 @@ fail-safe：静默执行模型提出的任意命令是自动化入口最危险�
 
 ### `--record`：把闭环结果接入质量指标
 
-`sisyphus metrics quality` 聚合的是任务级记录（成功率 / 修复率 / 回归率 / 平均耗时）。
+`sisyphus metrics quality` 聚合的是任务级记录（成功率 / 修复率 / 回归率 / 平均耗时 /
+平均 token / 引擎版本归因）。输出还包含 `scenario_breakdown`：按 `scenario`
+分组的计数与成功率。混用不同来源的记录（如 CLI 的 `dev-closed-loop` 与 bridge 的
+`bridge-goal-execute`）时，**比率必须按 scenario 分组解读**，顶层混合比率只作总览。
 `dev --record` 把一次闭环落成同样的 `TaskRecord`：
 
 ```bash

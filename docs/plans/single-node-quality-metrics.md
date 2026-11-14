@@ -65,7 +65,9 @@
   （composite 成功 / streaming 失败 / gRPC `execute_sop`、`stream_execution`(goal)、`call_jcode`，
   含 token-captured 与 grpc-stream-calljcode 样本）证据见
   `docs/benchmarks/acceptance/2026-11-13/bridge-task-record-coverage.md`。
-- **证据目录**：`scripts/single-node-acceptance-evidence.sh --run-l0` 已自动化 L0；L3 待环境。
+- **证据目录**：`scripts/single-node-acceptance-evidence.sh --run-l0` 已自动化 L0
+  （2026-11-14 重跑：SOP 模板校验全过、脚本 bash 语法 exit 0，证据
+  `docs/benchmarks/acceptance/2026-11-14-l0/l0-static.log`）；L3 待环境。
 
 ## 3. 采集脚本
 
