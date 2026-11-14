@@ -67,6 +67,20 @@ gRPC 服务器 ← tonic 监听 [::1]:50051
 
 Bridge 读取 `config.toml`（或 `$SISYPHUS_CONFIG` 路径）并调用 `config.apply_env_overrides()` 合并环境变量。指标在 `config.metrics.prometheus_port` 指定的端口初始化。
 
+### 任务级质量记录（opt-in）
+
+设置环境变量 `SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR=<dir>` 后，bridge 会为每个执行入口
+（HTTP `execute_goal` / composite / goal streaming，gRPC `execute_sop` /
+`stream_execution` / `call_jcode`）best-effort 落盘一条 `TaskRecord`（单执行一文件，
+原子写入），供 `sisyphus metrics quality --records <dir>` 聚合；未设置则不写。
+
+- 记录以 `scenario` 区分来源（如 `bridge-goal-execute`、`bridge-sop-execute`）；
+  bridge 执行无 dev 式客观闸门，`initial/final_verify_passed` 与终态一致、
+  `fix_attempts=0`、`regressed=false`，不污染修复率/回归率分母；
+- `Pass` 仅表示执行路径完成，**不等于**外部验收通过；
+- token usage 为执行作用域归因（provider 实际上报值），无上报时记 `null`
+  （未知 ≠ 0，不伪造）；落盘失败不改变执行结果语义（仅告警日志）。
+
 ### ExecuteTool — 直接工具执行
 
 通过 `ExecutorRouter` 直接调用任意内置或代理工具。可用于远程访问 `librarian`、`metis`、`momus` 以及所有文件/shell/web 工具。
