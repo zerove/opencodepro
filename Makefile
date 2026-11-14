@@ -88,7 +88,7 @@ HEAVY_PACKAGES = sisyphus-sandbox sisyphus-sandboxd sisyphus-tests
 .PHONY: check-bridge build-bridge test-bridge check-bridge-160
 .PHONY: check-bridge-nosandbox test-bridge-nosandbox
 .PHONY: check-sandbox build-sandboxd test-sandbox check-sandboxd test-sandboxd test-tests check-tests
-.PHONY: test-bridge-full test-bridge-dedicated test-cli-handlers
+.PHONY: test-bridge-full test-bridge-dedicated test-cli-handlers smoke-bridge-record
 .PHONY: test-ci
 .PHONY: perf-analyze
 .PHONY: perf-regression perf-regression-bridge perf-tui long-run-stability
@@ -418,6 +418,12 @@ test-bridge-nosandbox: $(BRIDGE_DEPS)
 test-bridge-full: $(BRIDGE_DEPS)
 	cargo clippy -p sisyphus-bridge -- -D warnings
 	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-bridge --test bridge_integration_test
+
+# Bridge TaskRecord 落盘冒烟（无外部依赖：不可达 LLM + 降级链 → 确定性 pass）。
+# 串行拉起单个 bridge 进程，断言记录落盘、字段契约与聚合（含 scenario_breakdown）。
+# 与仓库 CI 策略一致：不进 `cargo test --workspace`（bridge 重型 crate 默认排除）。
+smoke-bridge-record:
+	CARGO_BUILD_JOBS=1 scripts/bridge-record-smoke.sh
 
 # — bridge dedicated-runner tests（#[ignore = "requires dedicated runner"] 用例）—
 #

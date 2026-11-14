@@ -282,6 +282,20 @@ jobs:
       - run: cargo test -p sisyphus-bridge --no-default-features --test cognitive_trace_rest_test
       - run: cargo test -p sisyphus-bridge --no-default-features --test hook_overhead
 
+  # ── Bridge record smoke: TaskRecord 落盘 + 聚合（含 scenario_breakdown）────
+  # 无外部依赖：不可达 LLM + 审计降级链 → 确定性 pass。
+  bridge-record-smoke:
+    timeout-minutes: 10
+    name: Bridge Record Smoke
+    runs-on: ubuntu-latest
+    needs: lint-light
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust
+      - uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/setup-protoc
+      - run: CARGO_BUILD_JOBS=1 make smoke-bridge-record
+
   # ── Tests: lightweight crates (full: lib + bin + doctests) ─────────
   test-light:
     timeout-minutes: 30
