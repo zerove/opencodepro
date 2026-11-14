@@ -75,7 +75,7 @@
    - **当前进展**：采用 env opt-in（`SISYPHUS_BRIDGE_QUALITY_RECORDS_DIR`），未新增 `Config` schema 字段，故未修改 `config.example.toml`/`book/` 配置章节。
 5. **测试**：
    - 单元测试：记录映射（成功/失败/无 token/dirty 归因/差值）与 JSON 往返。
-     - **已完成**：`cargo test -p sisyphus-bridge --lib quality_record` → 6 passed（文件名清洗、task id 构造、pass/fail 字段映射、原子写入与反序列化、token delta 2 项）；sha 解析/非 git 目录/dirty 标签由共享 helper 的 6 个单测覆盖（`cargo test -p sisyphus-metrics --lib engine_revision`）。
+     - **已完成**：`cargo test -p sisyphus-bridge --lib quality_record` → 6 passed（文件名清洗、task id 构造、pass/fail 字段映射、原子写入与反序列化、token delta 2 项；当日口径，2026-11-14 起为 7 passed：新增 scope_usage_token_pair None 语义单测）；sha 解析/非 git 目录/dirty 标签由共享 helper 的 6 个单测覆盖（`cargo test -p sisyphus-metrics --lib engine_revision`）。
    - 聚合兼容性：样本记录可被 `sisyphus metrics quality --records <dir> --json` 正确解析（成功率/耗时/版本归因符合预期，fix/regression 为 `null`）。
    - 集成测试：在可控 bridge 执行路径下断言记录文件生成且 `sisyphus metrics quality` 可聚合（注意 bridge 测试在 CI 的 OOM 约束与 `#[ignore]` 策略，按仓库惯例处理）。
      - **已完成（live）**：HTTP `execute_goal` 失败路径（`bridge-task-record-e2e.md`）；composite 成功 + goal streaming 失败（`bridge-task-record-coverage.md`）；gRPC `execute_sop` 失败；gRPC `stream_execution` goal 分支与非 goal/SOP 分支失败、gRPC `call_jcode` 失败（含非 null token，`runs/bridge-record-coverage/grpc-stream-calljcode/`、`grpc-stream-sop/`）。
