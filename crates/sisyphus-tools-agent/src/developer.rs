@@ -759,11 +759,15 @@ Goal (repeat): {goal}\n\n{PLAN_SCHEMA_REMINDER}\n\nPlan this goal."
                 let step = (*step).clone();
                 let llm = llm.clone();
                 let checkpoint_dir = checkpoint_dir.clone();
-                join_set.spawn(async move {
-                    let dev = Developer::new(llm).with_checkpoint_path(checkpoint_dir);
-                    let result = dev.run_step_with_fix(&step).await;
-                    (step, result)
-                });
+                let usage_scope = sisyphus_types::usage_scope::captured_scope();
+                join_set.spawn(sisyphus_types::usage_scope::attach_scope(
+                    usage_scope,
+                    async move {
+                        let dev = Developer::new(llm).with_checkpoint_path(checkpoint_dir);
+                        let result = dev.run_step_with_fix(&step).await;
+                        (step, result)
+                    },
+                ));
                 // Limit concurrency: if 4 already queued, wait for one to finish
                 if join_set.len() >= 4 {
                     if let Some(Ok((step, result))) = join_set.join_next().await {

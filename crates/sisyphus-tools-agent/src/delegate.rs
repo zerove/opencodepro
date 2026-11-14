@@ -23,29 +23,33 @@ impl WorkOrchestrator {
             let permit = semaphore.clone().acquire_owned().await.map_err(|e| {
                 sisyphus_tools_core::ToolError::TodoError(format!("semaphore: {e}"))
             })?;
-            set.spawn(async move {
-                let _permit = permit;
-                let start = Instant::now();
-                let handler = unit.handler;
-                match handler().await {
-                    Ok(value) => WorkReport {
-                        id: unit.id,
-                        name: unit.name,
-                        status: WorkStatus::Completed,
-                        result: Some(value),
-                        error: None,
-                        duration_ms: start.elapsed().as_millis(),
-                    },
-                    Err(e) => WorkReport {
-                        id: unit.id,
-                        name: unit.name,
-                        status: WorkStatus::Failed,
-                        result: None,
-                        error: Some(e.to_string()),
-                        duration_ms: start.elapsed().as_millis(),
-                    },
-                }
-            });
+            let usage_scope = sisyphus_types::usage_scope::captured_scope();
+            set.spawn(sisyphus_types::usage_scope::attach_scope(
+                usage_scope,
+                async move {
+                    let _permit = permit;
+                    let start = Instant::now();
+                    let handler = unit.handler;
+                    match handler().await {
+                        Ok(value) => WorkReport {
+                            id: unit.id,
+                            name: unit.name,
+                            status: WorkStatus::Completed,
+                            result: Some(value),
+                            error: None,
+                            duration_ms: start.elapsed().as_millis(),
+                        },
+                        Err(e) => WorkReport {
+                            id: unit.id,
+                            name: unit.name,
+                            status: WorkStatus::Failed,
+                            result: None,
+                            error: Some(e.to_string()),
+                            duration_ms: start.elapsed().as_millis(),
+                        },
+                    }
+                },
+            ));
         }
 
         let mut reports = Vec::with_capacity(count);
@@ -86,7 +90,7 @@ impl WorkOrchestrator {
             };
             let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(semaphore_max));
 
-            tokio::spawn(async move {
+            sisyphus_types::usage_scope::spawn_in_scope(async move {
                 let mut reports = Vec::with_capacity(count);
                 let mut set = JoinSet::new();
                 for unit in units {
@@ -114,31 +118,35 @@ impl WorkOrchestrator {
                         })
                         .await;
 
-                    set.spawn(async move {
-                        let _permit = permit;
-                        let start = Instant::now();
-                        let handler = unit.handler;
-                        let report = match handler().await {
-                            Ok(value) => WorkReport {
-                                id: unit.id,
-                                name: unit.name,
-                                status: WorkStatus::Completed,
-                                result: Some(value),
-                                error: None,
-                                duration_ms: start.elapsed().as_millis(),
-                            },
-                            Err(e) => WorkReport {
-                                id: unit.id,
-                                name: unit.name,
-                                status: WorkStatus::Failed,
-                                result: None,
-                                error: Some(e.to_string()),
-                                duration_ms: start.elapsed().as_millis(),
-                            },
-                        };
-                        let _ = tx.send(DelegateEvent::Completed(report.clone())).await;
-                        report
-                    });
+                    let usage_scope = sisyphus_types::usage_scope::captured_scope();
+                    set.spawn(sisyphus_types::usage_scope::attach_scope(
+                        usage_scope,
+                        async move {
+                            let _permit = permit;
+                            let start = Instant::now();
+                            let handler = unit.handler;
+                            let report = match handler().await {
+                                Ok(value) => WorkReport {
+                                    id: unit.id,
+                                    name: unit.name,
+                                    status: WorkStatus::Completed,
+                                    result: Some(value),
+                                    error: None,
+                                    duration_ms: start.elapsed().as_millis(),
+                                },
+                                Err(e) => WorkReport {
+                                    id: unit.id,
+                                    name: unit.name,
+                                    status: WorkStatus::Failed,
+                                    result: None,
+                                    error: Some(e.to_string()),
+                                    duration_ms: start.elapsed().as_millis(),
+                                },
+                            };
+                            let _ = tx.send(DelegateEvent::Completed(report.clone())).await;
+                            report
+                        },
+                    ));
                 }
 
                 while let Some(result) = set.join_next().await {
@@ -384,5 +392,30 @@ mod tests {
         assert_eq!(reports.len(), 2);
         assert_eq!(started, 2);
         assert_eq!(completed, 2);
+    }
+
+    #[tokio::test]
+    async fn test_run_all_propagates_usage_scope_to_work_units() {
+        // 委派工作单元在 JoinSet 子任务中执行，其内部 LLM 调用的 usage
+        // 必须能归因到外层执行作用域（跨 spawn 传播的回归保护）。
+        let orchestrator = WorkOrchestrator::new(4);
+        let units = vec![
+            work_unit("u1", "t1", || async {
+                sisyphus_types::usage_scope::record_current(Some(7), Some(11));
+                ok_task("a").await
+            }),
+            work_unit("u2", "t2", || async {
+                sisyphus_types::usage_scope::record_current(Some(1), Some(2));
+                ok_task("b").await
+            }),
+        ];
+        let (_, usage) = sisyphus_types::usage_scope::with_scope(async {
+            orchestrator.run_all(units).await.expect("run_all ok")
+        })
+        .await;
+        let usage = usage.expect("work unit 的 usage 应计入外层执行作用域");
+        assert_eq!(usage.prompt_tokens, 8);
+        assert_eq!(usage.completion_tokens, 13);
+        assert_eq!(usage.calls, 2);
     }
 }

@@ -111,7 +111,7 @@ impl TeamOrchestrator {
             })
             .await;
 
-        tokio::spawn(async move {
+        sisyphus_types::usage_scope::spawn_in_scope(async move {
             let report = self
                 .execute_plan_internal(plan, Some(tx.clone()), Arc::new(TeamContext::new()))
                 .await;
