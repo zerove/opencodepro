@@ -54,6 +54,11 @@ known-issue 记录。
 LLM 裁决（裁决本身不可审计），因此脚本不假装覆盖那部分。落地时它真的抓到了
 3 处跨章节借用（`TODO.md` 10.2 的追踪条目复用了 9.1.1/9.1.2 的回归证据），
 经人工确认属同一工作项的追踪条目后逐条写明豁免理由，而非放宽规则。
+**执行级 token 作用域的 spawn 边界**（本轮）对应同一「失败必须可见」原则，以
+另一层门禁形式落地：`scripts/audit_llm_spawns.py`（`make audit-llm-spawns`，
+CI `Audit sources`）——LLM 相关 crate 非测试源码内每个 spawn 必须
+`spawn_in_scope`/`attach_scope`，或带 reason 的
+`// usage-scope: entry:<reason>` / `// usage-scope: no-llm:<reason>` marker。
 
 待实施：语义退化的抽样复核流程（谁来抽样、抽样比例、结论落在哪里）。
 
