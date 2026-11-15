@@ -77,6 +77,21 @@ ignore = [
     #       放宽需 imbl 2 → 7（跳 5 个大版本，属独立破坏性变更）。
     # 跟踪: 评估 imbl 2 → 7 迁移时一并解决；届时删除本条豁免。
     "RUSTSEC-2026-0292",
+
+    # ── RUSTSEC-2026-0459: libsqlite3-sys bundles SQLite < 3.54.0 (CVE-2026-119375) ──
+    # 来源: sisyphus-mem / sisyphus-bridge / sisyphus-core / sisyphus-tests →
+    #       sqlx 0.8 (sqlx-sqlite 0.8) → libsqlite3-sys 0.30.1
+    #       （rusqlite bundled SQLite 3.13.0–3.53.2，含 CVE-2026-119375）。
+    # 修复: 升上游至 libsqlite3-sys >= 0.39.0（rusqlite 0.41+，随 sqlx 0.10+ 一并
+    #       释放）。当前 workspace 统一 `sqlx = "0.8"` / `sqlx-sqlite = "0.8"`，锁死
+    #       libsqlite3-sys ^0.30.1，故 `cargo update -p libsqlite3-sys` 实测为
+    #       no-op（dry-run: Locking 0 packages to highest compatible versions）；
+    #       CI Supply-chain audit 红源于 libsqlite3-sys 0.30.1 命中本 advisory。
+    # 阻塞: 需 sqlx 主版本升级（0.8 → 0.10+）才能拉到修复版本，属破坏性升级路径。
+    # 实际影响: bundled SQLite 仅在进程打开 db + -wal 时被利用（本地攻击面）；
+    #         当前单机引擎未暴露多进程 WAL 共用场景。
+    # 跟踪: 待 sqlx 0.10+ 可用后移除本豁免并 `cargo update -p libsqlite3-sys`。
+    "RUSTSEC-2026-0459",
 ]
 
 [licenses]

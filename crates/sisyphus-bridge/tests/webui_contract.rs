@@ -46,8 +46,12 @@ fn shape(path: &str) -> String {
 
 /// 从源码里解析 webui 发出的 (method, path) 调用。
 ///
-/// 只认 `format!("{}/...` 这一种写法：它是本仓库里唯一构造 bridge URL 的方式
-/// （`bridge_url` 的拼接点）。识别不到足够多的调用点时由调用方断言失败，
+/// 识别两类 URL 构造写法（并存，因为历史上都出现过）：
+/// 1. 旧式：``format!("{}/api/..."`` 字符串拼接（2026-10 前实现方式）；
+/// 2. 现式：经 `bridge_get` / `bridge_post` 等 helper 传入字符串字面量或
+///    `&format!("...")`（2026-10 起 `webui/src/lib.rs` 统一收敛到这两个 helper）。
+///
+/// 识别不到足够多的调用点时由调用方断言失败，
 /// 避免「解析器失效 → 零断言 → 静默变绿」。
 fn webui_requests(src: &str) -> Vec<(String, String)> {
     const METHODS: [&str; 5] = ["get", "post", "put", "delete", "patch"];
@@ -75,6 +79,31 @@ fn webui_requests(src: &str) -> Vec<(String, String)> {
 
         let Some(method) = method else { continue };
         out.insert((method, path));
+    }
+
+    // Pass 2：helper 调用 `bridge_<verb>(state, "<path>")` / `bridge_<verb>(state, &format!("<path>"))`。
+    // `bridge_get` / `bridge_post` 是 webui 唯一的 bridge 客户端 helper（内部
+    // 拼 `state.bridge_url`），所有 REST 调用都经由此处进入。2026-11 起契约测试
+    // 必须同时识别两种写法，否则 helper 重构后会「静默解析出 0 条调用」。
+    for verb in METHODS {
+        let helper = format!("bridge_{verb}(state, ");
+        let mut from = 0usize;
+        while let Some(found) = src[from..].find(helper.as_str()) {
+            let abs = from + found;
+            let after = &src[abs..];
+            let Some(start) = after.find('"') else {
+                from = abs + 1;
+                continue;
+            };
+            let rest = &after[start + 1..];
+            let Some(end) = rest.find('"') else {
+                from = abs + 1;
+                continue;
+            };
+            let path = &rest[..end];
+            out.insert((verb.to_uppercase(), path.to_string()));
+            from = abs + helper.len();
+        }
     }
 
     out.into_iter().collect()
@@ -177,15 +206,19 @@ async fn every_webui_bridge_call_exists_and_is_documented() {
     // 都会让本断言失败，逼迫改动方回来确认「新端点确实存在于 bridge」。
     let expected: BTreeSet<(String, String)> = [
         ("GET", "/health"),
+        ("GET", "/api/cluster/status"),
+        ("GET", "/api/cluster/control/leases/{key}"),
+        ("GET", "/api/roadmap/dashboard/{project_id}"),
         ("GET", "/api/sessions"),
         ("GET", "/api/sessions/{id}"),
         ("POST", "/api/sessions"),
         ("POST", "/api/sessions/{sid}/messages"),
         ("POST", "/api/vector/search"),
-        ("POST", "/api/execute"),
+        ("POST", "/api/execute/goal"),
         ("GET", "/api/sops"),
         ("GET", "/api/sops/{sop_id}"),
         ("GET", "/api/skills"),
+        ("POST", "/api/skills/install"),
     ]
     .into_iter()
     .map(|(m, p)| (m.to_string(), p.to_string()))
