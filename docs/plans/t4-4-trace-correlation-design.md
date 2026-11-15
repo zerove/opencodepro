@@ -64,12 +64,15 @@
 
 ### 5.1 实施进展
 
+> 计数口径（ADR-021）：下表只记录步骤状态与落点文件/测试名；单测数量随演进
+> 漂移，以 `cargo test -p <crate> --lib <filter>` 实跑输出为准。
+
 | 步骤 | 状态 | 说明 |
 |---|---|---|
-| 1 trace id 工具 | DONE | `crates/sisyphus-types/src/trace.rs`：`generate_trace_id` / `sanitize_trace_id` / `resolve_trace_id` / `TraceId`（6 个单测） |
-| 2 HTTP 入口 | DONE | `crates/sisyphus-bridge/src/http/mod.rs`：`trace_id_middleware`（extensions + tracing span + 响应头），3 个单测 |
-| 3 gRPC 入口 | DONE | `crates/sisyphus-bridge/src/trace.rs`：`TraceInterceptor` + `AuthTraceInterceptor`（组合），3 个单测 |
-| 4 SSE 负载 | DONE | `SseEvent::from_execution_event_with_trace` 注入 `trace_id` 维度键；`execute_goal_handler` / `execute_composite_handler` 从 request extensions 取 trace id，1 个单测 |
+| 1 trace id 工具 | DONE | `crates/sisyphus-types/src/trace.rs`：`generate_trace_id` / `sanitize_trace_id` / `resolve_trace_id` / `TraceId`（含单测） |
+| 2 HTTP 入口 | DONE | `crates/sisyphus-bridge/src/http/mod.rs`：`trace_id_middleware`（extensions + tracing span + 响应头），含单测 |
+| 3 gRPC 入口 | DONE | `crates/sisyphus-bridge/src/trace.rs`：`TraceInterceptor` + `AuthTraceInterceptor`（组合），含单测 |
+| 4 SSE 负载 | DONE | `SseEvent::from_execution_event_with_trace` 注入 `trace_id` 维度键；`execute_goal_handler` / `execute_composite_handler` 从 request extensions 取 trace id，含单测 |
 | 5 CLI 注入 | DONE | `BridgeClient::with_auth` 为每次 gRPC 调用注入 `x-trace-id` metadata |
 | 6 工具/LLM 日志 | DONE | HTTP 入口 span（`http_request`）带 `trace_id`，子 span 继承；gRPC 侧 `grpc.execute_sop` / `grpc.execute_tool` 的 span 增加 `trace_id` 字段（从 metadata 读取并 record） |
 | 7 文档与契约 | DONE | `book/src/sse-events.md` 新增「请求关联：`trace_id`」小节；OpenAPI `info.description` 说明所有响应带 `x-trace-id` |

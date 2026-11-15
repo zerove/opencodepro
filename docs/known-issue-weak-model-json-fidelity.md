@@ -18,8 +18,10 @@ CI 误诊（spawn 错误缺上下文）、快照可判读性（样本规模不�
 2. 质量快照字段提取对缺失/未知值敏感：直读会把「未知」误写成 0，污染
    成功率/成本比率（质量收集脚本的 `as_int` + null 兜底即为该问题的防护，
    约定「未知 ≠ 0，不伪造」）；
-3. 文档中的单测计数为硬编码数字，随演进漂移（如 T4.1 行 `sisyphus-metrics::quality`
-   12 单测 → 实测 21、bridge quality_record 6 → 7，提交 666100f 修正）；
+3. 文档中的单测计数为硬编码数字，随演进漂移（计数口径：本行是 `666100f` 当时的
+   核对记录——`sisyphus-metrics::quality` 与 bridge `quality_record` 的单测数都已
+   与文档写的数不符，修正后不再在文档里固化数字；现由
+   `scripts/audit_doc_counts.py` 拦截回归）；
 4. 轮转策略落地后（`records/YYYY-MM/` 子目录），`aggregate_dir` 扁平读取，
    轮转后样本「消失」，顶层比率不变但分母偷偷变小；
 5. `SandboxdClient::spawn` 失败只报通用 IO 错误，CI 上无法区分

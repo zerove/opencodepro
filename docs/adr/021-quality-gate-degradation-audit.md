@@ -32,11 +32,18 @@ IO 错误，路径/errno 缺失导致 CI 误诊。
    模拟网关/降级链场景下，退化只改变成功率，不改变「失败可见」这一验证语义。
 4. **文档计数约定**：文档中的单测计数只引用命令与实跑输出，不写硬编码数字
    （计数随演进取值漂移；证据以提交信息实跑输出为准）。
+   **适用范围**：`docs/plans/`、`docs/runbooks/`、`book/`、`README`/`CONTRIBUTING`
+   等**描述当前状态**的文档。**不追溯改写**历史档案（`docs/project-status-*`、
+   `docs/project-retrospective-*`、`docs/adr/` 既有正文、`docs/benchmarks/**/runs/`
+   原始输出、已归档的证据文档）——那些是当时运行的记录，改写即伪造历史；
+   证据文档允许保留数字，但必须同时给出命令与输出文件路径。
 
 ## 落地现状（2026-11-14）
 
 已落地：静态证据门禁（既有）、失败可见性增强（spawn 诊断 / 轮转递归聚合 /
-样本规模自检 / L1 运行时证据）、文档计数约定、known-issue 记录。
+样本规模自检 / L1 运行时证据）、文档计数约定**且已门禁化**
+（`scripts/audit_doc_counts.py`，`make audit-doc-counts`，CI `Audit sources`；
+含 `--self-check` 正反例与范围规则自检）、known-issue 记录。
 待实施：语义退化检查层（抽样核验与退化标记输出）——本 ADR 冻结其契约
 （绝不静默放行、失败必须可见），实现随 `scripts/audit_todo.py` 后续迭代落地。
 

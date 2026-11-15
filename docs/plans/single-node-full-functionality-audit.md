@@ -16,13 +16,16 @@
 
 ## 2. 基线验证证据（2026-11-10，本环境）
 
+> 计数口径（ADR-021）：本节只记录**命令**与实跑结论；具体数字随代码演进漂移，
+> 一律以命令实跑输出/提交信息为准，不在文档中固化计数。
+
 | 检查项 | 命令/依据 | 结果 |
 |---|---|---|
-| WebUI 测试 | `cargo test -p sisyphus-webui` | ✅ 26 passed（含 cluster REST/HTMX/页面路由） |
-| Core lib 测试 | `cargo test -p sisyphus-core --lib` | ✅ 116 passed |
+| WebUI 测试 | `cargo test -p sisyphus-webui` | ✅ 通过（含 cluster REST/HTMX/页面路由） |
+| Core lib 测试 | `cargo test -p sisyphus-core --lib` | ✅ 通过 |
 | CLI 编译与入口 | `cargo check -p sisyphus-cli`；`sisyphus --help` | ✅ 可编译，子命令丰富（文件/会话/SOP/MCP/工具等） |
-| Bridge lib（no-default-features） | `cargo test -p sisyphus-bridge --lib --no-default-features` | ⚠️ 179 passed / 3 failed / 3 ignored；失败 3 项均为 `sandboxd_client::tests::*`（`Failed to spawn sandboxd: Permission denied (os error 13)`），属环境限制，非本批次回归 |
-| SDK 契约与测试（本批次已完成） | `go test ./...`、`python -m pytest tests/`、`npm run build && npm test` | ✅ Go ok / Python 38 passed / TS 34 passed（建议二批次收口） |
+| Bridge lib（no-default-features） | `cargo test -p sisyphus-bridge --lib --no-default-features` | ⚠️ 除 `sandboxd_client::tests::*` 外通过；该组用例在本环境 `Failed to spawn sandboxd: Permission denied (os error 13)`（环境限制，非本批次回归） |
+| SDK 契约与测试（本批次已完成） | `go test ./...`、`python -m pytest tests/`、`npm run build && npm test` | ✅ 三端通过（以各自实跑输出为准；建议二批次收口） |
 | 门禁 | `cargo check-all`、`cargo fmt --all --check`、`make audit`、`cargo clippy`（相关 crate） | ✅ 批次内持续全绿（以最近提交为准） |
 | 单机可执行产物 | `sisyphus`(cli)、`sisyphus-bridge`、`sisyphus-webui`、`sisyphus-sandboxd` 等 | ✅ workspace 定义存在（`cargo metadata`） |
 
@@ -48,7 +51,7 @@
   - TUI/交互模式在无外部依赖时的可用性说明与冒烟步骤。
 
 ### 3.4 WebUI（axum + HTMX）
-- **现状**：页面（仪表盘/会话/DAG/SOP/技能/集群/混沌/认知地图等）、HTMX 端点、REST 代理与只读观测已实现并有测试（26 passed）；契约已与 bridge 对齐。
+- **现状**：页面（仪表盘/会话/DAG/SOP/技能/集群/混沌/认知地图等）、HTMX 端点、REST 代理与只读观测已实现并有测试（`cargo test -p sisyphus-webui`，计数以实跑输出为准）；契约已与 bridge 对齐。
 - **单机就绪度**：**高**。
 - **缺口**：补充“单机启动 WebUI 对接本地 bridge”的操作文档与已知前置（`WEBUI_BRIDGE_URL` 等）的一致性检查。
 

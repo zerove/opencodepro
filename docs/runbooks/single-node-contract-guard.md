@@ -74,7 +74,7 @@ env -u RUSTUP_TOOLCHAIN cargo test -p sisyphus-core --lib
 # TypeScript（需 node_modules）
 (cd ide/typescript-sdk && npm run build && npm test)
 ```
-**预期**：与契约对齐批次一致（当前基线：Go ok / Python 38 passed / TS 34 passed）。
+**预期**：与契约对齐批次一致（三端全绿；计数以各自实跑输出为准，见 ADR-021）。
 
 ### 5.3 Bridge 运行时只读冒烟（单机）
 ```bash

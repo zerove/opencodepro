@@ -365,8 +365,18 @@ todo-audit:
 	@python3 scripts/audit_todo.py
 	@python3 scripts/audit_todo.py --self-check
 
+# 文档计数门禁（ADR-021 决策 4）：活文档（README/CONTRIBUTING/AGENTS/book/
+# docs/plans/docs/runbooks/known-issue）里不得把会漂移的测试计数当成当前事实。
+# 这类缺陷不会让任何测试变红：文档写着「116 passed」，代码加到 140 也照样绿，
+# 读者只能相信那个数。仓库真实栽过——同一件事在文档里并存「6 passed」与
+# 「2026-11-14 起为 7 passed」。历史档案（docs/benchmarks、docs/adr、
+# project-status 等）不在扫描范围：改写记录等于伪造历史。
+audit-doc-counts:
+	@python3 scripts/audit_doc_counts.py
+	@python3 scripts/audit_doc_counts.py --self-check
+
 # 全部结构审计（不需编译）
-audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release todo-audit version-tool
+audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release audit-doc-counts todo-audit version-tool
 
 # 版本 bump 脚本的判别用例。版本号在仓库里出现 147 处（27 个 [package]
 # version + 内部 path 依赖约束），手改必漏；而脚本本身最危险的失败模式是
@@ -374,7 +384,7 @@ audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-docker
 version-tool:
 	@python3 scripts/bump_version.py --self-check
 
-.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release todo-audit version-tool audit
+.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release audit-doc-counts todo-audit version-tool audit
 
 # 统一 bump workspace 版本号（[package] version + 内部 path 依赖约束）。
 # 先 --dry-run 看改动，再实际写入，最后 `make release-check` 复核。

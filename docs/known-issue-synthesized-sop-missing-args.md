@@ -139,5 +139,5 @@ SOPNodeConfig { name, kind }          // graph.rs:103  —— 无参数
 3. `GoalDrivenSynthesizer` 通过 `default_args_for_action`
    （`crates/sisyphus-intel/src/synthesis.rs`）为每个动作生成默认参数；
    `DynamicSopSynthesizer`（LLM 路径）保留 LLM 给出的 args。
-4. 回归验证：`cargo test -p sisyphus-tests --lib` → 11 passed / 0 failed，
+4. 回归验证：`cargo test -p sisyphus-tests --lib` 全部通过（计数以实跑输出为准），
    其中 `test_full_pipeline` 与 `test_concurrent_execution` 均转为绿色。

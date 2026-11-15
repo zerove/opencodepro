@@ -1,8 +1,8 @@
 # 单机质量指标与采集（T4.1）
 
 > 对应计划任务：T4.1「质量指标定义与采集」。
-> 指标口径与采集链路已落地，L3 场景已用本地真实模型解阻（三场景 × 3 轮 9/9 PASS，
-> 见 `docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md`），
+> 指标口径与采集链路已落地，L3 场景已用本地真实模型解阻（三场景 × 3 轮闭环；判定与计数以
+> `docs/benchmarks/acceptance/2026-11-12/phase1/t1-4-l3-closed-loop.md` 的实跑输出为准），
 > 并经 `sisyphus dev --record` 转成 `TaskRecord` 写入记录目录。
 
 ## 1. 指标定义
@@ -124,8 +124,8 @@ sisyphus metrics quality --records docs/benchmarks/quality-metrics/records
   `qwen2.5-coder:3b`：s1/s2 首轮闸门失败 → 修复 1 次通过；**s3 失败** ——
   3B 把函数写成模块，根因是闸门修复上下文缺测试文件，已修（见
   `phase1/t1-4-l3-closed-loop.md` §4.4c）；
-- 6 条 L3 开发闭环（`l3-run{2,3}-s{1,2,3}-*.json`，修复后重跑两轮，6/6 PASS，
-  **携带引擎版本** `51503830c53b`）。
+- 6 条 L3 开发闭环（`l3-run{2,3}-s{1,2,3}-*.json`，修复后重跑两轮且全部通过，
+  判定见对应记录文件；**携带引擎版本** `51503830c53b`）。
 
 最新聚合产物 `docs/benchmarks/quality-metrics/2026-11-12-5150383.json`
 （13 条样本：成功率 0.923 / 修复率 0.889 / 回归率 0.0 / 平均 82.7s /

@@ -79,18 +79,20 @@ cargo run -p sisyphus-cli -- --bridge http://127.0.0.1:50051 status
 | SN-05 | 会话生命周期 | `POST /api/sessions` → `GET /api/sessions` → `GET /api/sessions/{id}` → `POST /api/sessions/{id}/messages` | 契约正确、状态可查询 | 按 bridge 实现与 SDK 契约验证 |
 | SN-06 | 技能 | `GET /api/skills`、`POST /api/skills/install` | 列表字段与安装语义（201 空体）一致 | 已有契约对齐与测试覆盖 |
 | SN-07 | 只读观测（集群/控制面） | `GET /api/cluster/status`、`GET /api/cluster/control/leases/{key}`；WebUI `/cluster` 面板 | 只读、默认安全；字段与文档一致 | ✅ 2026-11-10 本地实测：`GET /api/cluster/status` 返回有效 JSON（cluster/control_plane/config/consensus 等字段）；WebUI/SDK 契约与测试已覆盖 |
-| SN-08 | WebUI 契约路径 | HTMX 表单提交、SOP/DAG/技能页面 | 与 bridge 契约一致、无 415/404 误用 | ✅ WebUI 测试 26 passed |
-| SN-09 | SDK 最小调用 | TS/Py/Go 对接本地 bridge（health/sops/execute_sop 等） | 方法签名与返回符合契约 | ✅ 单元测试通过；建议补最小可运行示例（S3） |
+| SN-08 | WebUI 契约路径 | HTMX 表单提交、SOP/DAG/技能页面 | 与 bridge 契约一致、无 415/404 误用 | ✅ `cargo test -p sisyphus-webui` 通过（计数以实跑输出为准） |
+| SN-09 | SDK 最小调用 | TS/Py/Go 对接本地 bridge（health/sops/execute_sop 等） | 方法签名与返回符合契约 | ✅ 单元测试通过（以各端实跑输出为准）；建议补最小可运行示例（S3） |
 | SN-10 | 认知追踪/地图（如启用） | `/api/cognitive/trace`、`/api/cognitive/map/*` 等 | 端点可达、返回符合 OpenAPI | 按实际启用状态验收 |
 
 ## 5. 已验证证据（2026-11-10）
 
-- `cargo test -p sisyphus-core --lib`：116 passed
-- `cargo test -p sisyphus-webui`：26 passed
+> 计数口径（ADR-021）：只记录命令与结论；不再固化 `N passed` 数字。
+
+- `cargo test -p sisyphus-core --lib`：通过（计数以实跑输出为准）
+- `cargo test -p sisyphus-webui`：通过（计数以实跑输出为准）
 - `cargo check -p sisyphus-cli`：通过；`sisyphus --help` 可用
 - CLI 本地工具：`read/write/glob/grep/exec` 实测通过（SN-01）
 - Bridge 本地实测（正确顶层配置）：`GET /health` → `{"status":"SERVING","version":"0.4.0"}`；`GET /api/sops` → `["verify_sop"]`；`GET /api/cluster/status` 返回有效只读快照（SN-02/SN-03/SN-07）
-- SDK：Go `go test ./...`、Python 38 passed、TS 34 passed（建议二批次）
+- SDK：`go test ./...`、`python -m pytest tests/`、`npm run build && npm test` 三端通过（建议二批次）
 - 门禁：`cargo check-all`、`cargo fmt --all --check`、`make audit`、相关 clippy 通过（以批次记录为准）
 
 ## 6. 已知限制与环境说明

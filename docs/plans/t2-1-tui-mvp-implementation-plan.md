@@ -78,7 +78,7 @@
 - 覆盖路径：Ctrl+N 新建会话 → 输入模式 → `/dev` → Dev 对话框 → 输入目标 →
   Tab 到 Run → 启动（运行中视图）→ Esc 中断（出现恢复入口）
 - 断言：3 项（`dev_dialog_opens` / `running_view` / `resume_entry_after_interrupt`）
-- 实跑：`./scripts/tui-dev-smoke.sh ./target/debug/sisyphus` → 3/3 PASS（rc=0）
+- 实跑：`./scripts/tui-dev-smoke.sh ./target/debug/sisyphus` → 上述断言全部通过（rc=0；实跑输出见下条日志，计数以日志为准）
 - 日志：`docs/benchmarks/acceptance/2026-11-12/phase2/tui-dev-smoke.txt`
 - CI：nightly `tui-first-frame` job（同 job 已构建 CLI，避免重复编译）
 

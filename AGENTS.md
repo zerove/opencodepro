@@ -90,7 +90,7 @@ opencodepro/
 | 测试 | 集成测试放 `tests/`，单元测试放 `src/` 下 `#[cfg(test)]`，benchmark 用 `criterion` |
 | Bridge | 地址默认 `Config.bridge_address`，CLI 的 `--bridge` 可覆盖 |
 | 配置变更 | 需要同步更新 `config.example.toml`、`apply_env_overrides()` 和 `book/src/configuration.md` |
-| 文档计数 | 文档中的单测/检查计数只引用命令与实跑输出，不写硬编码数字（计数随演进取值漂移；证据以提交信息实跑输出为准，见 ADR-021） |
+| 文档计数 | 活文档（README/CONTRIBUTING/AGENTS/`book/`/`docs/plans`/`docs/runbooks`/`known-issue`）里的单测/检查计数只引用命令与实跑输出，不写硬编码数字（计数随演进取值漂移）；要写数字须同句标注「计数以实跑输出为准」或「归档判定」。历史档案（`docs/benchmarks`、`docs/adr`、`project-status` 等）不追溯改写。门禁：`python3 scripts/audit_doc_counts.py`（`make audit-doc-counts`，CI `Audit sources`），见 ADR-021 |
 
 ## 反模式
 

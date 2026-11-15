@@ -75,6 +75,16 @@ jobs:
         run: |
           python3 scripts/audit_todo.py
           python3 scripts/audit_todo.py --self-check
+      # 文档计数门禁（ADR-021 决策 4）：活文档里不写会漂移的测试计数。
+      # 这类缺陷没有任何测试会变红——文档写着「116 passed」，代码加到 140
+      # 也照样全绿。落地前仓库里同一件事并存两种数（`quality_record`
+      # 单测「6 passed」与「2026-11-14 起为 7 passed」）。历史档案
+      # （docs/benchmarks、docs/adr、project-status 等）不在扫描范围。
+      - name: Audit hardcoded counts in live docs
+        run: |
+          python3 scripts/audit_doc_counts.py
+          python3 scripts/audit_doc_counts.py --self-check
+
       # workflow 自身的引用完整性。放在本 job 里是刻意的：它只需要
       # checkout 出来的 YAML 与 PyYAML，不需要编译，几秒就能跑完。
       - name: Audit workflow step references

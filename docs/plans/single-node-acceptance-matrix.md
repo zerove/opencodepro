@@ -8,12 +8,12 @@
 
 | 领域 | 能力项 | 状态 | 证据 | 备注 |
 |---|---|---|---|---|
-| 核心引擎 | 认知循环 / DAG / SOP 核心实现与单测 | ✅ 通过 | `cargo test -p sisyphus-core --lib` 116 passed；2026-11-10 本地实测 CLI `sop run verify_sop` 成功（直接 SOP 路径） | `execute/goal` 目标驱动路径依赖 LLM/配置；无配置时返回可解释错误 |
-| Bridge | HTTP/gRPC 服务、路由与契约面 | ✅ 通过（主流程） | 路由与 handler 实现、契约对齐；lib 测试 179 passed；2026-11-10 本地实测 `GET /health`、`/api/sops`、`/api/cluster/status` 返回预期 | `sandboxd_client` 3 项在本环境 Permission denied（环境限制），不阻塞非沙箱主流程 |
+| 核心引擎 | 认知循环 / DAG / SOP 核心实现与单测 | ✅ 通过 | `cargo test -p sisyphus-core --lib`（计数以实跑输出为准，见 ADR-021）；2026-11-10 本地实测 CLI `sop run verify_sop` 成功（直接 SOP 路径） | `execute/goal` 目标驱动路径依赖 LLM/配置；无配置时返回可解释错误 |
+| Bridge | HTTP/gRPC 服务、路由与契约面 | ✅ 通过（主流程） | 路由与 handler 实现、契约对齐；`cargo test -p sisyphus-bridge --lib`（计数以实跑输出为准）；2026-11-10 本地实测 `GET /health`、`/api/sops`、`/api/cluster/status` 返回预期 | `sandboxd_client` 的 spawn 用例在本环境 Permission denied（环境限制），不阻塞非沙箱主流程 |
 | CLI | 本地文件/命令工具 | ✅ 通过 | `read/write/glob/grep/exec` 实测（SN-01） |  |
 | CLI | 子命令体系与编译可用性 | ✅ 通过 | `cargo check -p sisyphus-cli`；`sisyphus --help` 可用 | 依赖 bridge/外部服务的子命令需按分层验收 |
-| WebUI | 页面、HTMX、契约对齐、只读观测 | ✅ 通过 | `cargo test -p sisyphus-webui` 26 passed；集群页面/HTMX/REST 端点已实现 | 实际对接需运行 bridge 并配置 `WEBUI_BRIDGE_URL` |
-| SDK (TS/Py/Go) | 契约对齐与单元测试 | ✅ 通过 | TS 34 passed、Python 38 passed、Go `go test ./...` ok | 最小示例已提供（`docs/examples/single-node-sdk-examples.md`） |
+| WebUI | 页面、HTMX、契约对齐、只读观测 | ✅ 通过 | `cargo test -p sisyphus-webui`（计数以实跑输出为准）；集群页面/HTMX/REST 端点已实现 | 实际对接需运行 bridge 并配置 `WEBUI_BRIDGE_URL` |
+| SDK (TS/Py/Go) | 契约对齐与单元测试 | ✅ 通过 | `npm test`、`python -m pytest tests/`、`go test ./...`（各自以实跑输出为准，不记录硬编码计数） | 最小示例已提供（`docs/examples/single-node-sdk-examples.md`） |
 | 状态与观测（只读） | 会话/技能/SOP/认知/集群只读接口与面板 | ✅ 通过（契约与实现） | 路由/handler/测试与文档覆盖 | 端到端数据依赖运行时状态与配置 |
 | 工具与 MCP | 工具 crate 与命令面存在 | ✅ 通过（实现层面） | workspace 结构与 CLI 子命令覆盖 | 可用性按“纯本地/需依赖”分层（S3 文档） |
 | 文档与运维 | 单机运行/验收/分层/示例文档 | ✅ 通过 | S1 审计、S2 runbook、S3 示例与依赖说明、本矩阵 |  |
