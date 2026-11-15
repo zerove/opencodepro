@@ -104,3 +104,11 @@ HTTP 200（耗时 138.6s），`output` 为 bash_exec 真实执行结果：
   其中 `token-probe` 等历史样本的失败路径证据见 2026-11-13 覆盖文档。
 - 原始记录与聚合快照归档于 `docs/benchmarks/acceptance/2026-11-14/runs/goal-success-path/`
   （含全部 9 条记录与 `http-response.txt`）。
+
+## 后续：clean 版本样本（2026-11-15）
+
+本轮的 `engine_dirty=true` 是如实归因，但对复现不友好。2026-11-15 在 clean 树
+（`42816f00abd4`，`engine_dirty=false`）上重跑同一 goal 形态，取得
+`status=pass` + `prompt=2348` / `completion=952` 的样本，见
+`docs/benchmarks/acceptance/2026-11-15/goal-success-path-clean.md`。
+两条样本不可直接比较（不同提交、单次样本、模型随机性）。

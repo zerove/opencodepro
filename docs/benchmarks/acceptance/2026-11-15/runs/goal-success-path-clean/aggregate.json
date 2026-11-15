@@ -1,0 +1,26 @@
+{
+  "total": 1,
+  "passed": 1,
+  "failed": 0,
+  "blocked": 0,
+  "success_rate": 1.0,
+  "fix_rate": null,
+  "regression_rate": null,
+  "mean_duration_ms": 258645.0,
+  "mean_prompt_tokens": 2348.0,
+  "mean_completion_tokens": 952.0,
+  "mean_total_tokens": 3300.0,
+  "engine_commits": [
+    "42816f00abd4"
+  ],
+  "engine_unknown": 0,
+  "scenario_breakdown": {
+    "bridge-goal-execute": {
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "blocked": 0,
+      "success_rate": 1.0
+    }
+  }
+}
