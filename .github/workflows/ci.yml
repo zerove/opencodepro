@@ -336,8 +336,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust
         with:
-          # sisyphus-tools-build 的 fmt_check 测试调用 `cargo fmt`，需要 rustfmt 组件
-          components: rustfmt
+          # sisyphus-tools-build 的 fmt_check 测试调用 `cargo fmt`，需要 rustfmt；
+          # sisyphus-tools-llm-tools 的 diagnose lint-fix 用例依赖 `cargo clippy --fix`。
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
       - uses: ./.github/actions/setup-protoc
       - run: |
@@ -538,6 +539,9 @@ jobs:
       - run: cargo build -p sisyphus-bridge --bin stress_test
       # Start bridge in background, wait for it to be ready, run stress_test
       - name: E2E smoke test
+        env:
+          # CI 无真实 embedding 凭据；允许 dummy client 以完成引擎初始化（仅 smoke/测试场景）。
+          SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY: "true"
         run: |
           # Use pre-built binary directly (avoid cargo run overhead)
           ./target/debug/sisyphus-bridge &
@@ -577,6 +581,7 @@ jobs:
           # hanging for the full HTTP timeout)
           SISYPHUS_LLM_ENDPOINT=http://127.0.0.1:9 \
           SISYPHUS_LLM_API_KEY=test \
+          SISYPHUS_LLM_EMBEDDING_ALLOW_DUMMY=true \
           SISYPHUS_CHAOS_ENABLED=true \
           SISYPHUS_CHAOS_DEFAULT_FAULT_PROBABILITY=0.5 \
             ./target/debug/sisyphus-bridge > bridge-chaos.log 2>&1 &
