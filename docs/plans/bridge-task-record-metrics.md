@@ -79,7 +79,7 @@
    - 聚合兼容性：样本记录可被 `sisyphus metrics quality --records <dir> --json` 正确解析（成功率/耗时/版本归因符合预期，fix/regression 为 `null`）。
    - 集成测试：在可控 bridge 执行路径下断言记录文件生成且 `sisyphus metrics quality` 可聚合（注意 bridge 测试在 CI 的 OOM 约束与 `#[ignore]` 策略，按仓库惯例处理）。
      - **已完成（live）**：HTTP `execute_goal` 失败路径（`bridge-task-record-e2e.md`）；composite 成功 + goal streaming 失败（`bridge-task-record-coverage.md`）；gRPC `execute_sop` 失败；gRPC `stream_execution` goal 分支与非 goal/SOP 分支失败、gRPC `call_jcode` 失败（含非 null token，`runs/bridge-record-coverage/grpc-stream-calljcode/`、`grpc-stream-sop/`）。
-     - **已完成（live）**：HTTP `execute_goal` 成功路径——`2026-11-14` 样本（`2cf57b0b7918+dirty`，`status=pass`，`prompt=2378`/`completion=720`，执行作用域归因）与 `2026-11-15` **clean 树**样本（`42816f00abd4`，`engine_dirty=false`，`status=pass`，`prompt=2348`/`completion=952`，见 `docs/benchmarks/acceptance/2026-11-15/goal-success-path-clean.md`）；失败路径、composite/streaming/gRPC 各入口见 2026-11-13 覆盖文档。
+     - **已完成（live）**：HTTP `execute_goal` 成功路径——`2026-11-14` 样本（`2cf57b0b7918+dirty`，`status=pass`，`prompt=2378`/`completion=720`，执行作用域归因）；`2026-11-15` clean 树样本（`42816f00abd4`，`engine_dirty=false`，`status=pass`，`prompt=2348`/`completion=952`，见 `docs/benchmarks/acceptance/2026-11-15/goal-success-path-clean.md`）与多样本 clean 实跑（`runs/goal-success-clean-multi/`，3/3 pass，mean token ≈3400，见 `docs/benchmarks/acceptance/2026-11-15/goal-success-path-clean-multirun.md`）；失败路径、composite/streaming/gRPC 各入口见 2026-11-13 覆盖文档。
 6. **文档与证据**：更新 `docs/plans/single-node-quality-metrics.md`、`docs/plans/automation-development-plan-2026-11.md` 状态与边界说明；产出一次真实运行的记录与聚合快照作为证据。
    - **已完成**：设计文档、2026-11-13 E2E/覆盖扩展/gRPC live 证据、2026-11-14 成功路径 live 证据均已归档；质量指标文档与自动化计划状态已同步（含作用域传播与审计降级说明）。
 

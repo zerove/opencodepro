@@ -1,0 +1,15 @@
+{
+  "task_id": "bridge-goal-goal-success-r2-1794712720354",
+  "scenario": "bridge-goal-execute",
+  "status": "pass",
+  "initial_verify_passed": true,
+  "final_verify_passed": true,
+  "fix_attempts": 0,
+  "regressed": false,
+  "duration_ms": 188890,
+  "prompt_tokens": 2551,
+  "completion_tokens": 1056,
+  "engine_commit": "02835d956735",
+  "engine_dirty": false,
+  "recorded_at": "2026-11-15T03:18:40.354700032+00:00"
+}

@@ -1,0 +1,1 @@
+{"output":"{\"duration_ms\":3,\"exit_code\":0,\"stderr\":\"\",\"stdout\":\"\\n\"}","report":"Plan: Strategic selection (Score: 1000.00): Single-node task: process | Report: 1 iterations, converged=true\n\n### Execution Trace\n```mermaid\ngraph TD\n```"}
