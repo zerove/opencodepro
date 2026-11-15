@@ -142,6 +142,12 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
   `#[ignore]` 的 `path.rs::test_fn`，或真实存在的 `make` 目标 / `scripts/x.py`。
   历史勾选项登记在 `scripts/todo_baseline.txt`（ratchet，只减不增）；确无自动化
   测试时写 `（无测试：理由）`。改写旧条目文字会让它「变成新条目」，需补证据。
+- **勾选证据还有语义门禁**：`scripts/audit_todo_semantic.py`
+  （`make audit-todo-semantic`，CI `Audit sources`）查三类客观可判的退化——
+  证据测试体里没有任何断言/失败期望信号（空壳证据）、含 `todo!()`/`unimplemented!()`
+  的桩、以及同一测试被**不同章节**勾选项复用（同章节子条目复用合法）。
+  确认属同一工作项的追踪条目时，在该条目里写 `（语义抽样豁免：理由）`；
+  空理由会被拦下。它**不覆盖**「断言内容 ↔ 勾选语义是否对得上」，那部分仍是人工抽样。
 - **`cargo test-all` 不等于完整 workspace 验收**：该 alias 显式
   `--exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude
   sisyphus-sandboxd --exclude sisyphus-tests`（见 `.cargo/config.toml`），

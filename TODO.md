@@ -597,10 +597,10 @@
 
 - [x] **ADR-010**: 跨节点经验的反熵补偿方案——dial 方发版本向量，peer 只回送差量，分页有界
 - [x] **P1 经验行标识碰撞，同秒写入静默丢数据**: 主键改为 `exp:{ts}:{origin}:{counter}`，接收端采用发送方主键；并连带修掉「本地 CRDT 时钟退化」（version 恒为 1、vc 计数恒为 1）。新增 `experience_id_collision.rs` 两例回归。详见 ADR-010「前置缺陷 P1」
-  - [x] **重启后序号恢复**: `VectorExperienceBank::new` 从 `store.max_local_counter(origin)` 恢复，写入计数不再归零；回归 `sisyphus-mem/tests/experience_id_collision.rs::sequence_resumes_from_store_after_restart`
+  - [x] **重启后序号恢复**: `VectorExperienceBank::new` 从 `store.max_local_counter(origin)` 恢复，写入计数不再归零；回归 `sisyphus-mem/tests/experience_id_collision.rs::sequence_resumes_from_store_after_restart`（语义抽样豁免：本条是 9.1.2 chaos 扩展同一工作项的追踪条目，复用同一回归证据，非借用）
   - [ ] **存量旧主键**: `exp:{timestamp}` 旧行不参与反熵摘要；0.x 采用清库而非迁移，需在发版说明中提示
-- [x] **启动时全量 sync**: 由 ADR-010 版本向量反熵覆盖——流建立后 dial 方立即发 `SyncRequest`，peer 只回送差量；`cluster_integration.rs::test_new_node_pulls_history_via_anti_entropy`
-- [x] **断线补偿**: 重连后按 vector clock 补差量；`anti_entropy_integration.rs::reconnect_delivers_only_the_gap` + `cluster_integration.rs::catchup_signal_sent_while_reconnecting_is_still_consumed`
+- [x] **启动时全量 sync**: 由 ADR-010 版本向量反熵覆盖——流建立后 dial 方立即发 `SyncRequest`，peer 只回送差量；`cluster_integration.rs::test_new_node_pulls_history_via_anti_entropy`（语义抽样豁免：10.2 是阶段 9 的追踪小节，与 9.1.1 同一工作项复用同一证据，非借用）
+- [x] **断线补偿**: 重连后按 vector clock 补差量；`anti_entropy_integration.rs::reconnect_delivers_only_the_gap` + `cluster_integration.rs::catchup_signal_sent_while_reconnecting_is_still_consumed`（语义抽样豁免：10.2 是阶段 9 的追踪小节，与 9.1.2 同一工作项复用同一证据，非借用）
 - [x] **`ExperienceSyncHandler` 关闭语义加固**: 任务全程持有 `Arc<PeerManager>`，Sender 存活由类型系统保证；`Closed` 分支由 `warn!` 提升为 `error!`
 - [x] **入站事件转发收敛**: `event_tx`（本地产生，拨号器订阅）与 `inbound_tx`（远端收到，仅 handler 订阅）分离，回弹在结构上不可达
 - [ ] **3 节点 Docker Compose** / **网络分区恢复** 验证

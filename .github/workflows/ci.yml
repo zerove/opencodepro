@@ -63,7 +63,10 @@ jobs:
         run: pip install pyyaml
       - name: Scan for source files never referenced by any crate
         run: python3 scripts/audit_orphans.py
-      - name: Audit #[ignore] reasons
+      # 注意引号：`#` 在未加引号的 YAML 标量里是注释起始，写成
+      # `name: Audit #[ignore] reasons` 会让 CI 上显示成光秃秃的 "Audit"，
+      # 而 schema 校验与 audit_workflows 都看不出这种「值被截断」。
+      - name: "Audit #[ignore] reasons"
         run: python3 scripts/audit_ignored.py
       - name: Audit process-global state in tests
         run: python3 scripts/audit_test_global_state.py
@@ -75,6 +78,14 @@ jobs:
         run: |
           python3 scripts/audit_todo.py
           python3 scripts/audit_todo.py --self-check
+      # 语义退化检查（ADR-021 决策 1 的可自动化切片）：静态门禁只证明「测试存在」，
+      # 不证明「测试在验这件事」。查两类客观可判的退化——证据测试体里没有任何
+      # 断言/失败期望（空壳/桩证据），以及同一测试被**不同章节**勾选项复用。
+      # 其余语义相关性仍是人工抽样；脚本 docstring 明确写了它不覆盖什么。
+      - name: Audit TODO evidence semantics
+        run: |
+          python3 scripts/audit_todo_semantic.py
+          python3 scripts/audit_todo_semantic.py --self-check
       # 文档计数门禁（ADR-021 决策 4）：活文档里不写会漂移的测试计数。
       # 这类缺陷没有任何测试会变红——文档写着「116 passed」，代码加到 140
       # 也照样全绿。落地前仓库里同一件事并存两种数（`quality_record`
