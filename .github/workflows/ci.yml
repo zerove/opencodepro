@@ -712,6 +712,8 @@ jobs:
         run: ./scripts/bench-dashboard.sh
         env:
           OUTPUT_DIR: ${{ runner.temp }}/bench-dashboard
+          # step 7 已产出 criterion 结果；避免重复全量跑 bench 导致超时/runner 中断
+          SKIP_BENCH_RUN: "1"
         continue-on-error: true
 
       # id 必填：下面的 PR 评论要引用这个 step 的 outputs。

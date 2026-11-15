@@ -39,23 +39,33 @@ if [[ ! -d "$PROJECT_ROOT/crates/sisyphus-core/benches" ]]; then
 fi
 
 # ── Run benchmarks ─────────────────────────────────────────────────────
-log "running benchmarks (this may take several minutes)..."
+# CI 在前置 step 已跑过（带过滤/基线参数）的 bench；重复全量执行会显著拉长耗时且
+# 可能在共享 runner 上被中断。设置 SKIP_BENCH_RUN=1 可复用现有 target/criterion 结果。
+if [[ "${SKIP_BENCH_RUN:-0}" == "1" ]]; then
+    log "SKIP_BENCH_RUN=1：跳过 cargo bench，复用现有 criterion 结果"
+    if [[ ! -d "$CRITERION_DIR" ]]; then
+        err "criterion output dir not found: $CRITERION_DIR（请先运行 bench 或取消 SKIP_BENCH_RUN）"
+        exit 1
+    fi
+else
+    log "running benchmarks (this may take several minutes)..."
 
-BENCH_CMD="cargo bench -p sisyphus-core --features sandbox --bench core_benches"
-if [[ -n "$BENCH_FILTER" ]]; then
-    BENCH_CMD="$BENCH_CMD -- --bench $BENCH_FILTER"
-fi
+    BENCH_CMD="cargo bench -p sisyphus-core --features sandbox --bench core_benches"
+    if [[ -n "$BENCH_FILTER" ]]; then
+        BENCH_CMD="$BENCH_CMD -- --bench $BENCH_FILTER"
+    fi
 
-log "executing: $BENCH_CMD"
-if ! $BENCH_CMD > /tmp/bench-output.log 2>&1; then
-    err "benchmark failed; see /tmp/bench-output.log"
-    tail -30 /tmp/bench-output.log >&2
-    exit 1
-fi
+    log "executing: $BENCH_CMD"
+    if ! $BENCH_CMD > /tmp/bench-output.log 2>&1; then
+        err "benchmark failed; see /tmp/bench-output.log"
+        tail -30 /tmp/bench-output.log >&2
+        exit 1
+    fi
 
-if [[ ! -d "$CRITERION_DIR" ]]; then
-    err "criterion output dir not found: $CRITERION_DIR"
-    exit 1
+    if [[ ! -d "$CRITERION_DIR" ]]; then
+        err "criterion output dir not found: $CRITERION_DIR"
+        exit 1
+    fi
 fi
 
 # ── Generate dashboard HTML ───────────────────────────────────────────
