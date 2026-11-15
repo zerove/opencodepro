@@ -88,6 +88,7 @@ impl CommandBuilder {
             cmd.current_dir(cwd);
         }
 
+        // usage-scope: no-llm:non_llm_task
         cmd.spawn().map_err(|e| anyhow!("Failed to spawn command: {e}"))
     }
 

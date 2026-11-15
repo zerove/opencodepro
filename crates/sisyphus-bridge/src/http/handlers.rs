@@ -260,6 +260,7 @@ fn spawn_sse_event_forwarder(
     sop_id: String,
     trace_id: Option<String>,
 ) -> tokio::task::JoinHandle<()> {
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         while let Some(event) = rx.recv().await {
             let sse_event = crate::http::sse_handlers::SseEvent::from_execution_event_with_trace(
@@ -543,6 +544,7 @@ pub(super) async fn goal_stream_handler(
     let goal_clone = goal.clone();
     let pid_clone = project_id.clone();
 
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let started_at = std::time::Instant::now();
         let (result, usage) = bridge_clone

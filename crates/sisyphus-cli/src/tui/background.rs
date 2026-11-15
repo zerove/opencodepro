@@ -163,6 +163,7 @@ pub fn spawn_list_sops(
     bridge_address: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let result = async {
             let mut client = match client {
@@ -191,6 +192,7 @@ pub fn spawn_execute_sop(
     sop_id: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let result = async {
             let mut client = match client {
@@ -216,6 +218,7 @@ pub fn spawn_fetch_roadmap(
     bridge_address: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let result = async {
             let mut client = match client {
@@ -255,6 +258,7 @@ pub fn spawn_session_add_message(
     bridge_address: Option<String>,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let session_db = data_dir.join("sessions.json");
         if let Err(e) = crate::tools::session_add_message(&session_db, &session_id, &role, &content)
@@ -420,6 +424,7 @@ pub fn spawn_dev_agent(
     let (answer_tx, answer_rx) = tokio::sync::mpsc::unbounded_channel::<bool>();
     let interrupt = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let interrupt_task = interrupt.clone();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let config = std::sync::Arc::new(std::sync::RwLock::new(config));
         // TUI `/dev`：优先使用 UI 传入值；未提供时回退配置（含 env 覆盖）默认值。
@@ -504,6 +509,7 @@ pub fn spawn_approve_proposal(
     reviewer: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let result = async {
             let mut client = match client {
@@ -540,6 +546,7 @@ pub fn spawn_fetch_sop_trace(
     sop_id: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let url = format!("{}/api/execute/goal/{}/trace", bridge_address, sop_id);
         let result = async {
@@ -568,6 +575,7 @@ pub fn spawn_fetch_sop_trace(
 /// Spawn fetch cognitive trace.
 pub fn spawn_fetch_cognitive_trace(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let url = format!("{}/api/cognitive/trace?limit=100", bridge_address);
         let result = async {
@@ -599,6 +607,7 @@ pub fn spawn_fetch_cognitive_trace_history(
     sop_id: Option<String>,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let mut url = format!("{}/api/cognitive/trace/history?limit=100", bridge_address);
         if let Some(sop) = sop_id {
@@ -634,6 +643,7 @@ pub fn spawn_fetch_cognitive_summary(
     sop_id: Option<String>,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let mut url = format!("{}/api/cognitive/summary?limit=1000", bridge_address);
         if let Some(sop) = sop_id {
@@ -666,6 +676,7 @@ pub fn spawn_fetch_cognitive_summary(
 /// 不带 `sop_id` 时返回全部作用域内的异常；服务端对空日志返回空数组。
 pub fn spawn_fetch_anomaly_report(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let url = format!("{}/api/anomaly", bridge_address);
         let result = async {
@@ -694,6 +705,7 @@ pub fn spawn_fetch_available_skills(
     bridge_address: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let url = format!("{}/api/skills/available", bridge_address);
         let result = async {
@@ -724,6 +736,7 @@ pub fn spawn_fetch_installed_skills(
     bridge_address: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let url = format!("{}/api/skills/installed", bridge_address);
         let result = async {
@@ -755,6 +768,7 @@ pub fn spawn_install_skill(
     skill_id: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let url = format!("{}/api/skills/install", bridge_address);
         let result = async {
@@ -789,6 +803,7 @@ pub fn spawn_uninstall_skill(
     skill_id: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let url = format!("{}/api/skills/remote/{}", bridge_address, skill_id);
         let result = async {
@@ -819,6 +834,7 @@ pub fn spawn_uninstall_skill(
 /// Spawn list workspaces.
 pub fn spawn_list_workspaces(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let url = format!("{}/api/workspaces", bridge_address);
         let result = async {
@@ -851,6 +867,7 @@ pub fn spawn_switch_workspace(
     workspace_id: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let url = format!("{}/api/workspaces/switch", bridge_address);
         let result = async {
@@ -882,6 +899,7 @@ pub fn spawn_delete_workspace(
     workspace_id: String,
 ) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let url = format!("{}/api/workspaces/{}", bridge_address, workspace_id);
         let result = async {
@@ -910,6 +928,7 @@ pub fn spawn_delete_workspace(
 /// 解析 `all_ok` 与 `components` 两层结构，便于 TUI `:health` 面板渲染。
 pub fn spawn_fetch_health_deep(bridge_address: String) -> tokio::sync::oneshot::Receiver<BgOp> {
     let (tx, rx) = tokio::sync::oneshot::channel();
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         let url = format!("{}/health/deep", bridge_address);
         let result = async {

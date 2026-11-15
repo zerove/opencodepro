@@ -1013,6 +1013,7 @@ impl ControlPlaneCoordinator {
             let channels = channels.clone();
             let tls = client_tls.clone();
             let ep = endpoint.clone();
+            // usage-scope: no-llm:non_llm_task
             tasks.push(tokio::spawn(async move {
                 let cached = { channels.read().get(&ep).cloned() };
                 let channel = if let Some(ch) = cached {

@@ -662,6 +662,7 @@ impl Simulator for MonteCarloSimulator {
             let simulator_ref = self.clone();
 
             let p_id = project_id_owned.clone();
+            // usage-scope: no-llm:non_llm_task
             batch_handles.push(tokio::spawn(async move {
                 let mut local_rng = SmallRng::from_entropy();
                 let mut batch_results = Vec::new();

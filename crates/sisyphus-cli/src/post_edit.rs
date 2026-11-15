@@ -370,6 +370,7 @@ fn run_shell_command(command: &str, workdir: &Path, timeout: Duration) -> Verify
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
+        // usage-scope: no-llm:non_llm_task
         .spawn();
 
     let mut child = match spawned {

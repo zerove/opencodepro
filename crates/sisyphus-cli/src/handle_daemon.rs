@@ -12,6 +12,7 @@ pub(crate) fn handle_daemon() -> Result<()> {
     };
     let child = if binary.exists() {
         std::process::Command::new(&binary)
+            // usage-scope: no-llm:non_llm_task
             .spawn()
             .with_context(|| format!("Failed to start {}", binary.display()))?
     } else {
@@ -21,6 +22,7 @@ pub(crate) fn handle_daemon() -> Result<()> {
         );
         std::process::Command::new("cargo")
             .args(["run", "-p", "sisyphus-bridge", "--release"])
+            // usage-scope: no-llm:non_llm_task
             .spawn()
             .context("Failed to start bridge daemon via cargo run")?
     };

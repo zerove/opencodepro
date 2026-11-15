@@ -172,6 +172,7 @@ impl ExecutionManager {
     fn init_trace_persistence(&mut self) {
         let store = Arc::clone(&self.state_store);
         let (tx, mut rx) = mpsc::unbounded_channel::<TracePersistCmd>();
+        // usage-scope: no-llm:non_llm_task
         tokio::spawn(async move {
             // 自上次 flush 起累积的写入失败，由下一个屏障回传给调用方。
             let mut ack = TraceFlushAck::default();

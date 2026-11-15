@@ -318,6 +318,7 @@ impl BridgeClient {
             .into_inner();
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
+        // usage-scope: no-llm:non_llm_task
         tokio::spawn(async move {
             while let Ok(Some(event)) = stream.message().await {
                 let bg_op = match event.event {

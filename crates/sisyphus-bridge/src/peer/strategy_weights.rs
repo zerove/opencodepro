@@ -333,6 +333,7 @@ impl StrategyWeightsHandler {
             Some(t)
         };
 
+        // usage-scope: no-llm:non_llm_task
         tokio::spawn(async move {
             // 持有强引用：`broadcast::Receiver` 不让通道保持存活，只有 Sender
             // 存活才不会收到 `Closed`。此处与经验同步一致，避免任务静默退出。

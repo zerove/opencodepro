@@ -86,6 +86,12 @@ jobs:
         run: |
           python3 scripts/audit_todo_semantic.py
           python3 scripts/audit_todo_semantic.py --self-check
+      # 执行级 token 作用域 spawn 边界审计（ADR-021：失败必须可见）。LLM 相关 crate
+      # 的非测试源码内每个 spawn 必须走 scope 原语或带 reason 的 usage-scope marker。
+      - name: Audit LLM spawn scope declarations
+        run: |
+          python3 scripts/audit_llm_spawns.py
+          python3 scripts/audit_llm_spawns.py --self-check
       # 文档计数门禁（ADR-021 决策 4）：活文档里不写会漂移的测试计数。
       # 这类缺陷没有任何测试会变红——文档写着「116 passed」，代码加到 140
       # 也照样全绿。落地前仓库里同一件事并存两种数（`quality_record`

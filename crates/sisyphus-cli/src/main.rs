@@ -53,6 +53,7 @@ async fn main() -> Result<()> {
     // <10ms）保留同步 — 串行开销小于并行协调成本。
     // spawn_blocking 返回 Result<T, JoinError>；若 JoinError（panic 等）回退同步
     let platform_info =
+        // usage-scope: no-llm:non_llm_task
         match tokio::task::spawn_blocking(sisyphus_cli::platform::detect_platform).await {
             Ok(info) => info,
             Err(_) => sisyphus_cli::platform::detect_platform(),

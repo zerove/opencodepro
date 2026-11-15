@@ -1180,6 +1180,7 @@ impl MySisyphusBridge {
                 let kernel = self.kernel.clone();
                 let enabled = self.chaos_enabled;
                 let ft_for_spawn = fault_type.clone();
+                // usage-scope: no-llm:non_llm_task
                 tokio::spawn(async move {
                     // 1. Record fault sample to MetaLearner
                     let sample = MetaLearningSample {

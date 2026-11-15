@@ -78,6 +78,7 @@ impl SandboxdClient {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::inherit())
             .kill_on_drop(true)
+            // usage-scope: no-llm:non_llm_task
             .spawn()
             .map_err(|e| TypesError::ToolExecutionError {
                 tool_id: "spawn".into(),

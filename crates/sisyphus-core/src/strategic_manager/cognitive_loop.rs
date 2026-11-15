@@ -1418,6 +1418,7 @@ fn spawn_trace_recorder(
     anomaly_log: Arc<AnomalyLog>,
     cognitive_trace: Option<Arc<crate::execution_manager::CognitiveTraceBuffer>>,
 ) {
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         while let Some(event) = trace_rx.recv().await {
             // 0. 喂给 AnomalyDetector 用于 v2 运行时监控

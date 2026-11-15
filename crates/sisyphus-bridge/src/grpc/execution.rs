@@ -254,6 +254,7 @@ impl MySisyphusBridge {
         let default_fuel = self.default_fuel;
         let bridge = self.clone();
 
+        // usage-scope: no-llm:non_llm_task
         tokio::spawn(async move {
             let project_id = project_id.clone();
             let scope_available = bridge.llm_usage_scope_client.is_some();
@@ -445,6 +446,7 @@ impl MySisyphusBridge {
         let (tx, rx) = mpsc::unbounded_channel::<sisyphus_types::CognitiveEvent>();
 
         let kernel = self.kernel.clone();
+        // usage-scope: no-llm:non_llm_task
         tokio::spawn(async move {
             let project_id = project_id.clone();
             let ctx = sisyphus_types::ExecutionContext::new();

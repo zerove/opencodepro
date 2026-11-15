@@ -148,6 +148,11 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
   的桩、以及同一测试被**不同章节**勾选项复用（同章节子条目复用合法）。
   确认属同一工作项的追踪条目时，在该条目里写 `（语义抽样豁免：理由）`；
   空理由会被拦下。它**不覆盖**「断言内容 ↔ 勾选语义是否对得上」，那部分仍是人工抽样。
+- **执行级 token 作用域 spawn 边界已门禁**：`scripts/audit_llm_spawns.py`
+  （`make audit-llm-spawns`，CI `Audit sources`）要求 LLM 相关 crate 的非测试
+  spawn 必须走 `spawn_in_scope`/`attach_scope`，或带 reason 的
+  `// usage-scope: entry:<reason>` / `// usage-scope: no-llm:<reason>` marker；
+  空 reason 视为未声明。该门禁随本次落地，共纳入 20 个文件（comment-only 变更）。
 - **`cargo test-all` 不等于完整 workspace 验收**：该 alias 显式
   `--exclude sisyphus-bridge --exclude sisyphus-sandbox --exclude
   sisyphus-sandboxd --exclude sisyphus-tests`（见 `.cargo/config.toml`），

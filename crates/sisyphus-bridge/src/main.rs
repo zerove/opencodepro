@@ -271,6 +271,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Spawn config hot-reload in background
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         _store.start_watching().await;
     });
@@ -312,6 +313,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let mut sig_rx = shutdown_rx.clone();
 
+    // usage-scope: no-llm:non_llm_task
     tokio::spawn(async move {
         match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
             Ok(mut sigterm) => {
@@ -331,6 +333,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting HTTP REST API server on {http_addr}");
 
     let mut http_shutdown_rx = sig_rx.clone();
+    // usage-scope: no-llm:non_llm_task
     let _http_handle = tokio::spawn(async move {
         match tokio::net::TcpListener::bind(http_addr).await {
             Ok(listener) => {
@@ -485,6 +488,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             sync_handler
         };
+        // usage-scope: no-llm:non_llm_task
         let sync_handle = sync_handler.spawn(sync_shutdown_rx);
 
         // 联邦策略权重同步（v0.4.0 Phase B，ADR-017）：周期性发布本节点策略快照，
@@ -506,6 +510,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_interval(std::time::Duration::from_secs(strategy_sync_interval_secs)),
             )
         };
+        // usage-scope: no-llm:non_llm_task
         let strategy_handle = strategy_handler.map(|h| h.spawn(strategy_shutdown_rx));
 
         info!(
@@ -519,6 +524,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 跟随既有关闭信号：先通知处理器停止，等待在途合并完成再返回，
         // 避免进程退出时截断正在写入的远程经验。
         let mut sync_sig_rx = sig_rx.clone();
+        // usage-scope: no-llm:non_llm_task
         tokio::spawn(async move {
             let _ = sync_sig_rx.changed().await;
             let _ = sync_shutdown_tx.send(());

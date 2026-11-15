@@ -523,6 +523,7 @@ impl Cluster for ClusterServiceImpl {
         let mut sub = manager.subscribe();
 
         // 后台任务：从 manager broadcast 转发到 outbound channel
+        // usage-scope: no-llm:non_llm_task
         tokio::spawn(async move {
             loop {
                 match sub.recv().await {
@@ -563,6 +564,7 @@ impl Cluster for ClusterServiceImpl {
             }
         }
         let outbound_sync_requests = Arc::clone(&self.outbound_sync_requests);
+        // usage-scope: no-llm:non_llm_task
         tokio::spawn(async move {
             let mut outbound_pull_cursor = outbound_pull_cursor;
             while let Some(result) = inbound.next().await {

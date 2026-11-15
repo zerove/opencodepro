@@ -116,6 +116,7 @@ pub fn spawn_static_peers_with_catchup(
         // 该行为由 `experience_sync.rs` 的
         // `catchup_signal_send_fails_when_peer_list_is_empty` 钉住（ADR-013）。
         let rx = catchup_rx.as_ref().map(broadcast::Receiver::resubscribe);
+        // usage-scope: no-llm:non_llm_task
         let handle = tokio::spawn(async move {
             run_dial_loop(cfg, mgr, addr, rx).await;
         });
@@ -235,6 +236,7 @@ async fn run_stream(
     // 克隆必须在 `move` 进广播 task **之前**完成：task 拿走原 `out_tx`，
     // 反熵请求用自己的那一份。
     let sync_tx = out_tx.clone();
+    // usage-scope: no-llm:non_llm_task
     let outbound_task = tokio::spawn(async move {
         loop {
             match sub.recv().await {

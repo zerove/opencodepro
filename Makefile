@@ -373,6 +373,15 @@ audit-todo-semantic:
 	@python3 scripts/audit_todo_semantic.py
 	@python3 scripts/audit_todo_semantic.py --self-check
 
+# 执行级 token 作用域的 spawn 边界审计（ADR-021：失败必须可见）。LLM 相关 crate
+# 的非测试源码里，每个 spawn 边界必须走 `spawn_in_scope`/`attach_scope`，或带
+# 带 reason 的 `// usage-scope: entry:<reason>` / `// usage-scope: no-llm:<reason>`
+# marker（reason 必填；空 reason 视为未声明）。这把「未来新增 LLM spawn 静默失去
+# token 归因」变成可拦截的红灯。
+audit-llm-spawns:
+	@python3 scripts/audit_llm_spawns.py
+	@python3 scripts/audit_llm_spawns.py --self-check
+
 # 文档计数门禁（ADR-021 决策 4）：活文档（README/CONTRIBUTING/AGENTS/book/
 # docs/plans/docs/runbooks/known-issue）里不得把会漂移的测试计数当成当前事实。
 # 这类缺陷不会让任何测试变红：文档写着「116 passed」，代码加到 140 也照样绿，
@@ -384,7 +393,7 @@ audit-doc-counts:
 	@python3 scripts/audit_doc_counts.py --self-check
 
 # 全部结构审计（不需编译）
-audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release audit-doc-counts todo-audit audit-todo-semantic version-tool
+audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release audit-doc-counts todo-audit audit-todo-semantic audit-llm-spawns version-tool
 
 # 版本 bump 脚本的判别用例。版本号在仓库里出现 147 处（27 个 [package]
 # version + 内部 path 依赖约束），手改必漏；而脚本本身最危险的失败模式是
@@ -392,7 +401,7 @@ audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-docker
 version-tool:
 	@python3 scripts/bump_version.py --self-check
 
-.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release audit-doc-counts todo-audit audit-todo-semantic version-tool audit
+.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release audit-doc-counts todo-audit audit-todo-semantic audit-llm-spawns version-tool audit
 
 # 统一 bump workspace 版本号（[package] version + 内部 path 依赖约束）。
 # 先 --dry-run 看改动，再实际写入，最后 `make release-check` 复核。

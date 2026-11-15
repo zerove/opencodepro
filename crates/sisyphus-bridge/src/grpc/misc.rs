@@ -296,6 +296,7 @@ impl MySisyphusBridge {
         // Spawn a background task that periodically pushes new anomalies.
         // 只推送新检测到的异常：日志里的 `seq` 单调递增，用它做游标
         // 就不会每 5 秒把同一批异常重发一遍。
+        // usage-scope: no-llm:non_llm_task
         tokio::spawn(async move {
             let mut last_seq = 0u64;
             loop {

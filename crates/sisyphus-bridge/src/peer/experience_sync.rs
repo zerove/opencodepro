@@ -185,6 +185,7 @@ impl ExperienceSyncHandler {
         let catchup_tx = self.catchup_tx;
         let federated = self.federated;
 
+        // usage-scope: no-llm:non_llm_task
         tokio::spawn(async move {
             // 持有一个强引用，保证 Sender 不会在本任务存活期间被丢弃。
             let _keep_manager_alive = peer_manager;
