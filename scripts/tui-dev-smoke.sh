@@ -100,12 +100,14 @@ try:
     check("dev_dialog_opens", "Dev Agent" in plain())
 
     send(b"smoke goal", 1.0)
-    send(b"\t\t\t\t", 0.8)      # Tab 到 Run
+    send(b"\t" * 6, 0.8)      # Tab 到 Run（Goal→Context→VerifyCmd→FixAttempts→Parallel→Resume→Run）
     send(b"\r", 4.0)            # 启动
     check("running_view", "Running developer agent" in plain())
 
     send(b"\x1b", 2.5)          # Esc 中断
-    check("resume_entry_after_interrupt", "resume" in plain().lower())
+    # 断言用中断 toast 的专属文案；对话框里的 "Resume:" 标签不算数，
+    # 否则对话框没关上（Run 没被触发）时该检查会假绿。
+    check("resume_entry_after_interrupt", "resume available" in plain().lower())
 finally:
     try:
         os.write(fd, b"q")

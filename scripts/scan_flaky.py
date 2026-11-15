@@ -60,12 +60,17 @@ PER_RUN_TIMEOUT = 180
 
 
 def workspace_lib_binaries(target_dir: str):
-    """列出工作区各 crate 的 lib 测试二进制。
+    """列出工作区各 crate 的 lib 测试二进制及其 crate 根目录。
 
     通过 `cargo metadata` 取权威 crate 列表，而不是 glob `target/debug/deps/*`——
     后者会混入历史残留的旧二进制（本项目曾因此把修复前的旧产物当成修复版来测，
     得出完全相反的结论）。每个 crate 只取 mtime 最新的一个。
 
+    返回 [(binary, crate_root)]：cargo 运行测试时 cwd 是 **crate 根**（包 Cargo.toml
+    所在目录），不是工作区根。直接用 subprocess 跑二进制若不显式指定 cwd，
+    依赖相对路径的用例会确定性失败（实测：sisyphus-tools-agent 的
+    `gate_file_context_actually_appends_test_context` 读 `tests/` 相对路径，
+    在工作区根跑 16/16 全败，被误报成「概率性失败」）。
     target 目录同样取自 metadata，不硬编码 `target/debug/deps`：CARGO_TARGET_DIR
     或 profile 变体都会改变该路径，硬编码会静默扫到空目录并报告"零失败"——
     那是最危险的假绿灯。
@@ -81,6 +86,9 @@ def workspace_lib_binaries(target_dir: str):
 
     if not os.path.isdir(target_dir):
         target_dir = parsed["target_directory"]
+    # 二进制路径将交给 run_once(cwd=crate_root) 使用；若保持相对路径，
+    # 换 cwd 后 subprocess 找不到文件（FileNotFoundError → 误报「概率性失败」）。
+    target_dir = os.path.abspath(target_dir)
     deps_dir = os.path.join(target_dir, "debug", "deps")
     # 新版 cargo 把测试二进制放到 `target/<profile>/build/<pkg>/<hash>/out/`，
     # 旧产物仍留在 `target/<profile>/deps/`。只搜 deps/ 会漏掉**新构建**的二进制：
@@ -111,6 +119,8 @@ def workspace_lib_binaries(target_dir: str):
         crate = pkg["name"].replace("-", "_")
         if crate in SLOW_CRATES:
             continue
+        # cargo 约定：测试进程的 cwd = crate 根（manifest 所在目录）。
+        crate_root = os.path.dirname(pkg["manifest_path"])
         pattern = re.compile(re.escape(crate) + r"-[0-9a-f]{16}$")
         candidates = []
         for search_dir in search_dirs:
@@ -133,7 +143,7 @@ def workspace_lib_binaries(target_dir: str):
             # 仅按 mtime 取"最新"并不够：pre-commit hook 重编译会让另一个哈希
             # 变体更新，而它对应的源码可能已被改过。本项目曾因此把修复前的旧
             # 产物当成修复版来测，得出完全相反的结论。
-            src_root = os.path.join(os.path.dirname(pkg["manifest_path"]), "src")
+            src_root = os.path.join(crate_root, "src")
             if os.path.isdir(src_root):
                 built_at = os.path.getmtime(binary)
                 newest_src = max(
@@ -145,20 +155,21 @@ def workspace_lib_binaries(target_dir: str):
                 if built_at + 1 < newest_src:
                     stale.append(crate)
                     continue
-            out.append(binary)
+            out.append((binary, crate_root))
     if stale:
         print("以下 crate 的测试产物早于源码，已跳过（请先重新编译）：%s"
               % ", ".join(stale), file=sys.stderr)
     return sorted(out)
 
 
-def run_once(binary: str, threads: int):
+def run_once(binary: str, threads: int, cwd: str):
     try:
         proc = subprocess.run(
             [binary, "--test-threads", str(threads)],
             capture_output=True,
             text=True,
             timeout=PER_RUN_TIMEOUT,
+            cwd=cwd,
         )
     except subprocess.TimeoutExpired:
         return 124, "TIMEOUT after %ds" % PER_RUN_TIMEOUT
@@ -196,9 +207,9 @@ def main() -> int:
     failures = {}          # binary -> {round_index: output}
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
         futures = {
-            pool.submit(run_once, b, args.threads): (b, r)
+            pool.submit(run_once, b, args.threads, crate_root): (b, r)
             for r in range(args.rounds)
-            for b in binaries
+            for b, crate_root in binaries
         }
         done = 0
         for future in concurrent.futures.as_completed(futures):
