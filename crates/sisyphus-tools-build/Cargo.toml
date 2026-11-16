@@ -1,6 +1,7 @@
 [package]
 name = "sisyphus-tools-build"
 version = "0.4.0"
+publish = false
 edition = "2021"
 repository.workspace = true
 description = "Build, test, and LSP tools with per-language backends"

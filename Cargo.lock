@@ -4758,7 +4758,6 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "metrics",
- "serde",
  "serde_json",
  "sisyphus-bridge-api",
  "sisyphus-tools-core",
@@ -4869,7 +4868,6 @@ dependencies = [
  "sisyphus-types",
  "tempfile",
  "tokio",
- "toml",
  "tracing",
 ]
 

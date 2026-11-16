@@ -1,6 +1,7 @@
 [package]
 name = "sisyphus_visual"
 version = "0.4.0"
+publish = false
 edition = "2021"
 repository.workspace = true
 description = "Visual perception and embedding primitives"

@@ -1,6 +1,7 @@
 [package]
 name = "sisyphus-tools-llm"
 version = "0.4.0"
+publish = false
 edition = "2021"
 repository.workspace = true
 description = "LLM abstraction layer: client, provider registry, and request routing"

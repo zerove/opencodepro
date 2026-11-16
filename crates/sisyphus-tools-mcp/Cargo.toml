@@ -1,6 +1,7 @@
 [package]
 name = "sisyphus-tools-mcp"
 version = "0.4.0"
+publish = false
 edition = "2021"
 repository.workspace = true
 description = "Model Context Protocol (MCP) server integration"
