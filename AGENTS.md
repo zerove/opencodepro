@@ -91,6 +91,9 @@ opencodepro/
 | Bridge | 地址默认 `Config.bridge_address`，CLI 的 `--bridge` 可覆盖 |
 | 配置变更 | 需要同步更新 `config.example.toml`、`apply_env_overrides()` 和 `book/src/configuration.md` |
 | 文档计数 | 活文档（README/CONTRIBUTING/AGENTS/`book/`/`docs/plans`/`docs/runbooks`/`known-issue`）里的单测/检查计数只引用命令与实跑输出，不写硬编码数字（计数随演进取值漂移）；要写数字须同句标注「计数以实跑输出为准」或「归档判定」。历史档案（`docs/benchmarks`、`docs/adr`、`project-status` 等）不追溯改写。门禁：`python3 scripts/audit_doc_counts.py`（`make audit-doc-counts`，CI `Audit sources`），见 ADR-021 |
+| 版本一致性 | CHANGELOG 最新版本 ↔ manifest ↔ AGENTS.md/book 声明三方对账（`bump_version.py --check` 管 manifest 内部，`audit_version.py` 管文档声明）。门禁：`python3 scripts/audit_version.py`（`make audit-version`，CI `Audit sources`） |
+| 活文档链接 | 相对链接目标必须存在；外部链接 404/410 变红，连接失败/超时仅软警告（不假称通过）。历史档案不扫。门禁：`python3 scripts/audit_links.py`（`make audit-links`，CI `Audit sources`） |
+| 未使用依赖 | 模板复制残留的依赖由 `cargo machete crates webui evals` 兜住（ide/ 归档 crate 不在 workspace 不扫；误报用 `[package.metadata.cargo-machete] ignored` 声明，见 bridge-api prost）。CI `Audit sources` |
 
 ## 反模式
 

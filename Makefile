@@ -392,8 +392,24 @@ audit-doc-counts:
 	@python3 scripts/audit_doc_counts.py
 	@python3 scripts/audit_doc_counts.py --self-check
 
+# 版本一致性门禁：CHANGELOG 最新版本 ↔ 27 个 manifest ↔ AGENTS.md / book
+# 声明三方对账。历史上 book 停在 v0.3.0 而 CHANGELOG 已到 v0.4.0、AGENTS.md
+# 的 crate 版本描述停留在 0.2.0，靠人眼对账已多次漂移；bump_version.py
+# 只管 manifest 内部一致性，不管文档声明，本目标补上三方对账。
+audit-version:
+	@python3 scripts/audit_version.py
+	@python3 scripts/audit_version.py --self-check
+
+# 活文档链接巡检：相对链接必须指向真实文件，外部链接不得 404。死链不会
+# 让任何测试变红，只会让人点进 404。外部链接用 curl HEAD + 3 次重试；连接
+# 失败/超时不阻断（软警告），只有确定性的 404/410 与相对目标缺失才变红——
+# 第三方站点抖动不该让 CI 变红，但全部失败时软警告等量可见，不假称通过。
+audit-links:
+	@python3 scripts/audit_links.py
+	@python3 scripts/audit_links.py --self-check
+
 # 全部结构审计（不需编译）
-audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release audit-doc-counts todo-audit audit-todo-semantic audit-llm-spawns version-tool
+audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release audit-doc-counts audit-version audit-links todo-audit audit-todo-semantic audit-llm-spawns version-tool
 
 # 版本 bump 脚本的判别用例。版本号在仓库里出现 147 处（27 个 [package]
 # version + 内部 path 依赖约束），手改必漏；而脚本本身最危险的失败模式是

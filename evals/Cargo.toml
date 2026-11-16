@@ -1,6 +1,7 @@
 [package]
 name = "eval-runner"
 version = "0.4.0"
+publish = false
 edition = "2021"
 repository.workspace = true
 description = "Evaluation harnesses (metis / momus / librarian / scribe / security)"
@@ -63,3 +64,8 @@ path = "no_panic_check.rs"
 [[bin]]
 name = "metrics-coverage"
 path = "metrics_coverage.rs"
+
+# cargo-machete 误报声明：prettytable-rs 的 lib 名是 prettytable，
+# 代码 `use prettytable::...` 为正确用法，machete 按包名匹配不上。
+[package.metadata.cargo-machete]
+ignored = ["prettytable-rs"]

@@ -17,3 +17,8 @@ serde_json = { workspace = true }
 
 [build-dependencies]
 tonic-build = "0.12"
+
+# cargo-machete 误报声明：prost 由 tonic-build 生成的 proto 代码间接使用
+# （include_proto! 展开后引用 prost 类型），静态分析看不到，保留。
+[package.metadata.cargo-machete]
+ignored = ["prost"]
