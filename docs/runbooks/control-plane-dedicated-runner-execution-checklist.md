@@ -2,7 +2,7 @@
 
 > 适用阶段：6.5「多实例协调与共识、经验聚合」→ ADR-019 准入（真实证据执行）。
 > 关联：[`docs/runbooks/control-plane-dedicated-runner-tls-evidence.md`](./control-plane-dedicated-runner-tls-evidence.md)（执行步骤）、
-> [`docs/benchmarks/control-plane-dedicated-runner-evidence-2026-11-08.md`](../../benchmarks/control-plane-dedicated-runner-evidence-2026-11-08.md)（证据汇总）。
+> [`docs/benchmarks/control-plane-dedicated-runner-evidence-2026-11-08.md`](../benchmarks/control-plane-dedicated-runner-evidence-2026-11-08.md)（证据汇总）。
 > 边界：本清单只固化交接顺序；所有证据结论必须来自真实运行，禁止虚构。
 >
 > 相关交接（2026-11-10）：ADR-019「准入准备检查清单」已随本批次更新（Status → 准入准备中），

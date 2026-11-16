@@ -175,7 +175,7 @@ RUST_LOG=info cargo run -p sisyphus-bridge
 - [配置](./configuration.md) — 调整 token_budget / delegation_policy / chaos 配置
 - [REST API](./rest-api.md) — 完整端点列表与请求/响应 schema
 - [性能](./performance.md) — bench 基准 + 调优建议
-- [示例工程](../examples/) — 可编译运行的 Rust 示例
+- [示例工程](https://github.com/zerove/opencodepro/tree/master/crates/sisyphus-core/examples) — 可编译运行的 Rust 示例
 
 > **提示**：所有示例均使用项目根目录的 `config.example.toml` 作为基础配置。
 > 复制后按需调整 LLM endpoint / 模型 / workspace 路径。

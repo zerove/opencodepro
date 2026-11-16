@@ -2069,7 +2069,7 @@ mod tests {
         )
         .expect("decode cluster status");
         assert!(status.enabled);
-        assert_eq!(status.control_plane.security.effective_armed, true);
+        assert!(status.control_plane.security.effective_armed);
         assert_eq!(status.peer_manager.cluster_size, 3);
         assert_eq!(status.peers.len(), 1);
     }

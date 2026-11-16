@@ -42,8 +42,8 @@
 
 ## 交接
 
-- 交接清单：[`docs/runbooks/control-plane-dedicated-runner-execution-checklist.md`](runbooks/control-plane-dedicated-runner-execution-checklist.md)
-- 证据清单：[`docs/benchmarks/control-plane-dedicated-runner-evidence-2026-11-08.md`](benchmarks/control-plane-dedicated-runner-evidence-2026-11-08.md)
+- 交接清单：[`docs/runbooks/control-plane-dedicated-runner-execution-checklist.md`](../runbooks/control-plane-dedicated-runner-execution-checklist.md)
+- 证据清单：[`docs/benchmarks/control-plane-dedicated-runner-evidence-2026-11-08.md`](./control-plane-dedicated-runner-evidence-2026-11-08.md)
 
 ## 结论
 
