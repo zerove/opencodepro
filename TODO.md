@@ -621,9 +621,12 @@
 - [x] **e2e 纳入 CI**: `ci.yml` 新增 `toolchain-e2e` job，13 条 `#[ignore]` 用例以 `--ignored --test-threads=1` 在装有 go / python+pytest / JDK / Maven 的 runner 上执行
 - [x] **清理环境告警**: `executor_failure_semantics.rs` 已由 `fetch_update` 改用 `try_update`（clippy 无弃用告警）；`.cargo/config.toml` 的 `test-all` 别名补 `-j 1`（嵌套 cargo 仍由 `make test-all` 的 `CARGO_BUILD_JOBS=1` 覆盖）
 
+### 10.5 发布技术债
+- [ ] **内部 crate 无法 `cargo package`**: `sisyphus-bridge-api` / `sisyphus-metrics` 等内部 crate 未发布到 crates.io，`cargo package` 报 "no matching package named ... found"；仓库当前无发布流程（无 `publish = false`、无 `cargo publish`、CI 不打包）。若将来要发布：先整体发布内部 crate，或改用 workspace 依赖 + 私有 registry（2026-11-16 全面审查发现）
+
 ---
 
-**更新日期**: 2026-11-04
+**更新日期**: 2026-11-16
 **当前重点**: 10.1 勾选门禁已落地（`make todo-audit`）；剩余为 3 节点 Docker Compose / 网络分区验证、mutation/fuzz 扩展
 **前置条件**:
 - 阶段 9.1 经验同步生产链路已打通并有端到端验证 ✅
