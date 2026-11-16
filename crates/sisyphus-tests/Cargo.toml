@@ -17,8 +17,6 @@ parking_lot = "0.12"
 sisyphus-types = { version = "0.4.0", path = "../sisyphus-types" }
 tokio = { version = "1", features = ["full"] }
 petgraph = "0.6"
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 tempfile = "3.8"
 sisyphus-tools-llm = { version = "0.4.0", path = "../sisyphus-tools-llm" }
 sisyphus-tools-core = { version = "0.4.0", path = "../sisyphus-tools-core" }
@@ -29,7 +27,6 @@ sisyphus-tools-llm-tools = { version = "0.4.0", path = "../sisyphus-tools-llm-to
 sisyphus-intel = { version = "0.4.0", path = "../sisyphus-intel" }
 sisyphus-knowledge = { version = "0.4.0", path = "../sisyphus-knowledge" }
 sisyphus_visual = { version = "0.4.0", path = "../sisyphus-visual" }
-sisyphus-roadmap = { version = "0.4.0", path = "../sisyphus-roadmap" }
 sisyphus-core = { version = "0.4.0", path = "../sisyphus-core" }
 sisyphus-sandbox = { version = "0.4.0", path = "../sisyphus-sandbox" }
 sisyphus-tools-agent = { version = "0.4.0", path = "../sisyphus-tools-agent" }

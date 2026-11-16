@@ -22,7 +22,6 @@ sisyphus-tools-mcp = { version = "0.4.0", path = "../sisyphus-tools-mcp" }
 sisyphus-tools-session = { version = "0.4.0", path = "../sisyphus-tools-session" }
 sisyphus-tools-agent = { version = "0.4.0", path = "../sisyphus-tools-agent" }
 sisyphus-tools-executor = { version = "0.4.0", path = "../sisyphus-tools-executor" }
-sisyphus-tools-build = { version = "0.4.0", path = "../sisyphus-tools-build" }
 sisyphus-mem = { version = "0.4.0", path = "../sisyphus-mem" }
 sisyphus-intel = { version = "0.4.0", path = "../sisyphus-intel" }
 sisyphus-tools-llm-tools = { version = "0.4.0", path = "../sisyphus-tools-llm-tools" }
@@ -49,8 +48,7 @@ tracing-opentelemetry = { workspace = true }
 
 # JWT Authentication
 jsonwebtoken = { workspace = true }
-chrono = { workspace = true }
-thiserror = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 async-stream = "0.3"
 mdns-sd = "0.21.1"
 x509-parser = "0.16"

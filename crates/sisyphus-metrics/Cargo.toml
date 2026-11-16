@@ -26,5 +26,4 @@ default = []
 otel = ["tracing-opentelemetry", "opentelemetry", "opentelemetry-otlp", "opentelemetry_sdk", "opentelemetry-semantic-conventions"]
 
 [dev-dependencies]
-proptest = "1.0"
 tempfile = "3"

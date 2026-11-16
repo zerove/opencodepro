@@ -4422,7 +4422,6 @@ dependencies = [
  "sisyphus-roadmap",
  "sisyphus-sandbox",
  "sisyphus-tools-agent",
- "sisyphus-tools-build",
  "sisyphus-tools-core",
  "sisyphus-tools-executor",
  "sisyphus-tools-llm",
@@ -4433,7 +4432,6 @@ dependencies = [
  "sisyphus-types",
  "sqlx",
  "tempfile",
- "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
  "tonic 0.12.3",
@@ -4455,7 +4453,6 @@ dependencies = [
  "prost 0.13.5",
  "serde_json",
  "tokio",
- "tokio-stream",
  "tonic 0.12.3",
  "tonic-build",
 ]
@@ -4494,8 +4491,6 @@ dependencies = [
  "sisyphus-types",
  "tempfile",
  "tokio",
- "tokio-stream",
- "tokio-test",
  "tonic 0.12.3",
  "tracing",
  "tracing-subscriber",
@@ -4556,7 +4551,6 @@ dependencies = [
  "sisyphus-tools-llm-tools",
  "sisyphus-types",
  "tempfile",
- "thiserror 1.0.69",
  "tokio",
  "tracing",
  "uuid",
@@ -4566,7 +4560,6 @@ dependencies = [
 name = "sisyphus-knowledge"
 version = "0.4.0"
 dependencies = [
- "async-trait",
  "metrics",
  "petgraph 0.6.5",
  "serde",
@@ -4585,8 +4578,6 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "chrono",
- "dashmap",
  "lru",
  "md5",
  "parking_lot",
@@ -4603,7 +4594,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -4616,7 +4606,6 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
- "proptest",
  "serde",
  "serde_json",
  "tempfile",
@@ -4694,7 +4683,6 @@ dependencies = [
  "sisyphus-intel",
  "sisyphus-knowledge",
  "sisyphus-mem",
- "sisyphus-roadmap",
  "sisyphus-sandbox",
  "sisyphus-tools-agent",
  "sisyphus-tools-build",
@@ -4707,8 +4695,6 @@ dependencies = [
  "sqlx",
  "tempfile",
  "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -4761,9 +4747,7 @@ dependencies = [
  "serde_json",
  "sisyphus-types",
  "tempfile",
- "thiserror 1.0.69",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -4785,7 +4769,6 @@ dependencies = [
  "sisyphus-tools-system",
  "sisyphus-types",
  "tempfile",
- "thiserror 1.0.69",
  "tokio",
  "tracing",
  "urlencoding",
@@ -4803,7 +4786,6 @@ dependencies = [
  "serde_json",
  "sisyphus-tools-core",
  "sisyphus-types",
- "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -4852,11 +4834,9 @@ version = "0.4.0"
 dependencies = [
  "metrics",
  "serde",
- "serde_json",
  "serde_norway",
  "sisyphus-tools-core",
  "tempfile",
- "tracing",
 ]
 
 [[package]]
@@ -4870,9 +4850,6 @@ dependencies = [
  "sisyphus-tools-core",
  "sisyphus-types",
  "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "toml",
  "tracing",
 ]
 
@@ -4881,8 +4858,6 @@ name = "sisyphus-tools-system"
 version = "0.4.0"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
- "dashmap",
  "glob",
  "ignore",
  "metrics",
@@ -5598,17 +5573,6 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-util",
-]
-
-[[package]]
-name = "tokio-test"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f6d24790a10a7af737693a3e8f1d03faef7e6ca0cc99aae5066f533766de545"
-dependencies = [
- "futures-core",
- "tokio",
- "tokio-stream",
 ]
 
 [[package]]

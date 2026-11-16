@@ -9,8 +9,6 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-tracing = { workspace = true }
 metrics = "0.24"
 tempfile = "3"
 # serde_yaml 0.9 上游已 deprecated，其 unsafe-libyaml 依赖被标记 unmaintained

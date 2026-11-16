@@ -41,7 +41,6 @@ tracing = { workspace = true }
 metrics = "0.24"
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tonic = "0.12"
-tokio-stream = "0.1"
 reqwest = { version = "0.12", features = ["json"] }
 glob = "0.3"
 arboard = "3.4"
@@ -53,5 +52,4 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
 tempfile = "3"
-tokio-test = "0.4"
 assert_cmd = "2"

@@ -23,10 +23,10 @@ Sisyphus 的核心是接收一个高层目标（以自然语言表达），然�
 
 ## 项目状态
 
-Sisyphus 处于**积极开发**中（v0.3.0）。核心认知循环已可用并通过测试，具备 WASM 工具执行、多级缓存与 Prometheus 指标集成。
+Sisyphus 处于**积极开发**中（v0.4.0）。核心认知循环已可用并通过测试，具备 WASM 工具执行、多级缓存与 Prometheus 指标集成。
 
 ## 下一步
 
 - 阅读[架构总览](architecture.md)了解高层系统设计。
-- 深入[核心概念](concepts.md)理解 SOP、认知循环与 DAG 执行。
+- 深入[SOP 编排](./sop-orchestration.md)、[认知循环](./cognitive-loop.md)与 [DAG 执行](./dag-execution.md)理解核心概念。
 - 查看 [Crate 参考](crates.md)获取详细 API 文档。

@@ -33,8 +33,8 @@ cargo --version
 ### 1. 克隆并构建
 
 ```bash
-git clone https://github.com/zeronhq/sisyphus-wasm.git
-cd sisyphus-wasm
+git clone https://github.com/zerove/opencodepro.git
+cd opencodepro
 
 # 检查工作区（为提速排除重型 bridge/sandbox crate）
 make check-all
@@ -113,7 +113,7 @@ curl http://[::1]:8080/health
 预期响应：
 
 ```json
-{"status":"ok","version":"0.3.0"}
+{"status":"ok","version":"0.4.0"}
 ```
 
 ## 简单示例：执行一个 SOP
