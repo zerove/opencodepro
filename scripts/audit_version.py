@@ -82,6 +82,10 @@ def check_manifest_text(text: str, expected: str, rel: str = "<memory>") -> list
         ln = line_of(text, 'version = "')
         problems.append({"path": rel, "line": ln, "problem": f"[package] version = {actual!r}，期望 {expected}"})
 
+    if not re.search(r"^publish = false$", text, re.M):
+        ln = line_of(text, "version = ")
+        problems.append({"path": rel, "line": ln, "problem": "缺 publish = false（防误发）"})
+
     def tables(d: dict, prefix: str = ""):
         for key in DEP_TABLES:
             yield prefix + key, d.get(key, {})
@@ -159,20 +163,25 @@ def self_check() -> int:
     if check_manifest_text(good, "1.2.3"):
         print("自检失败：合法 manifest 被误报", file=sys.stderr); ok = False
 
-    bad_version = '[package]\nname = "x"\nversion = "9.9.9"\n'
+    bad_version = '[package]\nname = "x"\nversion = "9.9.9"\npublish = false\n'
     hits = check_manifest_text(bad_version, "1.2.3")
     if len(hits) != 1 or "version = '9.9.9'" not in hits[0]["problem"]:
         print("自检失败：version 漂移未拦截", file=sys.stderr); ok = False
 
-    bad_dep_missing = '[package]\nname = "x"\nversion = "1.2.3"\n\n[dependencies]\nfoo = { path = "../foo" }\n'
+    bad_dep_missing = '[package]\nname = "x"\nversion = "1.2.3"\npublish = false\n\n[dependencies]\nfoo = { path = "../foo" }\n'
     hits = check_manifest_text(bad_dep_missing, "1.2.3")
     if len(hits) != 1 or "foo" not in hits[0]["problem"]:
         print("自检失败：path 依赖缺 version 未拦截", file=sys.stderr); ok = False
 
-    bad_dep_mismatch = '[package]\nname = "x"\nversion = "1.2.3"\n\n[dependencies]\nfoo = { path = "../foo", version = "0.1.0" }\n'
+    bad_dep_mismatch = '[package]\nname = "x"\nversion = "1.2.3"\npublish = false\n\n[dependencies]\nfoo = { path = "../foo", version = "0.1.0" }\n'
     hits = check_manifest_text(bad_dep_mismatch, "1.2.3")
     if len(hits) != 1 or "0.1.0" not in hits[0]["problem"]:
         print("自检失败：path 依赖版本不符未拦截", file=sys.stderr); ok = False
+
+    bad_publish = '[package]\nname = "x"\nversion = "1.2.3"\n\n[dependencies]\n'
+    hits = check_manifest_text(bad_publish, "1.2.3")
+    if len(hits) != 1 or "publish" not in hits[0]["problem"]:
+        print("自检失败：缺 publish = false 未拦截", file=sys.stderr); ok = False
 
     if check_text_declaration("处于**积极开发**中（v1.2.3）。", ACTIVE_DEV_RE, "1.2.3", "t"):
         print("自检失败：合法文档声明被误报", file=sys.stderr); ok = False
@@ -181,7 +190,7 @@ def self_check() -> int:
         print("自检失败：文档声明漂移未拦截", file=sys.stderr); ok = False
 
     if ok:
-        print("✅ 判据自检通过（manifest version / path 依赖约束 / 文档声明 各 2 例）")
+        print("✅ 判据自检通过（manifest version / publish = false / path 依赖约束 / 文档声明 各 2 例）")
         return 0
     return 2
 
