@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use jsonschema::JSONSchema;
 use prettytable::{row, Table};
@@ -80,7 +80,7 @@ impl LlmClient for MockLlmClient {
                 }
             ]
         });
-        Ok(serde_json::to_string(&response).unwrap())
+        Ok(serde_json::to_string(&response).unwrap_or_default())
     }
 
     fn get_params_for(&self, _model: &str) -> (String, String, String) {
@@ -336,12 +336,40 @@ async fn main() -> Result<()> {
 
     // `--cases <a/id1,a/id2,...>`：只运行命中集合的 case（T4.3 evals 子集入 CI 用）。
     // 支持 `--cases=<v>` 与 `--cases <v>` 两种形式；未指定时运行全部 agent 的 cases（既有行为）。
+    // `--threshold <f>` / `--min-pass <n>`：总分下限与通过数下限，任一低于下限即
+    // 以非零码退出，使本 runner 可直接作 CI 准确率回归线。默认不设下限（既有行为）。
+    let mut min_threshold: Option<f64> = None;
+    let mut min_pass: Option<usize> = None;
     let cases_filter: Option<std::collections::HashSet<String>> = {
         let mut set = std::collections::HashSet::new();
         let mut args = std::env::args().skip(1).peekable();
         while let Some(arg) = args.next() {
+            if arg == "--threshold" {
+                let v = args.next().context("--threshold 需要一个浮点数值")?;
+                min_threshold = Some(
+                    v.parse().with_context(|| format!("--threshold 值无法解析为浮点数: {v}"))?,
+                );
+                continue;
+            }
+            if let Some(v) = arg.strip_prefix("--threshold=") {
+                min_threshold = Some(
+                    v.parse().with_context(|| format!("--threshold 值无法解析为浮点数: {v}"))?,
+                );
+                continue;
+            }
+            if arg == "--min-pass" {
+                let v = args.next().context("--min-pass 需要一个整数值")?;
+                min_pass =
+                    Some(v.parse().with_context(|| format!("--min-pass 值无法解析为整数: {v}"))?);
+                continue;
+            }
+            if let Some(v) = arg.strip_prefix("--min-pass=") {
+                min_pass =
+                    Some(v.parse().with_context(|| format!("--min-pass 值无法解析为整数: {v}"))?);
+                continue;
+            }
             let value = if arg == "--cases" {
-                args.next()
+                Some(args.next().context("--cases 需要逗号分隔的 case 列表")?)
             } else {
                 arg.strip_prefix("--cases=").map(|rest| rest.to_string())
             };
@@ -415,12 +443,35 @@ async fn main() -> Result<()> {
     table.printstd();
 
     if total_cases > 0 {
+        let score = total_score / total_cases as f64;
+        let passed = all_results.iter().filter(|r| r.passed).count();
         println!(
             "\nFinal Score: {:.2} / 1.0 ({}/{})",
-            total_score / total_cases as f64,
-            all_results.iter().filter(|r| r.passed).count(),
-            total_cases
+            score, passed, total_cases
         );
+
+        // 阈值门禁：任一低于下限即返回错误（退出码非 0），CI 据此判红。
+        if let Some(t) = min_threshold {
+            if score < t {
+                bail!(
+                    "准确率回归：总分 {:.2} 低于下限 {:.2}（{}/{} 通过）",
+                    score,
+                    t,
+                    passed,
+                    total_cases
+                );
+            }
+        }
+        if let Some(m) = min_pass {
+            if passed < m {
+                bail!(
+                    "准确率回归：通过数 {} 低于下限 {}（总分 {:.2}）",
+                    passed,
+                    m,
+                    score
+                );
+            }
+        }
     } else {
         println!("\nNo cases found to evaluate.");
     }
