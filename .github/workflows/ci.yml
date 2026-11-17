@@ -107,6 +107,8 @@ jobs:
       # 27 个）。cargo-machete 是纯静态分析；ide/ 下三个归档 crate（sdk/
       # tauri/api）不在 workspace、不编译，其依赖不在扫描范围。误报用
       # [package.metadata.cargo-machete] ignored 声明（见 bridge-api prost）。
+      # ignored 列表每季度复核一次：临时去掉 ignored 跑一遍，确认仍为零报告
+      # （生成代码路径变化会让旧误报变真未使用）。
       - name: Install cargo-machete
         run: cargo install cargo-machete --locked
       - name: Audit unused dependencies

@@ -189,6 +189,7 @@ def self_check() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="活文档链接巡检")
     parser.add_argument("--self-check", action="store_true", help="判据自检")
+    parser.add_argument("--strict", action="store_true", help="软警告升级为硬错误（周检用）")
     parser.add_argument("--json", action="store_true", help="JSON 输出")
     args = parser.parse_args()
 
@@ -197,7 +198,7 @@ def main() -> int:
 
     hard, soft = audit_tree(ROOT)
     if args.json:
-        print(json.dumps({"hard": hard, "soft": soft}, ensure_ascii=False, indent=2))
+        print(json.dumps({"hard": hard, "soft": soft, "strict": args.strict}, ensure_ascii=False, indent=2))
     else:
         for e in hard:
             print("%s:%d: %s —— %s" % (e["path"], e["line"], e["detail"], e["url"]))
@@ -205,9 +206,11 @@ def main() -> int:
             print("%s:%d: [软警告] %s —— %s" % (e["path"], e["line"], e["detail"], e["url"]), file=sys.stderr)
         if hard:
             print("\n❌ %d 处死链（另有 %d 个软警告）。" % (len(hard), len(soft)), file=sys.stderr)
+        elif args.strict and soft:
+            print("\n❌ strict 模式：%d 处软警告（连接失败/超时）升级为硬错误。" % len(soft), file=sys.stderr)
         else:
             print("✅ 活文档链接全通（软警告 %d 个，不阻断）" % len(soft))
-    return 1 if hard else 0
+    return 1 if (hard or (args.strict and soft)) else 0
 
 
 if __name__ == "__main__":

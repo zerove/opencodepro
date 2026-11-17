@@ -174,12 +174,13 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
   （历史：v0.1.0 → v0.2.0 一次性 bump；当前 115 处内部 path 依赖带显式
   version，计数以实跑输出为准）。发版前跑 `make release-check`，见
   CONTRIBUTING §发布流程。
-- **当前仍无法完成打包**：manifest 校验已通过，但 `cargo package` 会去
-  crates.io 查 `sisyphus-bridge-api` / `sisyphus-metrics` 等内部 crate 而
-  失败（“no matching package named ... found”）。仓库没有任何发布流程
-  （无 `publish = false`、无 `cargo publish`、CI 也不打包），因此这些
-  crate 实际是**仅本地**使用。若将来要发布，必须先整体发布内部 crate，
-  或改用 workspace 依赖 + 私有 registry。
+- **发布策略（2026-11-17 决策）**：本仓库 crate 永不发布到 crates.io，仅本地
+  使用。27 个 manifest 已全覆盖 `publish = false`（`audit_version.py` 门禁
+  拦截回归）。历史上 `cargo package` 会去 crates.io 查 `sisyphus-bridge-api` /
+  `sisyphus-metrics` 等内部 crate 而失败（“no matching package named ...
+  found”），根因是内部 crate 未发布；现以 `publish = false` 彻底规避。
+  若将来确需对外发布，必须先整体发布内部 crate，或改用 workspace 依赖 +
+  私有 registry。
 - Release 构建已验证：`cargo build --release -p sisyphus-bridge -p sisyphus-sandboxd`
   均成功，产物可执行（`sisyphus-sandboxd --help` 正常）。
 - 全局 CLAUDE.md 通过 `@RTK.md` 引用 RTK token 优化工具

@@ -1,0 +1,18 @@
+name: Weekly dead-link audit (strict)
+
+on:
+  schedule:
+    # 每周日 03:00 UTC：外部链接软警告升级为硬错误，
+    # 暴露被网络抖动/代理重置掩盖的真死链（ci.yml 的 audit-links
+    # 默认软警告不阻断，避免 PR 因第三方站点抖动误红）。
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+
+jobs:
+  audit-links-strict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit links (strict)
+        run: python3 scripts/audit_links.py --strict

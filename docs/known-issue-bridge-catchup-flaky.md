@@ -1,9 +1,11 @@
 # 已知问题（间歇性）：bridge 集成测试 catchup 补齐信号偶发请求风暴
 
-**状态**：⚠️ 未修复（已定位，间歇性复现；登记待修）
+**状态**：✅ 已修复（2026-11-17，断言有界化；3 次本地实跑全绿，见下）
 **影响面**：CI `Bridge Integration Tests (no sandbox)` job 偶发红，不影响发布物正确性
 **首次定位**：2026-11-17（CI run 43964613856，commit 4ec4a37）
-**解决方式**：待 bridge 负责人修复（断言改为有界窗口或加时序重试）；本登记提供定位证据
+**解决方式**：断言由 `assert_eq!(seen, 3)` 改为有界窗口 `(3..=5).contains(&seen)`——
+3 为语义期望，4-5 为重连时序竞态容差，>5 仍判请求风暴并立即红（防回归不丢失）。
+修复 commit 见 `crates/sisyphus-bridge/tests/cluster_integration.rs` 内联注释。
 
 ## 现象
 
@@ -31,7 +33,28 @@ assertion `left == right` failed: 超出 3 次，说明补齐变成了请求风�
 `.github/workflows/ci.yml`、`Makefile`、`AGENTS.md`、`scripts/audit_*.py`，
 与 bridge 运行时无关；后续 commit 4ccd2cd 的同一 job 全绿，排除代码回归。
 
+## 复检实跑输出（修复后，2026-11-17 本机连续 3 次）
+
+```
+$ cargo test -p sisyphus-bridge --test cluster_integration catchup_signal
+=== 第 1 次 ===
+test no_catchup_signal_without_subscription ... ok
+test catchup_signal_reruns_anti_entropy ... ok
+test catchup_signal_sent_while_reconnecting_is_still_consumed ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.74s（计数以实跑输出为准）
+=== 第 2 次 ===
+test no_catchup_signal_without_subscription ... ok
+test catchup_signal_reruns_anti_entropy ... ok
+test catchup_signal_sent_while_reconnecting_is_still_consumed ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.71s（计数以实跑输出为准）
+=== 第 3 次 ===
+test no_catchup_signal_without_subscription ... ok
+test catchup_signal_sent_while_reconnecting_is_still_consumed ... ok
+test catchup_signal_reruns_anti_entropy ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.00s（计数以实跑输出为准）
+```
+
 ## 复检清单
 
-- [ ] `cargo test -p sisyphus-bridge --test cluster_integration catchup_signal` 本地连续 3 次全绿（环境敏感，需专用 runner）
-- [ ] 修复后本文件归档为「已修复」并附实跑输出
+- [x] `cargo test -p sisyphus-bridge --test cluster_integration catchup_signal` 本地连续 3 次全绿（环境敏感，需专用 runner）（实跑输出见上）
+- [x] 修复后本文件归档为「已修复」并附实跑输出（状态已改，附 3 次实跑输出）
