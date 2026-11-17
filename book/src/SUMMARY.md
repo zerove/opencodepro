@@ -18,6 +18,8 @@
   - [sisyphus-bridge](./crates/bridge.md)
   - [sisyphus-cli](./crates/cli.md)
   - [sisyphus-tools](./crates/tools.md)
+  - [sisyphus-visual](./crates/visual.md)
+  - [sisyphus-wasm-sdk](./crates/wasm-sdk.md)
 - [配置](./configuration.md)
 - [TUI 指南](./tui-guide.md)
   - [斜杠命令](./slash-commands.md)

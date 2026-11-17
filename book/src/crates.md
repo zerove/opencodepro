@@ -1,6 +1,6 @@
 # Crate 参考
 
-Sisyphus 以 Rust 工作区组织，包含 **30 个成员**：`crates/` 下的 **28 个 crate**（含 10 个 `sisyphus-tools-*` 子 crate）加 `webui` 与 `evals`。
+Sisyphus 以 Rust 工作区组织，包含 **27 个成员**：`crates/` 下的 **25 个 crate**（含 10 个 `sisyphus-tools-*` 子 crate）加 `webui` 与 `evals`。
 
 ## 基础层
 
@@ -57,7 +57,7 @@ Sisyphus 以 Rust 工作区组织，包含 **30 个成员**：`crates/` 下的 *
 | [sisyphus-cli](crates/cli.md) | 命令行界面 + 带代理子命令的 TUI | types, tools（10 个子 crate） |
 
 
-> 2026-08-26 归档：`sisyphus-api`（独立 REST API，4 端点与 bridge 的 71 个 HTTP 端点重叠）与 `sisyphus-sdk`（其 Rust 客户端，无下游使用者）移至 `ide/api`、`ide/sdk`，不再是 workspace 成员。活跃 API 面为 `sisyphus-bridge`。
+> 2026-08-26 归档：`sisyphus-api`（独立 REST API，4 端点与 bridge 的 HTTP 端点面重叠；实跑 `rg '\.route\(' crates/sisyphus-bridge/src/http/mod.rs | wc -l` 计数，计数以实跑输出为准）与 `sisyphus-sdk`（其 Rust 客户端，无下游使用者）移至 `ide/api`、`ide/sdk`，不再是 workspace 成员。活跃 API 面为 `sisyphus-bridge`。
 
 ## 测试与评测
 

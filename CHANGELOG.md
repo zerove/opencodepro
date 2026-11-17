@@ -56,6 +56,8 @@
 
 ### Added
 
+- **评测 runner 阈值门禁**（2026-11-17）：`evals/runner.rs` 新增 `--threshold <f>` / `--min-pass <n>` 参数，总分或通过数低于下限时以非零码退出，使 runner 可直接作 CI 准确率回归线；参数解析失败由静默忽略改为显式报错，`bail!` 导入缺失已修复
+
 - **单机全功能基线与验收交付（S1–S4）**（2026-11-10）：按“引擎优先、选择性产品化、单机优先”推进单机能力闭环。
   - S1：`docs/plans/single-node-full-functionality-audit.md`（范围定义、基线证据、能力矩阵与缺口清单）
   - S2：`docs/runbooks/single-node-operation-and-verification.md`（单机启动、配置要点、端到端验收清单与已验证证据；CLI 本地工具 `read/write/glob/grep/exec` 实测）

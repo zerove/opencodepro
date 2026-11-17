@@ -1,4 +1,6 @@
 # Sisyphus Professional Agents: Quantitative Capability Baseline Report
+
+> ⚠ 历史基线（2026-06-24，llm_judge 迁移时点）。数值仅供趋势对比，当前水位以 `evals/runner.rs` 最新实跑输出为准。
 **Date**: 2026-06-24
 **Audit Version**: 1.0.0 (Semantic Upgrade)
 **Overall Score**: 0.86 / 1.0 (47/57 Cases Passed)

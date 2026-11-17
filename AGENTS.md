@@ -129,9 +129,12 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
   step 全红，而本地因为 `RUSTUP_TOOLCHAIN` 环境变量会**完全绕过**该文件，
   连续 40 次 run 0 成功却毫无感知。改这个文件后请用
   `env -u RUSTUP_TOOLCHAIN rustc --version` 验证，不要只信本地 `cargo`。
-- 本机 shell 设置了 `RUSTUP_TOOLCHAIN=1.99.1`（stable），会覆盖仓库 pin，
-  因此**pre-commit hook 实际用 stable 1.99.1 的 rustfmt/clippy**。
-  已确认 stable 1.99.1 与 nightly-2026-08-08 对本仓库格式化结果一致。
+- 本机 shell 设置了 `RUSTUP_TOOLCHAIN=1.100.0`（stable），会覆盖仓库 pin，
+  因此**pre-commit hook 实际用 stable 1.100.0 的 rustfmt/clippy**。
+  曾确认 stable 1.99.1 与 nightly-2026-08-08 对本仓库格式化结果一致；
+  1.100.0 与 pin nightly 的一致性**尚未验证**（2026-11-17 两次尝试
+  `rustup toolchain install nightly-2026-08-08` 均因 static.rust-lang.org
+  TLS 握手失败受阻，fmt 暂以 1.100.0 代跑。网络恢复后应补装并复验）。
   排查构建问题前先确认 `rustc --version`，不要假设在用哪个工具链。
 - 为什么 workflow 里不能直接写 `dtolnay/rust-toolchain@nightly`：那样装的是
   **浮动 nightly**，而 cargo 按仓库 pin 去找 `nightly-2026-08-08`，两者不是

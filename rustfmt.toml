@@ -12,6 +12,8 @@
 edition = "2021"
 # max_width and chain_width = 100 fit GitHub PR review screens and
 # match the prevailing style for new files added in 2025+.
+# chain_width 与 max_width 同值：rustfmt 会警告「超过 max_width」并钳制为同值，
+# 显式写出是为了锁定链式换行宽度——删除会退回默认 60 并引发全仓重排。
 max_width = 100
 chain_width = 100
 use_try_shorthand = true
