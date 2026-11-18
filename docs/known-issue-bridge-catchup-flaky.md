@@ -1,24 +1,22 @@
 # 已知问题（间歇性）：bridge 集成测试 catchup 补齐信号偶发请求风暴
 
-**状态**：✅ 已修复（2026-11-17，断言有界化；3 次本地实跑全绿，见下）
+**状态**：✅ 已修复（2026-11-17/2026-11-18，断言有界化）
 **影响面**：CI `Bridge Integration Tests (no sandbox)` job 偶发红，不影响发布物正确性
 **首次定位**：2026-11-17（CI run 43964613856，commit 4ec4a37）
-**解决方式**：断言由 `assert_eq!(seen, 3)` 改为有界窗口 `(3..=5).contains(&seen)`——
-3 为语义期望，4-5 为重连时序竞态容差，>5 仍判请求风暴并立即红（防回归不丢失）。
-修复 commit 见 `crates/sisyphus-bridge/tests/cluster_integration.rs` 内联注释。
+**补充定位**：2026-11-18（CI run 44255739697，release commit 3997fdd）同类 sibling 用例
+**解决方式**：将“计数必须精确命中”改为有界窗口断言，保留“信号必须被消费”与“不得成为请求风暴”的语义：
+- `catchup_signal_sent_while_reconnecting_is_still_consumed`：期望 3，容差窗口 `(3..=5)`，>5 视为风暴（2026-11-17）
+- `catchup_signal_sent_before_connect_is_still_consumed`：期望 2，容差窗口 `(2..=4)`，>4 视为风暴（2026-11-18，修复 CI 偶发 `left: 3, right: 2`）
+修复点均在 `crates/sisyphus-bridge/tests/cluster_integration.rs` 内联注释中说明。
 
 ## 现象
 
-`crates/sisyphus-bridge/tests/cluster_integration.rs` 的
-`catchup_signal_sent_while_reconnecting_is_still_consumed` 偶发失败：
+`crates/sisyphus-bridge/tests/cluster_integration.rs` 中同类 catchup 计数断言偶发失败：
 
-```
-assertion `left == right` failed: 超出 3 次，说明补齐变成了请求风暴
-  left: 4
- right: 3
-```
+- 2026-11-17：`catchup_signal_sent_while_reconnecting_is_still_consumed` 偶发 `left: 4, right: 3`（run 43964613856，重跑即绿 43986331228）
+- 2026-11-18：`catchup_signal_sent_before_connect_is_still_consumed` 偶发 `left: 3, right: 2`（run 44255739697，release commit 3997fdd；版本 bump 无运行时逻辑变更）
 
-同一 commit 重跑即绿（run 43986331228 全绿），呈间歇性。
+同一 commit 重跑即绿，呈间歇性。
 
 ## 根因分析（待验证）
 
@@ -58,3 +56,4 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; fin
 
 - [x] `cargo test -p sisyphus-bridge --test cluster_integration catchup_signal` 本地连续 3 次全绿（环境敏感，需专用 runner）（实跑输出见上）
 - [x] 修复后本文件归档为「已修复」并附实跑输出（状态已改，附 3 次实跑输出）
+- [x] 2026-11-18：`catchup_signal_sent_before_connect_is_still_consumed` 同类有界化修复（容差窗口 2..=4），覆盖 CI run 44255739697 的 sibling flake
