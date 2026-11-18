@@ -538,7 +538,7 @@ bench-core:
 
 perf-analyze:
 	@echo "━━━ Running benchmarks (save as current) ━━━"
-	cargo bench -p sisyphus-core --features sandbox -- --save-baseline current --warm-up-time 1 --measurement-time 2 --sample-size 10
+	cargo bench -p sisyphus-core --bench core_benches --features sandbox -- --save-baseline current --warm-up-time 1 --measurement-time 2 --sample-size 10
 	@BASELINE_NAME="${BASELINE:-main-baseline}"; \
 	if ls target/criterion/*/"$$BASELINE_NAME"/ 2>/dev/null >/dev/null; then \
 		echo "━━━ Comparing current vs $$BASELINE_NAME ━━━"; \
@@ -546,11 +546,12 @@ perf-analyze:
 			critcmp current "$$BASELINE_NAME" 2>&1; \
 			echo ""; \
 			echo "━━━ Regression check (>5% = warning) ━━━"; \
-			critcmp current "$$BASELINE_NAME" --json 2>/dev/null | python3 -c " \
-import json,sys; data=json.load(sys.stdin); \
-regs=[(n,i) for n,i in data.items() if isinstance(i,dict) and isinstance(i.get('change'),(int,float)) and i['change']>5.0]; \
-[print(f'WARNING: {n}: {p[\"change\"]:.1f}% slower') for n,p in regs] if regs else print('No regressions >5%'); \
-"; \
+			critcmp current "$$BASELINE_NAME" -t 5 > /tmp/critcmp_out.txt 2>&1; \
+			if [ -s /tmp/critcmp_out.txt ]; then \
+				echo "Regressions >5% detected (see critcmp output above)."; \
+			else \
+				echo "No regressions >5%"; \
+			fi; \
 		else \
 			echo "critcmp not installed. Install with: cargo install critcmp --locked"; \
 		fi; \
