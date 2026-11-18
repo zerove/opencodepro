@@ -43,7 +43,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn now_iso_is_valid_rfc3339_utc_with_millis() {
+    fn test_now_iso_is_valid_rfc3339_utc_with_millis() {
         let ts = now_iso();
         assert_eq!(ts.len(), 24, "expected YYYY-MM-DDTHH:MM:SS.mmmZ, got {ts}");
         assert!(ts.ends_with('Z'), "UTC timestamps must end with Z: {ts}");
@@ -52,7 +52,7 @@ mod tests {
     }
 
     #[test]
-    fn now_iso_dates_are_within_one_day_of_each_other() {
+    fn test_now_iso_dates_are_within_one_day_of_each_other() {
         let a: Timestamp = now_iso().parse().expect("valid RFC 3339");
         std::thread::sleep(std::time::Duration::from_millis(2));
         let b: Timestamp = now_iso().parse().expect("valid RFC 3339");
@@ -64,7 +64,7 @@ mod tests {
     }
 
     #[test]
-    fn now_iso_roundtrips_to_the_same_instant() {
+    fn test_now_iso_roundtrips_to_the_same_instant() {
         let ts = now_iso();
         let parsed: Timestamp = ts.parse().expect("parseable");
         let dt = TimeZone::UTC.to_datetime(parsed);

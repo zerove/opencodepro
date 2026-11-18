@@ -18,6 +18,10 @@
 - [x] **死代码清理**: 移除未使用的结构体、方法和常量 (2026-08, clippy 全量通过)
 - [x] **错误处理审计**: 生产代码 `unwrap()`/`expect()` 审计完成 (2026-08-09, 残余均为 build.rs/测试基础设施/文档示例)
   - 修复 `integration_stress.rs` 的 expect → 错误传播
+- [x] **chrono → jiff 迁移**: RUSTSEC-2026-0543（chrono unmaintained）+ `cmd_time_convert` 需 `Local` 时区，迁移到 `jiff` 0.1（2026-11-18 完成，证据：`crates/sisyphus-types/src/time.rs::test_now_iso_is_valid_rfc3339_utc_with_millis`）
+    - 迁移面：workspace `jiff`（features=["serde"]）、types/cli/tools-executor/bridge 四个 crate manifest、`sisyphus-mem` sqlx feature 去 `"chrono"`、bridge JWT/SSE/quality_record、`cmd_*`/`TUI renders` 全部换写
+    - 验证：时间工具单测 3 例全绿（`test_now_iso_is_valid_rfc3339_utc_with_millis` 等）；`cargo tree -i chrono` → did not match any packages；`cargo deny check` advisories ok
+    - 语义说明：`cmd_time_convert` Local 用 `display_with_offset(zoned.offset())` 输出纯 RFC 3339 偏移（非 `[Asia/Shanghai]` 注解）；`now_iso` 手工拼接避免纳秒漂移
 
 ### 阶段 2: 功能扩展 (Feature Expansion)
 - [x] **REST API 接口层** (axum + OpenAPI 3.1):
