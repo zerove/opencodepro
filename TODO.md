@@ -1,6 +1,6 @@
 # Sisyphus 后续开发计划 (TODO.md)
 
-> **当前状态报告**: [docs/project-status-2026-10-04.md](docs/project-status-2026-10-04.md)（最新快照。多语言测试守卫的 6 个缺陷全部修复并有真实工具链端到端验证：Go 多包部分构建失败曾被漏判、Python 全部通过曾报 `passed=0`、Node 混合结果曾报 `passed=2 failed=0`、vitest 套件加载失败守卫因只读 stdout 而从不触发、以及收尾时才发现的 Java/Maven 同类缺陷（`[INFO]` 前缀 + 千分位逗号使解析永不命中，且 `test()` 丢弃 `success` 导致编译失败被当成全通过）。根因 `sisyphus-cli/src/build.rs` 的 `if r.failed == 0 { "ok" }` 已改为 `test_status_label()`，区分 `ok` / `FAILED` / `no tests ran`，配 9 条单测。真实工具链 e2e 从 11 条增至 13 条，并**已接入 CI**（新增 `toolchain-e2e` job）；顺带修复了长期失败的 `audit-sources` job。全工作区回归 4762 通过 / 0 失败。历史快照见 [docs/project-status-2026-10-02.md](docs/project-status-2026-10-02.md)。）
+> **当前状态报告**: [docs/project-status-2026-10-04.md](docs/project-status-2026-10-04.md)（2026-10-04 快照；此后更新见 `CHANGELOG.md` 与 `docs/known-issue-*.md`。多语言测试守卫的 6 个缺陷全部修复并有真实工具链端到端验证：Go 多包部分构建失败曾被漏判、Python 全部通过曾报 `passed=0`、Node 混合结果曾报 `passed=2 failed=0`、vitest 套件加载失败守卫因只读 stdout 而从不触发、以及收尾时才发现的 Java/Maven 同类缺陷（`[INFO]` 前缀 + 千分位逗号使解析永不命中，且 `test()` 丢弃 `success` 导致编译失败被当成全通过）。根因 `sisyphus-cli/src/build.rs` 的 `if r.failed == 0 { "ok" }` 已改为 `test_status_label()`，区分 `ok` / `FAILED` / `no tests ran`，配 9 条单测。真实工具链 e2e 从 11 条增至 13 条，并**已接入 CI**（新增 `toolchain-e2e` job）；顺带修复了长期失败的 `audit-sources` job。全工作区回归 4762 通过 / 0 失败。历史快照见 [docs/project-status-2026-10-02.md](docs/project-status-2026-10-02.md)。）
 
 ## 已完成 (Done)
 
@@ -554,8 +554,8 @@
 ### 9.4 文档与发布
 
 #### 9.4.1 CHANGELOG v0.2.0
-- [ ] **发布笔记**: 基于 git log 生成结构化 changelog
-- [ ] **v0.2.0 tag**: 打标签触发 release workflow
+- [x] **发布笔记**: 基于 git log 生成结构化 changelog（无测试：文档任务，`CHANGELOG.md` 已有 `[v0.2.0] - 2026-11-04` 段）
+- [x] **v0.2.0 tag**: 打标签触发 release workflow（无测试：`git tag` 已含 v0.2.0，当前版本已到 v0.4.0）
 - [ ] **release notes review**: 人工检查自动生成内容
 
 #### 9.4.2 文档优化
@@ -622,7 +622,7 @@
 - [x] **清理环境告警**: `executor_failure_semantics.rs` 已由 `fetch_update` 改用 `try_update`（clippy 无弃用告警）；`.cargo/config.toml` 的 `test-all` 别名补 `-j 1`（嵌套 cargo 仍由 `make test-all` 的 `CARGO_BUILD_JOBS=1` 覆盖）
 
 ### 10.5 发布技术债
-- [ ] **内部 crate 无法 `cargo package`**: `sisyphus-bridge-api` / `sisyphus-metrics` 等内部 crate 未发布到 crates.io，`cargo package` 报 "no matching package named ... found"；仓库当前无发布流程（无 `publish = false`、无 `cargo publish`、CI 不打包）。若将来要发布：先整体发布内部 crate，或改用 workspace 依赖 + 私有 registry（2026-11-16 全面审查发现）
+- [ ] **内部 crate 无法 `cargo package`**: `sisyphus-bridge-api` / `sisyphus-metrics` 等内部 crate 未发布到 crates.io，`cargo package` 报 "no matching package named ... found"。仓库现已全覆盖 `publish = false`，但那只阻止误发布，**不解决** `cargo package` 解析内部 path 依赖的问题；发布产物是平台二进制 + Docker 镜像。若将来要发布 crate：先整体发布内部 crate，或改用 workspace 依赖 + 私有 registry（2026-11-16 发现，2026-11-18 复核）
 
 ---
 

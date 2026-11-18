@@ -40,16 +40,17 @@ cargo check -p sisyphus-core
 cargo install --locked cargo-deny
 
 # 本项目使用 Makefile + git hooks 替代 pre-commit
-# git hooks 自动跑：cargo fmt --all + cargo clippy --workspace -- -D warnings
-git config core.hooksPath .git/hooks  # 默认即可
+# .githooks/pre-commit 自动跑：cargo fmt --all --check、workspace clippy
+# （排除 bridge/sandbox）与 cargo check-all
+git config core.hooksPath .githooks
 ```
 
 CI 与本地验证脚本：
 
 ```bash
 make ci-quick         # fmt + clippy + 单元测试（约 2 分钟）
-make ci-bridge        # 含 bridge 集成测试（约 15 分钟）
-make dev              # ci-quick + ci-bridge（完整本地验证）
+make ci-bridge        # bridge 单独 clippy（重型 crate 隔离）
+make dev              # ci-quick + ci-bridge
 ```
 
 ### 3. 跑测试
@@ -58,8 +59,8 @@ make dev              # ci-quick + ci-bridge（完整本地验证）
 # 快速（CI 等价、约 2 分钟）
 make ci-quick
 
-# 完整（含 bridge/sandbox，约 15 分钟）
-make ci-bridge
+# 重型 crate 默认不在 workspace 测试里，需逐个显式跑
+cargo test -p sisyphus-tests -p sisyphus-sandbox -p sisyphus-sandboxd -p sisyphus-bridge
 
 # 单 crate 深度测试
 cargo test -p sisyphus-core --lib
@@ -244,7 +245,7 @@ Closes: #123
 1. **bump 版本**：`crates/*/Cargo.toml` 与 `webui/Cargo.toml`、`evals/Cargo.toml`
    的 `[package] version` 以及内部 path 依赖的 `version = "x.y.z"` 约束需同步修改
    ——用 `make bump-version VERSION=x.y.z`（先加 `DRY=1` 看 diff），不要手改：
-   版本号在仓库里出现 147 处，漏一处 `make release-check` 才会红
+   版本号在仓库里出现上百处（精确计数以 scripts/bump_version.py 输出为准），漏一处 `make release-check` 才会红
 2. 更新 `CHANGELOG.md`：`[Unreleased]` → `[vx.y.x] - <日期>`，并在其**之前**
    插入新的空 `[Unreleased]` 段
 3. 更新 `book/src/configuration.md` 的版本号引用

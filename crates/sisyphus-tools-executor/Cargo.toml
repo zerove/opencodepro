@@ -14,21 +14,16 @@ sisyphus-tools-mcp = { version = "0.4.0", path = "../sisyphus-tools-mcp" }
 sisyphus-tools-llm = { version = "0.4.0", path = "../sisyphus-tools-llm" }
 sisyphus-tools-llm-tools = { version = "0.4.0", path = "../sisyphus-tools-llm-tools" }
 sisyphus-tools-system = { version = "0.4.0", path = "../sisyphus-tools-system" }
-sisyphus-bridge-api = { version = "0.4.0", path = "../sisyphus-bridge-api" }
 sisyphus-types = { version = "0.4.0", path = "../sisyphus-types" }
 tokio = { version = "1.0", features = ["process", "fs", "io-util", "time", "rt", "macros"] }
 serde_json = { workspace = true }
-tracing = { workspace = true }
 async-trait = { workspace = true }
 base64 = "0.22"
-chrono = "0.4"
+jiff = { workspace = true }
 urlencoding = "2.1"
 
 metrics = "0.24"
 
 [dev-dependencies]
 tempfile = "3"
-base64 = "0.22"
-chrono = "0.4"
-urlencoding = "2.1"
 sisyphus-tools-session = { version = "0.4.0", path = "../sisyphus-tools-session" }

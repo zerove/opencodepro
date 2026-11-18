@@ -10,6 +10,7 @@ license = "MIT"
 
 [dependencies]
 async-trait = { workspace = true }
+jiff = { workspace = true }
 petgraph = "0.6"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -22,10 +23,9 @@ imbl = { version = "2", features = ["serde"] }
 dashmap = "6.1"
 notify = "6.0"
 uuid = { version = "1.0", features = ["v4"] }
-tokio = { version = "1.0", features = ["rt", "macros", "sync", "fs", "time"] }
+tokio = { version = "1.0", features = ["rt", "macros", "sync", "time"] }
 
 [dev-dependencies]
 proptest = "1"
-tokio = { version = "1.0", features = ["rt", "macros", "time"] }
 tempfile = "3"
 

@@ -35,9 +35,9 @@ sisyphus/
 ## 快速开始
 
 ```bash
-# 方式 1: 从源码安装（开发推荐）
-cargo install sisyphus-cli
-sisyphus
+# 方式 1: 从源码构建（开发推荐；本仓库 crate 未发布到 crates.io）
+cargo build --release -p sisyphus-cli
+./target/release/sisyphus
 
 # 方式 2: 用 Docker（生产推荐）
 docker pull ghcr.io/zerove/sisyphus-bridge:latest
@@ -105,16 +105,15 @@ sisyphus --bridge http://localhost:50051
 完整选项见 `config.example.toml`。关键设置：
 
 ```toml
-[bridge]
-address = "[::1]:50051"
+# 监听地址（顶层字段；也可用 SISYPHUS_BRIDGE_ADDRESS 等环境变量覆盖）
+bridge_address = "http://[::1]:50051"
+http_address = "http://[::1]:8080"
+auth_token = ""  # 生产环境务必设置
 
 [llm]
-provider = "openai"
-model = "gpt-4"
-
-[tools]
-shell_enabled = true
-file_access_root = "."
+api_key = ""  # 建议通过 SISYPHUS_LLM_API_KEY 环境变量设置
+endpoint = "http://localhost:8000/v1/chat/completions"
+model = "gpt-4o"
 ```
 
 环境变量可用 `{env:VAR}` 或 `{env:VAR|default}` 替换。

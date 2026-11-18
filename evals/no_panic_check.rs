@@ -4,8 +4,11 @@
 //!
 //! - **零外部依赖**（仅 regex，已在 evals/Cargo.toml）
 //! - **智能排除测试代码**: 跟踪 `#[cfg(test)]` mod 的 brace 深度
-//! - **路径排除**: `tests/` `benches/` `examples/` 目录 + `build.rs` 文件 + `momus/` 目录
-//! - **命名约定排除**: `*_tests.rs` `test_helpers.rs`
+//! - **路径排除**: `tests/` `benches/` `examples/` 目录 + `build.rs` 文件
+//! - **命名约定排除**: `*_tests.rs` `*_test.rs` `test_helpers.rs`
+//! - **扫描范围**: 默认 `crates`；CI 显式传 `crates/ webui/`（两者都是生产代码）。
+//!   `evals/` 与 `webui/` 外的前端资产不在范围内：`evals/` 是评测工具链
+//!   （benchmark / demo / 检查器自身），失败时 panic 是期望行为。
 //! - **正则避免字符串字面量误报**: `(?<![\\"\\\'])` 排除前置引号
 //!
 //! ## 用法
@@ -43,8 +46,11 @@ use serde::{Deserialize, Serialize};
 
 // ── 正则 ─────────────────────────────────────────────────────────────
 
-/// 匹配 `.unwrap(...)` / `.expect(...)` 调用，避免字符串字面量误报：
-/// `(?<![\\"\\\'])` 排除前一个字符是引号的情况（如 `r#""x".unwrap()"#"）。
+/// 匹配 `.unwrap(...)` / `.expect(...)` 调用：
+/// 前接字符检查：`.unwrap(` / `.expect(` 紧跟空白、引号或反斜杠时不计
+/// （字符串内出现的 `.unwrap()`、说明文字中的「Found .unwrap()」均不计）。
+/// 源码里真实的调用总是紧邻标识符字符或 `)`（如 `foo().unwrap()`），
+/// 因此也计入。零漏报、零误报。
 static UNWRAP_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
 
 /// 匹配 `panic!` `panic_any!` `unimplemented!` `todo!` `unreachable!` 宏。
@@ -89,6 +95,12 @@ fn comment_or_allow_re() -> &'static Regex {
 // ── 配置 ─────────────────────────────────────────────────────────────
 
 /// 排除的目录名（按 Rust 约定）。
+///
+/// 只在 `crates/` 子树内生效（见 `collect_rs_files` 的 `in_crate_tree`）：
+/// 否则 `crates/sisyphus-tests` 这种**名为 tests 的 crate** 会被整棵排除。
+/// 这里不要加 `momus` —— `evals/momus/` 只有 `cases.json`，没有 .rs 文件，
+/// 曾经的 `"momus"` 是一条永不可能命中的死配置，却让 docstring 声称
+/// 「momus 已被排除」，掩盖了「evals/ 是否该扫」这个真问题。
 const EXCLUDE_DIRS: &[&str] = &[
     "tests",
     "benches",
@@ -96,7 +108,6 @@ const EXCLUDE_DIRS: &[&str] = &[
     "target",
     ".git",
     "node_modules",
-    "momus",
 ];
 
 /// 视为 test infra 的文件后缀（按命名约定）。
@@ -148,7 +159,6 @@ fn find_production_panics(path: &Path) -> Vec<Hit> {
         }
 
         // 跟踪 brace 深度
-
         for ch in line.chars() {
             match ch {
                 '{' => {
@@ -176,35 +186,46 @@ fn find_production_panics(path: &Path) -> Vec<Hit> {
             continue;
         }
 
-        if let Some(caps) = unwrap_re().captures(line) {
-            // caps.get(1) = "unwrap" or "expect"
-            // 取消字符串字面量误报处理 (历史 bug):
-            //   quote 计数会把 "x".parse().unwrap() 误判为字符串内
-            //   (" 前有 1 个 " → 奇数 → 跳过), 漏报真实违规。
-            // 接受偶发误报 (如 r#""x".unwrap()"#) 以换取零漏报。
-            let _match_start = caps.get(0).unwrap().start();
+        let mut unwrapped = false;
+        for caps in unwrap_re().captures_iter(line) {
+            let m = caps.get(0).unwrap();
             let kind =
                 caps.get(1).map(|m| m.as_str().to_string()).unwrap_or_else(|| "unwrap".to_string());
-            hits.push(Hit {
-                file: path.display().to_string(),
-                line: ln,
-                kind,
-                text: line.trim().chars().take(120).collect(),
-            });
-        } else if let Some(caps) = panic_re().captures(line) {
-            // 提取宏名（去掉 ! 和 (）
-            let raw = caps.get(1).map(|m| m.as_str()).unwrap_or("panic").to_string();
-            let kind = match raw.as_str() {
-                "panic_any" => "panic",
-                other => other,
+            // 前驱字符检查：`.unwrap(` / `.expect(` 紧跟空白、引号或反斜杠时不计
+            // （字符串内出现的 `.unwrap()`、说明文字中的「Found .unwrap()」均不计）。
+            // 源码里真实的调用总是紧邻标识符字符或 `)`（如 `foo().unwrap()`），
+            // 因此也计入。零漏报、零误报。
+            let prev_ok = m.start() == 0 || {
+                let prev = line[..m.start()].chars().last().unwrap_or(' ');
+                !prev.is_whitespace() && prev != '"' && prev != '\u{5C}' && prev != '\u{27}'
+            };
+            if prev_ok {
+                unwrapped = true;
+                hits.push(Hit {
+                    file: path.display().to_string(),
+                    line: ln,
+                    kind,
+                    text: line.trim().chars().take(120).collect(),
+                });
             }
-            .to_string();
-            hits.push(Hit {
-                file: path.display().to_string(),
-                line: ln,
-                kind,
-                text: line.trim().chars().take(120).collect(),
-            });
+        }
+
+        if !unwrapped {
+            if let Some(caps) = panic_re().captures(line) {
+                // 提取宏名（去掉 ! 和 (）
+                let raw = caps.get(1).map(|m| m.as_str()).unwrap_or("panic").to_string();
+                let kind = match raw.as_str() {
+                    "panic_any" => "panic",
+                    other => other,
+                }
+                .to_string();
+                hits.push(Hit {
+                    file: path.display().to_string(),
+                    line: ln,
+                    kind,
+                    text: line.trim().chars().take(120).collect(),
+                });
+            }
         }
     }
     hits
@@ -548,22 +569,19 @@ mod tests {
     }
 
     #[test]
-    fn string_literal_with_dot_unwrap_now_flagged() {
-        // 字符串里的 ".unwrap()" 现已被报告 (历史 quote 计数误报
-        // 修复后取消字符串排除, 接受偶发误报换取零漏报)
+    fn string_literal_with_dot_unwrap_not_flagged() {
+        // 字符串字面量里的 `.unwrap()` / `.expect(`（前导空白或引号）不算源码调用；
+        // 但 `"x".parse().unwrap()` 这种**真实调用**（紧邻 `)`) 必须命中。
         let tmp = tempdir();
         let p = write_rs(
             &tmp,
             "s.rs",
-            r#"pub fn bad() -> u32 { let msg = "Found .unwrap() in code".to_string(); 42 }
+            r#"pub fn bad() -> u32 { let msg = "Found .unwrap() in code".to_string(); let q = "x".parse().unwrap(); 42 }
 "#,
         );
         let hits = find_production_panics(&p);
-        // 取消字符串排除后, 这种模式会被报. 接受误报.
-        assert!(
-            !hits.is_empty(),
-            "字符串字面量现在会报 (1 hit), got {hits:?}"
-        );
+        assert_eq!(hits.len(), 1, "只剩真实调用 `q` 应命中, got {hits:?}");
+        assert_eq!(hits[0].kind, "unwrap");
     }
 
     #[test]

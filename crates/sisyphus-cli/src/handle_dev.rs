@@ -291,7 +291,7 @@ fn write_dev_task_record(
         // 不同版本的样本混在一个扁平目录里聚合，比率变化可能只是样本构成变了。
         engine_commit: revision.as_ref().map(|r| r.commit.clone()),
         engine_dirty: revision.as_ref().map(|r| r.dirty),
-        recorded_at: chrono::Utc::now().to_rfc3339(),
+        recorded_at: sisyphus_types::time::now_iso(),
     };
 
     if let Some(parent) = path.parent() {

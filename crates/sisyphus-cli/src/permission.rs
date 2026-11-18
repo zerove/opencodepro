@@ -246,7 +246,7 @@ impl CliPermission {
                 .with_context(|| format!("创建审计目录失败: {}", parent.display()))?;
         }
         let entry = PermissionAuditEntry {
-            ts: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            ts: sisyphus_types::time::now_iso(),
             tool: tool.to_string(),
             decision: decision.decision.as_str().to_string(),
             source: decision.source.as_audit_str(),

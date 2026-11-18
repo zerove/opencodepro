@@ -136,7 +136,6 @@ impl EvalRunner {
                 registry: HookRegistry::new(),
                 llm_client,
                 feedback_store: Arc::new(FeedbackStore::default_dir()),
-                bridge_client: None,
             },
         }
     }

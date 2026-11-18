@@ -362,13 +362,14 @@ audit-docker-release:
 # 勾选完成，生产链路却从未跑通）靠人记是拦不住的。历史条目登记在
 # scripts/todo_baseline.txt（ratchet，只减不增），新增勾选无证据直接失败。
 todo-audit:
-	@python3 scripts/audit_todo.py
+	@python3 scripts/audit_todo.py --strict-stale
 	@python3 scripts/audit_todo.py --self-check
 
 # 语义退化检查（ADR-021 决策 1 的可自动化切片）：静态门禁只证明「测试存在」，
-# 不证明「测试在验这件事」。这里查两类客观可判的退化——证据测试函数体里没有
-# 任何断言/失败期望信号（空壳证据、或只剩 todo!()）、以及同一测试被**不同章节**
-# 的勾选项复用（至少一节的证据是借来的）。其余语义相关性仍是人工抽样，脚本不假装覆盖。
+# 不证明「测试在验这件事」。这里查三类客观可判的退化——证据测试函数体里没有
+# 任何断言/失败期望信号（空壳证据）、含 todo!()/unimplemented!() 的桩、以及
+# 同一测试被**不同章节**的勾选项复用（至少一节的证据是借来的）。其余语义相关性
+# 仍是人工抽样，脚本不假装覆盖。
 audit-todo-semantic:
 	@python3 scripts/audit_todo_semantic.py
 	@python3 scripts/audit_todo_semantic.py --self-check
@@ -411,13 +412,15 @@ audit-links:
 # 全部结构审计（不需编译）
 audit: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release audit-doc-counts audit-version audit-links todo-audit audit-todo-semantic audit-llm-spawns version-tool
 
-# 版本 bump 脚本的判别用例。版本号在仓库里出现 147 处（27 个 [package]
-# version + 内部 path 依赖约束），手改必漏；而脚本本身最危险的失败模式是
-# **把第三方依赖的版本当成自己的改掉**——那种错误编译期发现不了。
+# 版本 bump 脚本的判别用例。版本号在仓库里出现上百处（27 个 [package]
+# version + 内部 path 依赖约束；精确计数以脚本输出为准），手改必漏；而脚本
+# 本身最危险的失败模式是**把第三方依赖的版本当成自己的改掉**——那种错误
+# 编译期发现不了。先跑 --check 对账当前 workspace 版本，再跑判别用例自检。
 version-tool:
+	@python3 scripts/bump_version.py --check
 	@python3 scripts/bump_version.py --self-check
 
-.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release audit-doc-counts todo-audit audit-todo-semantic audit-llm-spawns version-tool audit
+.PHONY: audit-orphans audit-ignored audit-test-state audit-workflows audit-dockerfile audit-docker-release audit-doc-counts audit-version audit-links todo-audit audit-todo-semantic audit-llm-spawns version-tool audit
 
 # 统一 bump workspace 版本号（[package] version + 内部 path 依赖约束）。
 # 先 --dry-run 看改动，再实际写入，最后 `make release-check` 复核。
@@ -476,11 +479,17 @@ smoke-bridge-record:
 #   - -- --include-ignored --test-threads=1  跑全部用例且串行，避免共享状态互扰
 #
 #   用法：
-#     make test-bridge-dedicated          # 全部用例（含 ignore）
+#     make test-bridge-dedicated          # 全部 lib 用例（含 ignore）
 #     make test-bridge-dedicated FILTER=test_execute_tool_strategic_next_goal_missing_project  # 单用例
+#
+#   注意：`--include-ignored` 对 `--test bridge_integration_test` 是空操作——
+#   该文件已无 `#[ignore]`（335/378 行只是注释在讲历史）。真正需要专用运行器
+#   的是 lib 里的 6 条：sandboxd_client 的 3 条（要拉起本地 sandboxd 进程）
+#   与 peer/control_plane 的 3 条（ADR-019 要真实端口与时序）。所以这里跑
+#   `--lib`；控制面那 3 条另有更窄的 `test-control-plane-dedicated`。
 
 test-bridge-dedicated: $(BRIDGE_DEPS)
-	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-bridge --no-default-features --test bridge_integration_test -- --include-ignored --test-threads=1 $(if $(FILTER),$(FILTER) --exact,)
+	CARGO_BUILD_JOBS=1 cargo test -p sisyphus-bridge --no-default-features --lib -- --include-ignored --test-threads=1 $(if $(FILTER),$(FILTER) --exact,)
 
 # ADR-019 控制面专用运行器矩阵（in-process gRPC + 本地端口/时序；见 docs/benchmarks/control-plane-dedicated-runner-evidence-*.md）
 .PHONY: test-control-plane-dedicated

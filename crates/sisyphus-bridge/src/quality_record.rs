@@ -124,7 +124,7 @@ pub(crate) fn record_execution(
         completion_tokens,
         revision.as_ref(),
         now_ms(),
-        chrono::Utc::now().to_rfc3339(),
+        sisyphus_types::time::now_iso(),
     );
 
     if let Err(e) = write_record(&dir, &record.task_id, &record) {

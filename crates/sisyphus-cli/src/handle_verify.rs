@@ -214,7 +214,7 @@ fn write_task_record(path: &PathBuf, report: &VerifyFixReport) -> Result<()> {
         // 同 `dev --record`：记录引擎版本，否则指标无法归因到具体版本。
         engine_commit: revision.as_ref().map(|r| r.commit.clone()),
         engine_dirty: revision.as_ref().map(|r| r.dirty),
-        recorded_at: chrono::Utc::now().to_rfc3339(),
+        recorded_at: sisyphus_types::time::now_iso(),
     };
 
     if let Some(parent) = path.parent() {

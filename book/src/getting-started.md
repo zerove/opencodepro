@@ -9,8 +9,8 @@
 | 组件 | 要求 | 说明 |
 |-----------|-------------|-------|
 | **Rust** | `nightly-2026-08-08`（见 `rust-toolchain.toml`） | 版本由仓库 pin，`rustup` 会自动安装；不要手动装浮动 nightly（rustfmt 输出会漂移）。 |
-| **Go** | 1.21+ | 构建 Go SDK（`crates/sisyphus-sdk-go`）所需。 |
-| **Node.js** | 20+ | TypeScript SDK 与 MCP 工具服务器（`workers/ts-tools-mcp`）所需。 |
+| **Go** | 1.21+ | 构建 Go SDK（`ide/go-sdk`）所需。 |
+| **Node.js** | 20+ | TypeScript SDK（`ide/typescript-sdk`）与 MCP 工具服务器（`crates/sisyphus-tools-mcp`）所需。 |
 | **操作系统** | Linux / macOS | Windows 暂不支持 bridge 与 sandbox。 |
 
 安装 Rust（版本由 `rust-toolchain.toml` 决定，进入仓库目录后 `rustup` 会自动安装）：

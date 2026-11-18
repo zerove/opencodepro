@@ -197,11 +197,15 @@ impl AssetManager {
 
         // Ensure parent directory exists
         if let Some(parent) = self.storage_path.parent() {
-            std::fs::create_dir_all(parent)
+            // tokio::fs 而非 std::fs：这两个方法在 async 上下文里被调用，
+            // 同步文件 I/O 会阻塞 runtime worker 线程（大图快照的写入尤其明显）。
+            tokio::fs::create_dir_all(parent)
+                .await
                 .map_err(|e| KnowledgeError::StorageError(e.to_string()))?;
         }
 
-        std::fs::write(&self.storage_path, &json)
+        tokio::fs::write(&self.storage_path, &json)
+            .await
             .map_err(|e| KnowledgeError::StorageError(e.to_string()))?;
 
         Ok(())
@@ -209,11 +213,14 @@ impl AssetManager {
 
     /// Load the knowledge graph from disk.
     pub async fn load(&self) -> Result<(), KnowledgeError> {
-        if !self.storage_path.exists() {
-            return Ok(()); // no file yet, start fresh
+        match tokio::fs::try_exists(&self.storage_path).await {
+            Ok(false) => return Ok(()), // no file yet, start fresh
+            Ok(true) => {},
+            Err(e) => return Err(KnowledgeError::StorageError(e.to_string())),
         }
 
-        let json = std::fs::read_to_string(&self.storage_path)
+        let json = tokio::fs::read_to_string(&self.storage_path)
+            .await
             .map_err(|e| KnowledgeError::StorageError(e.to_string()))?;
 
         let snapshot: KnowledgeSnapshot =

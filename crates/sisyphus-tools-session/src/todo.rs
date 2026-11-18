@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sisyphus_tools_core::{ToolError, ToolResult};
+use sisyphus_types::time::now_iso;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -135,24 +136,6 @@ impl TodoStore {
         // 原子写：避免并发读看到半截 JSON（解析失败会被 load_or_empty 静默当成空列表）
         crate::atomic_write::write_atomic(path, content.as_bytes()).map_err(ToolError::Io)
     }
-}
-
-fn now_iso() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-    let secs = dur.as_secs();
-    let millis = dur.as_millis() % 1000;
-    let secs_in_day = secs % 86400;
-    let hours = secs_in_day / 3600;
-    let minutes = (secs_in_day % 3600) / 60;
-    let seconds = secs_in_day % 60;
-
-    let days_since_epoch = secs / 86400;
-    let year = 1970 + (days_since_epoch as f64 / 365.25) as u64;
-    let month = 1 + ((days_since_epoch % 365) as f64 / 30.44) as u64;
-    let day = 1 + ((days_since_epoch % 365) as f64 % 30.44) as u64;
-
-    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}.{millis:03}Z")
 }
 
 /// Todo add.

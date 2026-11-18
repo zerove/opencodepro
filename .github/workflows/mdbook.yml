@@ -43,15 +43,12 @@ jobs:
           # 完整历史（mdbook preprocessor 可能引用 git log）
           fetch-depth: 0
 
-      # 仓库有 rust-toolchain.toml，cargo 会按它解析工具链。显式先装好，
-      # 避免 `cargo install` 在构建中途才发现要下载一整个 nightly。
-      - name: Install Rust toolchain
-        uses: ./.github/actions/setup-rust
-
+      # 预编译二进制，避免每次构建都现场 `cargo install` 编译（因此也不再
+      # 需要预先安装 Rust 工具链；book.toml 里没有 Rust 预处理器）。
       - name: Install mdbook
-        run: |
-          # mdbook 0.5+ 支持增量构建：增量检测由 mdbook 自身完成
-          cargo install mdbook --locked --version "^0.5"
+        uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook@0.5
 
       - name: Cache book build artifacts
         # key 包含 book 文件 hash 摘要 → 仅当内容变化时失效
@@ -59,7 +56,6 @@ jobs:
         with:
           path: |
             book/book
-            ~/.cargo/registry
           key: mdbook-${{ hashFiles('book/**/SUMMARY.md', 'book/book.toml') }}
           restore-keys: |
             mdbook-
@@ -142,15 +138,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 预编译二进制，避免每次 PR 检查都现场 `cargo install` 编译。
       - name: Install mdbook
-        run: cargo install mdbook --locked --version "^0.5"
+        uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook@0.5
 
       - name: Cache
         uses: actions/cache@v4
         with:
           path: |
             book/book
-            ~/.cargo/registry
           key: mdbook-pr-${{ hashFiles('book/**/SUMMARY.md', 'book/book.toml') }}
           restore-keys: |
             mdbook-pr-

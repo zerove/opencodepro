@@ -2,7 +2,7 @@
 //!
 //! Provides access-token issuance and validation.
 
-use chrono::{Duration, Utc};
+use jiff::Timestamp;
 use jsonwebtoken::{
     decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
 };
@@ -59,14 +59,16 @@ impl JwtService {
         roles: Vec<String>,
         project_ids: Vec<String>,
     ) -> Result<String, jsonwebtoken::errors::Error> {
-        let now = Utc::now();
-        let exp = now + Duration::seconds(self.config.access_ttl_secs);
+        let now = Timestamp::now();
+        // exp 只需秒级整数（JWT `exp` claim 的单位就是 Unix 秒），
+        // 不必构造 Duration 再相加。
+        let exp_secs = now.as_second() + self.config.access_ttl_secs;
         let jti = Uuid::new_v4().to_string();
 
         let claims = Claims {
             sub: user_id.to_string(),
-            iat: now.timestamp(),
-            exp: exp.timestamp(),
+            iat: now.as_second(),
+            exp: exp_secs,
             typ: "access".to_string(),
             roles,
             project_ids,

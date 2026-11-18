@@ -64,7 +64,10 @@ opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic"] }
 opentelemetry_sdk = { version = "0.32", features = ["rt-tokio"] }
 opentelemetry-semantic-conventions = "0.32"
 tracing-opentelemetry = "0.33"
-chrono = "0.4"
+# 时间戳/时区：chrono 全版本已进 RUSTSEC-2026-0543（unmaintained）。
+# 迁移到 jiff（RFC 3339 / RFC 9557 的正确实现，含 DST 感知的 Zoned）后
+# 不再需要豁免该 advisory。见 deny.toml 的注记。
+jiff = { version = "0.1", features = ["serde"] }
 jsonwebtoken = "9"
 
 [profile.dev]

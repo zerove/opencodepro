@@ -3,7 +3,7 @@
 
 ## 为什么需要脚本
 
-版本号在仓库里出现 148 次：27 个 crate 的 `[package] version`，加上内部依赖
+版本号在仓库里出现上百处：27 个 crate 的 `[package] version`，加上内部依赖
 `sisyphus-* = { path = "...", version = "x.y.z" }` 的约束。手改必漏——历史上
 `evals/Cargo.toml` 的 6 处 path 依赖就因为漏了 `version` 约束，让
 `cargo package` 报 “all dependencies must have a version requirement
@@ -22,6 +22,7 @@ specified when packaging”，而 `cargo check` 完全看不出来（本地构�
     python3 scripts/bump_version.py 0.3.0 --dry-run   # 打印将要改的行
     python3 scripts/bump_version.py 0.3.0             # 实际写入
     python3 scripts/bump_version.py 0.3.0 --check     # 只校验（CI / bump 后自查）
+    python3 scripts/bump_version.py --check           # 以当前 workspace 版本为基准校验
     python3 scripts/bump_version.py --self-check      # 判别用例自检
 
 退出码：0 成功 / 通过；1 校验失败；2 参数或自检错误。
@@ -152,6 +153,17 @@ def run(root: Path, target: str, dry_run: bool) -> int:
     return 0
 
 
+def workspace_version(root: Path) -> str:
+    """当前 workspace 版本（取第一个成员的 `[package] version`）。
+
+    `--check` 不带目标版本时用它作为基准，这样 CI 不需要把版本号再抄一遍
+    （抄进 workflow 的版本号会随 bump 漂移）。
+    """
+    manifests = workspace_members(root)
+    first = tomllib.loads(manifests[0].read_text(encoding="utf-8"))
+    return first["package"]["version"]
+
+
 def check(root: Path, target: str) -> int:
     """只校验：任何 manifest 与目标版本不一致即失败（不写文件）。"""
     manifests = workspace_members(root)
@@ -246,8 +258,10 @@ def main() -> int:
     if args.self_check:
         return self_check()
 
+    if args.check and not args.version:
+        args.version = workspace_version(ROOT)
     if not args.version:
-        parser.error("需要目标版本（或用 --self-check）")
+        parser.error("需要目标版本（或用 --check / --self-check）")
     if not SEMVER_RE.match(args.version):
         parser.error(f"版本号格式非法：{args.version}")
 

@@ -1,4 +1,3 @@
-use sisyphus_bridge_api::client::BridgeClient;
 use sisyphus_tools_core::ToolError;
 use sisyphus_tools_llm::metis::LlmClient;
 use std::sync::Arc;
@@ -48,7 +47,6 @@ pub struct BuiltinToolExecutor {
     pub registry: sisyphus_tools_core::hook::HookRegistry,
     pub llm_client: Arc<dyn LlmClient>,
     pub feedback_store: Arc<sisyphus_tools_core::feedback::FeedbackStore>,
-    pub bridge_client: Option<BridgeClient>,
 }
 
 #[async_trait::async_trait]
@@ -114,7 +112,7 @@ impl sisyphus_types::ToolExecutor for BuiltinToolExecutor {
                         "lsp_symbol_search" => {
                             let v = serde_json::from_slice(&enriched_args)
                                 .map_err(|e| ToolError::InvalidInput(e.to_string()))?;
-                            util_cmds::cmd_lsp_symbol_search(&self_ref, v).await
+                            util_cmds::cmd_lsp_symbol_search(v)
                         },
                         "dependency_graph" => {
                             let v = serde_json::from_slice(&enriched_args)
@@ -277,7 +275,6 @@ mod tests {
             registry: sisyphus_tools_core::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
             feedback_store: Arc::new(sisyphus_tools_core::feedback::FeedbackStore::default_dir()),
-            bridge_client: None,
         }
     }
 

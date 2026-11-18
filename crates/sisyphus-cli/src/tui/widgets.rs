@@ -13,16 +13,8 @@ use crate::tui::theme::Theme;
 
 // ── 滚动指示器 ───────────────────────────────────
 
-/// 将滚动位置格式化为 "pos/total (pct%)"。
-/// 当 total <= 1（无需滚动）时返回空字符串。
-pub fn scroll_pct(pos: usize, total: usize) -> String {
-    if total <= 1 {
-        String::new()
-    } else {
-        let pct = (pos as f64 / (total.saturating_sub(1) as f64) * 100.0).round() as u8;
-        format!(" {pos}/{total} ({pct}%) ")
-    }
-}
+// 实现在 `helpers`；这里 re-export 保持既有调用路径（dialog/renders.rs）。
+pub use super::helpers::scroll_pct;
 
 // ── 通用列表渲染器 ──────────────────────────────
 

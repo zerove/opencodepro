@@ -1,4 +1,3 @@
-use crate::executor::BuiltinToolExecutor;
 use serde_json::{json, Value};
 use sisyphus_types::{ToolError, ToolResult};
 
@@ -128,31 +127,22 @@ pub async fn cmd_type_check(args: Value) -> Result<Vec<u8>, ToolError> {
 /// LSP command: search for symbols (functions, types, etc.) matching a query.
 ///
 /// Args (JSON): { `query`, `crate_name` (optional), `kind` (optional filter) }
-pub async fn cmd_lsp_symbol_search(
-    executor: &BuiltinToolExecutor,
-    args: Value,
-) -> Result<Vec<u8>, ToolError> {
+///
+/// 当前**没有**接入真实 LSP：返回空结果并显式说明，而不是编造符号位置。
+/// 历史实现会返回两条写死的假记录（其中 `crates/sisyphus-tools/...` 这个
+/// 路径在整个 workspace 里并不存在），下游 LLM 会把它们当成真实发现——
+/// 「看起来实现、实际撒谎」比返回空结果危险得多。
+pub fn cmd_lsp_symbol_search(args: Value) -> Result<Vec<u8>, ToolError> {
     let query = args.get("query").and_then(|q| q.as_str()).ok_or_else(|| {
         ToolError::InvalidInput("Missing required param: query (string)".to_string())
     })?;
 
-    // 1. Attempt real bridge call if available
-    if let Some(bridge) = &executor.bridge_client {
-        match bridge.execute_tool("lsp_symbol_search", args.clone()).await {
-            Ok(res) => return to_vec(&res),
-            Err(e) => {
-                tracing::warn!(error = %e, "LSP bridge call failed, falling back to simulation");
-            },
-        }
-    }
-
-    // 2. Fallback: Simulate LSP search
-    let results = vec![
-        json!({ "name": query, "location": "crates/sisyphus-core/src/kernel.rs:120", "kind": "Function" }),
-        json!({ "name": format!("{}_impl", query), "location": "crates/sisyphus-tools/src/executor/mod.rs:45", "kind": "Struct" }),
-    ];
-
-    to_vec(&json!({ "symbols": results }))
+    to_vec(&json!({
+        "symbols": [],
+        "query": query,
+        "note": "lsp_symbol_search is not backed by a live LSP server; \
+                 results are intentionally empty rather than fabricated"
+    }))
 }
 
 /// Build command: emit a dependency graph for a crate in DOT or JSON format.
@@ -281,22 +271,26 @@ pub fn cmd_base64_convert(args: Value) -> Result<Vec<u8>, ToolError> {
 ///
 /// Args (JSON): { `input`, `from` ("rfc3339" | "epoch"), `to` ("rfc3339" | "epoch") }
 pub fn cmd_time_convert(args: Value) -> Result<Vec<u8>, ToolError> {
-    use chrono::{DateTime, Local, Utc};
-
     let time_str = args.get("time").and_then(|t| t.as_str()).ok_or_else(|| {
         ToolError::InvalidInput("Missing required param: time (string)".to_string())
     })?;
 
     let target_tz = args.get("timezone").and_then(|tz| tz.as_str()).unwrap_or("UTC");
 
-    // Try to parse ISO 8601
-    let dt = DateTime::parse_from_rfc3339(time_str)
-        .map_err(|e| ToolError::InvalidInput(format!("Invalid ISO 8601 time: {e}")))?
-        .with_timezone(&Utc);
+    // RFC 3339 / ISO 8601 → 绝对时刻。jiff 的 Timestamp 解析器同时接受
+    // `Z` 与 `+08:00` 偏移，语义与旧实现的 `parse_from_rfc3339` 一致。
+    let ts: jiff::Timestamp = time_str
+        .parse()
+        .map_err(|e| ToolError::InvalidInput(format!("Invalid ISO 8601 time: {e}")))?;
 
     let result = match target_tz {
-        "UTC" => dt.to_rfc3339(),
-        "Local" => dt.with_timezone(&Local).to_rfc3339(),
+        "UTC" => ts.to_string(),
+        "Local" => {
+            // 用系统时区换算后**只**输出偏移量（不用 `Zoned` 的 Display：
+            // 那会附上 `[Asia/Shanghai]` 这样的时区注解，不是纯 RFC 3339）。
+            let zoned = ts.to_zoned(jiff::tz::TimeZone::system());
+            ts.display_with_offset(zoned.offset()).to_string()
+        },
         _ => {
             return Err(ToolError::InvalidInput(format!(
                 "Unsupported timezone: {target_tz}"

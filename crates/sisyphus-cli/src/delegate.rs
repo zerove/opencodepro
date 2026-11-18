@@ -182,7 +182,6 @@ pub async fn run_team_with_config(
         registry: crate::tools::HookRegistry::new(),
         llm_client: dummy_llm,
         feedback_store: feedback,
-        bridge_client: None,
     });
 
     // 用规划 LLM 创建编排器

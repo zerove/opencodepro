@@ -8,6 +8,20 @@ use ratatui::{
 use super::super::widgets;
 use super::super::{App, DevFocus};
 
+/// 把 Unix 毫秒时间戳格式化为 `MM-DD HH:MM:SS`（UTC）。
+///
+/// 越界或格式化失败时回退到原始毫秒数字，不 panic。用
+/// `BrokenDownTime::to_string`（返回 `Result`）而不是 `Timestamp::strftime`
+/// 的 `Display`——后者在 `to_string()` 里遇到格式串错误会 panic。
+fn format_unix_millis(ms: i64) -> String {
+    jiff::Timestamp::from_millisecond(ms)
+        .ok()
+        .and_then(|ts| {
+            jiff::fmt::strtime::BrokenDownTime::from(ts).to_string("%m-%d %H:%M:%S").ok()
+        })
+        .unwrap_or_else(|| format!("{ms}ms"))
+}
+
 // ── 帮助对话框 ────────────────────────────────────────
 
 pub(super) fn render_workspace_list_dialog(frame: &mut ratatui::Frame, area: Rect, app: &App) {
@@ -953,9 +967,7 @@ pub(super) fn render_cognitive_trace_dialog(frame: &mut ratatui::Frame, area: Re
         .map(|row| {
             let time = if app.cog_trace_history_mode {
                 let ms = row.timestamp_ms as i64;
-                chrono::DateTime::from_timestamp_millis(ms)
-                    .map(|dt| dt.format("%m-%d %H:%M:%S").to_string())
-                    .unwrap_or_else(|| format!("{ms}ms"))
+                format_unix_millis(ms)
             } else {
                 format!("{:.1}s", row.timestamp_ms as f64 / 1000.0)
             };
@@ -1397,11 +1409,7 @@ pub(super) fn render_cognitive_summary_dialog(frame: &mut ratatui::Frame, area: 
         "─ Window ─",
         Style::default().fg(theme.primary).add_modifier(Modifier::BOLD),
     )));
-    let fmt_ts = |ms: u128| -> String {
-        chrono::DateTime::from_timestamp_millis(ms as i64)
-            .map(|dt| dt.format("%m-%d %H:%M:%S").to_string())
-            .unwrap_or_else(|| format!("{ms}ms"))
-    };
+    let fmt_ts = |ms: u128| -> String { format_unix_millis(ms as i64) };
     right_lines.push(Line::from(Span::raw(format!(
         "from: {}",
         fmt_ts(summary.first_timestamp_ms)

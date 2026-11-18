@@ -35,6 +35,7 @@ pub mod meta_learner;
 pub mod node;
 pub mod skill;
 pub mod strategy_weights;
+pub mod time;
 pub mod types;
 pub mod usage_scope;
 

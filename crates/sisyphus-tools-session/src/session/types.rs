@@ -6,6 +6,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+// 统一实现见 `sisyphus_types::time`；这里 re-export 保持既有调用路径。
+pub use sisyphus_types::time::now_iso;
+
 /// A single message in a session.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Message {
@@ -93,25 +96,6 @@ impl Default for CompressStrategy {
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────
-
-/// Now iso.
-pub fn now_iso() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-    let secs = dur.as_secs();
-    let millis = dur.as_millis() % 1000;
-    let secs_in_day = secs % 86400;
-    let hours = secs_in_day / 3600;
-    let minutes = (secs_in_day % 3600) / 60;
-    let seconds = secs_in_day % 60;
-
-    let days_since_epoch = secs / 86400;
-    let year = 1970 + (days_since_epoch as f64 / 365.25) as u64;
-    let month = 1 + ((days_since_epoch % 365) as f64 / 30.44) as u64;
-    let day = 1 + ((days_since_epoch % 365) as f64 % 30.44) as u64;
-
-    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}.{millis:03}Z")
-}
 
 /// Simple heuristic for token estimation: 1 token ≈ 4 characters.
 pub(super) fn estimate_tokens(text: &str) -> u64 {

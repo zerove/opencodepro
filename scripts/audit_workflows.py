@@ -448,11 +448,12 @@ def audit_scripts_wired(scripts, workflow_texts):
 
 
 # 门禁命令：除了审计脚本，还包括以命令形式调用的门禁工具。
-# 只按 *.py 发现会漏掉它们——check-jsonschema 与 cargo deny 同样是让 CI
-# 变红的关键检查，被 continue-on-error 吞掉的后果一样严重。
+# 只按 *.py 发现会漏掉它们——check-jsonschema、cargo deny 与 cargo machete
+# 同样是让 CI 变红的关键检查，被 continue-on-error 吞掉的后果一样严重。
 GATE_COMMANDS = (
     "check-jsonschema",
     "cargo deny",
+    "cargo machete",
 )
 
 
@@ -1199,6 +1200,13 @@ jobs:
             "name: w\non: push\njobs:\n  j:\n    steps:\n"
             "      - run: cargo deny check\n        continue-on-error: true\n",
             ["cargo deny"],
+        ),
+        (
+            "命令式门禁 cargo machete 被吞 -> 也算",
+            "name: w\non: push\njobs:\n  j:\n    steps:\n"
+            "      - run: cargo machete crates webui evals\n"
+            "        continue-on-error: true\n",
+            ["cargo machete"],
         ),
     ]:
         doc = yaml.safe_load(text)

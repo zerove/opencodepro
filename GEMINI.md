@@ -1,5 +1,13 @@
 # Sisyphus 26.0 — Cognitive Execution Engine
 
+> **归档快照（历史文档，未维护）**：本文是早期生成的竞争性项目说明，**不是权威
+> 来源**，且与当前实现有实质差异——例如它把核心循环写成
+> `Synthesize → Predict → Execute → Reflect → Evolve`（5 阶段），而权威描述是
+> 4 阶段的 `预测 → 执行 → 反思 → 演进`（`Synthesize` 是目标到 SOP 的合成阶段，
+> 不属于每轮认知循环）；文中的 crate 列表、版本号与测试计数同样已过时。
+> 以 `AGENTS.md`、`book/src/architecture.md` 与 `crates/sisyphus-core/src/` 为准。
+> 保留本文仅为历史参考，不要据此实现或对账。
+
 Asynchronous, memory-first cognitive engine for predictive SOP (Standard Operating Procedure) execution.
 Built in Rust with async-reactive architecture.
 

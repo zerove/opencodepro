@@ -44,8 +44,8 @@ impl PeerInfo {
 /// Peer 状态（用于 UI / 监控）
 ///
 /// 注：`last_seen` 字段类型 `Instant` 不实现 `Serialize`，所以 `PeerStatus`
-/// 不派生 `Serialize`/`Deserialize`。如需序列化可通过 `chrono::DateTime`
-/// 或自定义 ISO8601 string 转换。
+/// 不派生 `Serialize`/`Deserialize`。如需序列化可通过 `jiff::Timestamp`
+/// 转成 RFC 3339 字符串（与 `sisyphus_types::time::now_iso` 同口径）。
 #[derive(Clone, Debug)]
 pub struct PeerStatus {
     pub info: PeerInfo,

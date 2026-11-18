@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """审计 `#[ignore]` 的理由是否诚实。
 
-背景：本项目有 24 处 `#[ignore]`（实测，全在 crates/ 下），而 CI 从不使用
-`--include-ignored`——被忽略的测试等于没有覆盖。其中两处写着
+背景：本项目有二十余处 `#[ignore]`（数量随修复漂移，以 `--json` 实测为准；
+当前全在 crates/ 下），而 CI 从不使用 `--include-ignored`——被忽略的测试等于
+没有覆盖。其中两处写着
 `#[ignore = "requires dedicated runner"]`，但它们失败的原因不是资源受限，
 而是内核未注入、失败被吞成成功。把「测试红了」写成「环境受限」，会让真正
 的回归保护凭空消失且无人察觉。

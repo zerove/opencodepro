@@ -56,14 +56,17 @@ pub async fn run_watch(path: Option<&Path>) -> Result<()> {
 
     println!("Watching for plugin changes in {}...", tools_dir.display());
 
-    let mut last_mtime = std::fs::metadata(&tools_dir)?
+    let mut last_mtime = tokio::fs::metadata(&tools_dir)
+        .await?
         .modified()?
         .duration_since(std::time::UNIX_EPOCH)
         .context("Invalid modification time")?;
 
     loop {
         sleep(Duration::from_secs(2)).await;
-        if let Ok(metadata) = std::fs::metadata(&tools_dir) {
+        // 用 tokio::fs 而非 std::fs：这是长期驻留的监视循环，同步 metadata
+        // 调用会周期性阻塞 runtime worker（即便单次很快，累积效应不可忽视）。
+        if let Ok(metadata) = tokio::fs::metadata(&tools_dir).await {
             if let Ok(mtime) = metadata.modified() {
                 let current_mtime = mtime
                     .duration_since(std::time::UNIX_EPOCH)

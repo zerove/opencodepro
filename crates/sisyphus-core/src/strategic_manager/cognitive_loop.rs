@@ -17,7 +17,7 @@ use sisyphus_intel::reflect::ReflectionReport;
 use sisyphus_intel::{SimulationResult, SisyphusSupervisor};
 use sisyphus_mem::MfsStore;
 use sisyphus_types::SOPGraph;
-use sisyphus_types::{CognitiveEvent, CognitiveMetrics, ExecutionTrace};
+use sisyphus_types::{CognitiveEvent, CognitiveMetrics};
 
 use crate::cognitive_loop_v2::{AdaptiveDepthController, AnomalyDetector, AnomalyLog};
 use crate::{CoreError, ExecutionContext, ExecutionEvent, ExecutionStatus, Executor, NodeOutput};
@@ -285,7 +285,6 @@ impl StrategicManager {
         );
         let mut current_start = sop_graph.start_node;
         let mut iterations: Vec<CognitiveIteration> = Vec::with_capacity(max_iterations);
-        let _traces: Vec<ExecutionTrace> = Vec::with_capacity(max_iterations);
         let mut final_result = NodeOutput::default();
         let mut final_evolved: Option<Arc<SOPGraph>> = None;
         let initial_ctx_for_iter = initial_ctx;

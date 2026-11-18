@@ -3,6 +3,7 @@
 //! `SisyphusKernel` 实现的一部分，为可读性从 `kernel.rs` 拆出。
 //! 通过 `pub use kernel::*` 重新导出。
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use tokio::sync::mpsc;
@@ -516,7 +517,9 @@ impl SisyphusKernel {
         let sop_gate = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_SOPS));
 
         let mut failures: Vec<(String, String)> = Vec::new();
+        let mut failed_ids: HashSet<String> = HashSet::new();
         let mut blocked: Vec<String> = Vec::new();
+        let mut blocked_ids: HashSet<String> = HashSet::new();
 
         let mut results: HashMap<String, (NodeOutput, String)> = HashMap::with_capacity(order_len);
 
@@ -658,6 +661,7 @@ impl SisyphusKernel {
                     // 旧行为：`?` 提前返回，JoinSet 被 drop，所有在跑的兄弟
                     // SOP 随之中止（副作用已提交、无清理、无报告）。
                     failures.push((completed_id.clone(), e.to_string()));
+                    failed_ids.insert(completed_id.clone());
                     let mut queue: Vec<String> = composite
                         .dependencies
                         .iter()
@@ -665,13 +669,14 @@ impl SisyphusKernel {
                         .map(|d| d.target_sop_id.clone())
                         .collect();
                     while let Some(sid) = queue.pop() {
-                        if blocked.contains(&sid)
+                        if blocked_ids.contains(&sid)
                             || results.contains_key(&sid)
-                            || failures.iter().any(|(id, _)| *id == sid)
+                            || failed_ids.contains(&sid)
                         {
                             continue;
                         }
                         blocked.push(sid.clone());
+                        blocked_ids.insert(sid.clone());
                         queue.extend(
                             composite
                                 .dependencies

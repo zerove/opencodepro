@@ -2,22 +2,9 @@ mod types;
 pub use types::*;
 
 use sisyphus_tools_core::ToolResult;
+use sisyphus_types::time::now_iso;
 use std::fs;
 use std::path::Path;
-
-fn now_iso() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-    let secs = dur.as_secs();
-    let days_since_epoch = secs / 86400;
-    let year = 1970 + (days_since_epoch as f64 / 365.25) as u64;
-    let month = 1 + ((days_since_epoch % 365) as f64 / 30.44) as u64;
-    let day = 1 + ((days_since_epoch % 365) as f64 % 30.44) as u64;
-    let hours = (secs % 86400) / 3600;
-    let minutes = (secs % 3600) / 60;
-    let seconds = secs % 60;
-    format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
-}
 
 /// Create a new plan.
 pub fn plan_create(name: &str, description: &str, steps: Vec<PlanStep>) -> Plan {

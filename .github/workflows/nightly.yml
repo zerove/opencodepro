@@ -290,7 +290,8 @@ jobs:
         run: cargo test -p eval-runner --bin no-panic-check
       - name: Run no-panic-check vs baseline
         run: |
-          cargo run -p eval-runner --bin no-panic-check --             --baseline .sisyphus/quality/panic-baseline.json crates/
+          cargo run -p eval-runner --bin no-panic-check -- \
+            --baseline .sisyphus/quality/panic-baseline.json crates/ webui/
       - uses: actions/upload-artifact@v4
         if: always()
         with:

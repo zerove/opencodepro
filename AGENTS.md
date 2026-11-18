@@ -1,6 +1,6 @@
 # Sisyphus 项目知识库
 
-**生成时间:** 2026-08-10
+**最近更新:** 2026-11-18（初次生成 2026-08-10）
 **技术栈:** Rust 工作区 (27 成员 = crates/ 下 25 个 crate + webui + evals), async (tokio), gRPC (tonic), TUI (ratatui)
 
 ## 概述
@@ -179,10 +179,11 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
   CONTRIBUTING §发布流程。
 - **发布策略（2026-11-17 决策）**：本仓库 crate 永不发布到 crates.io，仅本地
   使用。27 个 manifest 已全覆盖 `publish = false`（`audit_version.py` 门禁
-  拦截回归）。历史上 `cargo package` 会去 crates.io 查 `sisyphus-bridge-api` /
-  `sisyphus-metrics` 等内部 crate 而失败（“no matching package named ...
-  found”），根因是内部 crate 未发布；现以 `publish = false` 彻底规避。
-  若将来确需对外发布，必须先整体发布内部 crate，或改用 workspace 依赖 +
+  拦截回归）。`publish = false` 只阻止误发布，**不会**让 `cargo package`
+  变得可用：它仍会去 crates.io 解析未发布的内部 path 依赖并报
+  “no matching package named ... found”（与 CONTRIBUTING §发布流程的
+  「已知限制」一致）。本仓库的发布产物是平台二进制 + Docker 镜像。
+  若将来确需发布 crate，必须先整体发布内部 crate，或改用 workspace 依赖 +
   私有 registry。
 - Release 构建已验证：`cargo build --release -p sisyphus-bridge -p sisyphus-sandboxd`
   均成功，产物可执行（`sisyphus-sandboxd --help` 正常）。

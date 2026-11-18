@@ -1,5 +1,10 @@
 # Sisyphus Project Dashboard
 
+> **归档快照（2026-07-31）**：本文件是历史状态快照，其中 crate 数量、测试数、
+> RPC/端点计数与 `sisyphus-api`/`sisyphus-sdk` 的 Production 标记均已过时
+> （两个 crate 已归档至 `ide/`）。当前状态以 CI 实跑输出与 `book/` 为准；
+> 不要更新本快照，也不要把它当作活文档引用。
+
 > **Auto-generated at:** 2026-07-31
 > **Commits:** 130+
 > **Workspace:** 21 crates + webui

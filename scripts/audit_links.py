@@ -209,7 +209,10 @@ def main() -> int:
         elif args.strict and soft:
             print("\n❌ strict 模式：%d 处软警告（连接失败/超时）升级为硬错误。" % len(soft), file=sys.stderr)
         else:
-            print("✅ 活文档链接全通（软警告 %d 个，不阻断）" % len(soft))
+            print(
+                "✅ 无死链（软警告 %d 个：连接失败/超时未能验证，不阻断）"
+                % len(soft)
+            )
     return 1 if (hard or (args.strict and soft)) else 0
 
 

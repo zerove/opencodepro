@@ -25,7 +25,7 @@ pub enum SseEvent {
     CognitiveIterationStarted {
         iteration: usize,
         goal_id: String,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// 认知迭代完成
     CognitiveIterationCompleted {
@@ -33,14 +33,14 @@ pub enum SseEvent {
         goal_id: String,
         deviation: f64,
         converged: bool,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// 节点执行开始
     NodeExecutionStarted {
         sop_id: String,
         node_id: String,
         node_name: String,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// 节点执行完成
     NodeExecutionCompleted {
@@ -49,72 +49,72 @@ pub enum SseEvent {
         node_name: String,
         success: bool,
         output: Option<serde_json::Value>,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// SOP 执行开始
     SopExecutionStarted {
         sop_id: String,
         goal_id: String,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// SOP 执行完成
     SopExecutionCompleted {
         sop_id: String,
         goal_id: String,
         success: bool,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// 混沌故障注入
     ChaosFaultInjected {
         fault_type: String,
         target: String,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// 混沌自动修复触发
     ChaosAutoFixTriggered {
         fault_count: u64,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// 技能安装
     SkillInstalled {
         skill_id: String,
         version: String,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// 技能卸载
     SkillUninstalled {
         skill_id: String,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// 插件加载
     PluginLoaded {
         plugin_id: String,
         version: String,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// 插件卸载
     PluginUnloaded {
         plugin_id: String,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// 工作区切换
     WorkspaceSwitched {
         workspace_id: String,
         workspace_name: String,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// 会话消息新增
     SessionMessageAdded {
         session_id: String,
         role: String,
         content: String,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
     /// 自定义事件
     Custom {
         event_type: String,
         payload: serde_json::Value,
-        timestamp: chrono::DateTime<chrono::Utc>,
+        timestamp: jiff::Timestamp,
     },
 }
 
@@ -124,7 +124,7 @@ impl SseEvent {
         Self::Custom {
             event_type,
             payload,
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         }
     }
 
@@ -275,7 +275,7 @@ impl SseEvent {
         SseEvent::Custom {
             event_type,
             payload: serde_json::Value::Object(payload),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         }
     }
 }
@@ -446,7 +446,7 @@ pub async fn sse_handler(
                 yield Ok::<axum::response::sse::Event, Infallible>(
                     axum::response::sse::Event::default()
                         .event("heartbeat")
-                        .data(json!({"timestamp": chrono::Utc::now().to_rfc3339()}).to_string()),
+                        .data(json!({"timestamp": jiff::Timestamp::now().to_string()}).to_string()),
                 );
             }
 
@@ -502,7 +502,7 @@ pub async fn broadcast_event_handler(
             &payload,
             trace_id.as_deref(),
         ),
-        timestamp: chrono::Utc::now(),
+        timestamp: jiff::Timestamp::now(),
     };
 
     match state.sse_broadcaster.send(event) {
@@ -955,7 +955,7 @@ mod tests {
         let event = SseEvent::CognitiveIterationStarted {
             iteration: 1,
             goal_id: "goal1".to_string(),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
 
         let json = serde_json::to_string(&event).unwrap();
@@ -968,7 +968,7 @@ mod tests {
         let event = SseEvent::CognitiveIterationStarted {
             iteration: 1,
             goal_id: "goal1".to_string(),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
 
         assert_eq!(event.event_type(), "cognitive_iteration_started");
@@ -979,7 +979,7 @@ mod tests {
         let event = SseEvent::Custom {
             event_type: "test_event".to_string(),
             payload: json!({"key": "value"}),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
 
         let sse_str = event.to_sse_string();
@@ -1237,7 +1237,7 @@ mod tests {
             sop_id: sop.to_string(),
             node_id: "n1".to_string(),
             node_name: "fetch".to_string(),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         }
     }
 
@@ -1312,7 +1312,7 @@ mod tests {
         let goal_only = SseEvent::CognitiveIterationStarted {
             iteration: 1,
             goal_id: "g1".to_string(),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
         assert_eq!(goal_only.sop_id(), None);
     }
@@ -1323,7 +1323,7 @@ mod tests {
             session_id: "sess-1".to_string(),
             role: "user".to_string(),
             content: "hi".to_string(),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
         assert_eq!(msg.session_id(), Some("sess-1"));
         assert_eq!(node_started("sop-a").session_id(), None);
@@ -1351,7 +1351,7 @@ mod tests {
         let skill = SseEvent::SkillInstalled {
             skill_id: "s1".to_string(),
             version: "1.0".to_string(),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
         assert!(!matches_filters(
             &skill,
@@ -1371,7 +1371,7 @@ mod tests {
         let skill = SseEvent::SkillInstalled {
             skill_id: "s1".to_string(),
             version: "1.0".to_string(),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
         assert!(matches_filters(&skill, &SseFilters::default()));
     }
@@ -1518,13 +1518,13 @@ mod tests {
             session_id: "sess-1".to_string(),
             role: "user".to_string(),
             content: "hi".to_string(),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
         let other = SseEvent::SessionMessageAdded {
             session_id: "sess-2".to_string(),
             role: "user".to_string(),
             content: "hi".to_string(),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
         assert!(matches_filters(
             &mine,
@@ -1584,7 +1584,7 @@ mod tests {
         let event = SseEvent::Custom {
             event_type: "shared_test".to_string(),
             payload: json!({"k": "v"}),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
         assert!(tx.send(event.clone()).is_ok());
         let received = tokio::time::timeout(Duration::from_millis(100), rx.recv())

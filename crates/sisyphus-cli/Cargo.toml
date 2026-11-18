@@ -17,7 +17,7 @@ name = "sisyphus"
 path = "src/main.rs"
 
 [dependencies]
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
+jiff = { workspace = true }
 sisyphus-types = { version = "0.4.0", path = "../sisyphus-types" }
 sisyphus-tools-agent = { version = "0.4.0", path = "../sisyphus-tools-agent" }
 sisyphus-tools-build = { version = "0.4.0", path = "../sisyphus-tools-build" }

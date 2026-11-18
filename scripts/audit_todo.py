@@ -29,14 +29,20 @@
 规则校验；改动历史条目的文字会让它「变成新条目」，从而要求补证据——这是刻意
 的：动了一条旧结论，就该重新确认它。
 
+**ratchet 是强制的，不是口头约定**：`--update-baseline` 拒绝任何**新增**条目
+（只允许缩小）；基线里已失效的条目（对应勾选项被删除/改写）由
+`--strict-stale` 在 CI 里拦下。也就是说「把新条目塞进基线」这条路走不通，
+必须先补证据或写 `（无测试：理由）`。
+
 豁免写法（确无自动化测试时，例如纯文档 / CI 配置改动）：
 
     （无测试：reason）
 
 用法：
-    python3 scripts/audit_todo.py                    # 校验（CI）
+    python3 scripts/audit_todo.py                    # 校验
+    python3 scripts/audit_todo.py --strict-stale     # 校验，且失效基线即失败（CI）
     python3 scripts/audit_todo.py --self-check       # 判据自检
-    python3 scripts/audit_todo.py --update-baseline  # 重新登记历史豁免
+    python3 scripts/audit_todo.py --update-baseline  # 缩小历史豁免（拒绝新增）
     python3 scripts/audit_todo.py --json
 退出码：0 通过；1 违例；2 自检失败。
 """
@@ -219,6 +225,16 @@ def load_baseline(path: pathlib.Path) -> list[str]:
             continue
         entries.append(s)
     return entries
+
+
+def ratchet_violations(old: set[str], new: set[str]) -> list[str]:
+    """返回违反「只减不增」的基线条目（即本次想新增的豁免）。
+
+    `--update-baseline` 的本意是**缩小**基线（条目被删除/改写后清理失效
+    豁免），不是「把新条目塞进去」。没有这道检查，ratchet 就只是注释里的
+    一句口号：任何人都能把无证据的新勾选跑一遍 --update-baseline 洗白。
+    """
+    return sorted(new - old)
 
 
 def build_index(
@@ -504,6 +520,13 @@ def _self_check() -> list[str]:
         if not r["stale"]:
             failures.append("失效基线条目未被报告")
 
+        # ratchet 强制：--update-baseline 只能缩小。新增豁免必须被拒绝，
+        # 否则「把新勾选塞进基线」就成了一条洗白通道。
+        if ratchet_violations({"a", "b"}, {"b", "c"}) != ["c"]:
+            failures.append("ratchet 未拦下新增豁免")
+        if ratchet_violations({"a", "b"}, {"a"}) != []:
+            failures.append("ratchet 误拦缩小基线")
+
     return failures
 
 
@@ -512,6 +535,11 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--self-check", action="store_true")
     parser.add_argument("--update-baseline", action="store_true")
+    parser.add_argument(
+        "--strict-stale",
+        action="store_true",
+        help="基线中已失效的条目（对应勾选项被删除/改写）视为失败（CI 用）",
+    )
     args = parser.parse_args()
 
     self_failures = _self_check()
@@ -521,7 +549,7 @@ def main() -> int:
             print(f"  - {f}", file=sys.stderr)
         return 2
     if args.self_check:
-        print("✅ 自检通过（17 个判别用例）")
+        print("✅ 自检通过（判别用例全部通过）")
         return 0
 
     result = audit(ROOT)
@@ -547,6 +575,22 @@ def main() -> int:
                 and extract_evidence(i["text"])[1] is None
             }
         )
+        # ratchet 强制：基线只减不增。新增的无证据勾选必须先补证据。
+        added = ratchet_violations(set(load_baseline(ROOT / BASELINE_NAME)), set(entries))
+        if added:
+            print(
+                "❌ ratchet 违规：以下条目是**新增**的无证据勾选，"
+                "不能登记进基线：",
+                file=sys.stderr,
+            )
+            for a in added:
+                print(f"   {a[:110]}", file=sys.stderr)
+            print(
+                "\n给它们补可验证证据（path.rs::test / make target / scripts/x.py），"
+                "或写（无测试：理由）。基线只允许缩小。",
+                file=sys.stderr,
+            )
+            return 1
         header = (
             "# TODO 勾选门禁的历史豁免（scripts/audit_todo.py）\n"
             "#\n"
@@ -555,10 +599,14 @@ def main() -> int:
             "# 附真实测试名 / make 目标 / 脚本，或写明（无测试：理由）。\n"
             "# 重新生成：python3 scripts/audit_todo.py --update-baseline\n"
         )
+        previous = len(load_baseline(ROOT / BASELINE_NAME))
         (ROOT / BASELINE_NAME).write_text(
             header + "\n".join(entries) + "\n", encoding="utf-8"
         )
-        print(f"✅ 已登记 {len(entries)} 条历史豁免 → {BASELINE_NAME}")
+        print(
+            f"✅ 已登记 {len(entries)} 条历史豁免 → {BASELINE_NAME}"
+            f"（较上次 {previous} 条减少 {previous - len(entries)} 条）"
+        )
         return 0
 
     if args.json:
@@ -589,10 +637,21 @@ def main() -> int:
         f"历史基线 {stats['grandfathered']}）"
     )
     if result["stale"]:
-        print(
-            f"ℹ️  基线中 {len(result['stale'])} 条已无对应勾选项"
-            "（条目被删除或改写过），可运行 --update-baseline 重新登记"
+        msg = (
+            f"基线中 {len(result['stale'])} 条已无对应勾选项"
+            "（条目被删除或改写过）"
         )
+        if args.strict_stale:
+            print(f"❌ {msg}。", file=sys.stderr)
+            for s in result["stale"]:
+                print(f"   {s[:110]}", file=sys.stderr)
+            print(
+                "运行 `python3 scripts/audit_todo.py --update-baseline` 缩小基线"
+                "（只允许减少）。",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"ℹ️  {msg}，可运行 --update-baseline 重新登记")
 
     if not problems:
         print("✅ 所有勾选项的证据均成立")

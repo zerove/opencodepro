@@ -29,7 +29,6 @@ fn make_executor() -> Arc<dyn ToolExecutor> {
         registry: HookRegistry::new(),
         llm_client: dummy,
         feedback_store: feedback,
-        bridge_client: None,
     })
 }
 

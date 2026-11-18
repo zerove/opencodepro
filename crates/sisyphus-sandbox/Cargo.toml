@@ -13,7 +13,7 @@ wat = "1"
 
 [dependencies]
 async-trait = { workspace = true }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["fs", "rt", "macros", "time"] }
 sisyphus-types = { version = "0.4.0", path = "../sisyphus-types" }
 sisyphus-metrics = { version = "0.4.0", path = "../sisyphus-metrics" }
 serde_json = { workspace = true }
@@ -28,4 +28,3 @@ tracing = { workspace = true }
 tempfile = "3"
 # proptest for SchemaValidator fuzzing (P2-7 推进：wasm 沙箱的 proptest 边界覆盖)
 proptest = "1.4"
-serde_json = { workspace = true }

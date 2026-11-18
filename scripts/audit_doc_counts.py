@@ -26,8 +26,13 @@
 - `docs/known-issue-*.md`
 
 **不扫**：`docs/benchmarks/**`（含 `runs/` 原始输出）、`docs/adr/**`、
-`docs/project-status-*`、`docs/project-retrospective-*` 等历史档案。ADR-021
-明确不追溯改写这些文档。
+`docs/project-status-*`、`docs/project-retrospective-*`、以及**带日期后缀的
+历史计划**（`docs/*-plan-20*.md`）等历史档案。ADR-021 明确不追溯改写这些文档。
+
+带日期的计划列入排除范围是**显式**的，不是为了躲门禁：这类文档记录的是写作
+时点的实跑输出，和 `project-status-*` 同性质。此前它们既不在 `DOC_GLOBS`
+里、也不在 `EXCLUDE_PREFIXES` 里——靠「glob 恰好没覆盖」而不是靠声明，属于
+静默漏扫：任何人改 glob 就会意外把它们纳入扫描，然后被迫改写历史计数。
 
 ## 判定
 
@@ -63,6 +68,7 @@ import json
 import os
 import re
 import sys
+from pathlib import PurePosixPath
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -77,11 +83,16 @@ DOC_GLOBS = (
 )
 
 # 明确排除的历史档案（ADR-021「不追溯改写」）。
+# 目录前缀按 startswith 匹配；含 `*` 的模式按路径感知 glob 匹配
+# （`*` 不跨目录、必须从仓库根匹配整条路径）。
 EXCLUDE_PREFIXES = (
     "docs/benchmarks/",
     "docs/adr/",
     "docs/project-status-",
     "docs/project-retrospective-",
+    # 带日期后缀的历史计划：记录写作时点的实跑输出，与 project-status-* 同性质。
+    # 注意只覆盖 docs/ 顶层（`docs/plans/` 下的活跃计划仍需逐行标注口径）。
+    "docs/*-plan-20*.md",
 )
 
 COUNT_PATTERNS = (
@@ -105,7 +116,19 @@ WAIVERS = (
 
 
 def is_excluded(rel_path: str) -> bool:
-    return any(rel_path.startswith(p) for p in EXCLUDE_PREFIXES)
+    path = PurePosixPath(rel_path)
+    for pattern in EXCLUDE_PREFIXES:
+        if any(ch in pattern for ch in "*?["):
+            # 路径感知 glob：`PurePosixPath.match` 允许模式匹配路径**后缀**
+            # （`a/docs/x.md` 也会匹配 `docs/*.md`），所以额外要求分量数
+            # 一致，确保模式从仓库根匹配整条路径。
+            if path.match(pattern) and len(path.parts) == len(
+                PurePosixPath(pattern).parts
+            ):
+                return True
+        elif rel_path.startswith(pattern):
+            return True
+    return False
 
 
 def classify_line(line: str) -> str | None:
@@ -182,11 +205,19 @@ def _self_check() -> int:
     check("行号与端口", "`GET /health` → `{\"status\":\"SERVING\"}` 127.0.0.1:8080", 0)
 
     # ── 范围规则：历史档案不得被扫（否则会逼着改写历史） ──
-    for rel in ("docs/benchmarks/acceptance/x/runs/a.md", "docs/adr/021-x.md"):
+    for rel in (
+        "docs/benchmarks/acceptance/x/runs/a.md",
+        "docs/adr/021-x.md",
+        "docs/dev-plan-2026-10-02.md",
+        "docs/optimization-plan-2026-11-05.md",
+    ):
         if not is_excluded(rel):
             failures.append("范围规则退化：%s 应被排除" % rel)
     if is_excluded("docs/plans/single-node-quality-metrics.md"):
         failures.append("范围规则退化：docs/plans 下的活文档不应被排除")
+    # 带日期计划的 glob 不得跨进子目录（docs/plans/ 是活文档区）
+    if is_excluded("docs/plans/automation-development-plan-2026-11.md"):
+        failures.append("范围规则退化：glob 不得跨目录误排除 docs/plans/")
 
     # ── 规则表自身不得空转 ──
     if not COUNT_PATTERNS:
@@ -200,7 +231,7 @@ def _self_check() -> int:
         for f in failures:
             print("❌ " + f, file=sys.stderr)
         return 2
-    print("✅ 判据自检通过（正例 %d 组 / 反例与范围规则）" % 7)
+    print("✅ 判据自检通过（正例 / 反例 / 范围规则全部符合）")
     return 0
 
 

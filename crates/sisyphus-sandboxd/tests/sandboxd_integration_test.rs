@@ -579,6 +579,13 @@ fn test_fuel_limit_actually_bounds_a_runaway_guest() {
     // 但若 fuel_limit 被完全忽略（metered=false），两次都停在墙钟上限，耗时相同——
     // 比值 ≈1.0，远低于 2.0，这条仍能拦下真正的失效。机器速度无关：正常情况
     // 大预算迭代数是小预算的 1000 倍，耗时比远大于 2.0。
+    assert!(
+        measured > warmup.saturating_mul(2),
+        "a 1000x fuel budget ({large_budget}) must take clearly longer than \
+         {small_budget}, but they took {measured:?} vs {warmup:?} — fuel_limit is \
+         not driving execution time, so it is probably not driving fuel accounting \
+         either"
+    );
 
     let _ = child.kill();
     let _ = child.wait();

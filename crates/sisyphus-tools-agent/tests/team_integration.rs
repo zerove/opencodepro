@@ -66,7 +66,6 @@ async fn make_integration_orchestrator() -> Option<TeamOrchestrator> {
         registry: hooks,
         llm_client: llm.clone(),
         feedback_store: feedback,
-        bridge_client: None,
     });
 
     Some(TeamOrchestrator::new(reg, executor, Some(llm)))
