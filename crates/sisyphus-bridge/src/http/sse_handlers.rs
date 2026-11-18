@@ -18,6 +18,10 @@ use uuid::Uuid;
 use crate::http::RestApiState;
 
 /// SSE 事件类型
+///
+/// `timestamp` 字段统一为 `jiff::Timestamp`（chrono 迁移后类型），serde 序列化为
+/// RFC 3339 UTC 字符串。注意：jiff 的 Display/Serialize 会 trim 尾零，与迁移前
+/// chrono 的 `AutoSi` 不同，但输出仍合法 RFC 3339 — 下游 consumer 无需适配。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SseEvent {
@@ -446,6 +450,10 @@ pub async fn sse_handler(
                 yield Ok::<axum::response::sse::Event, Infallible>(
                     axum::response::sse::Event::default()
                         .event("heartbeat")
+                        // Wire format 说明：字段类型为 `jiff::Timestamp`，serde 经 Display
+                        // 序列化为 RFC 3339 UTC（`...Z`）。与迁移前 chrono `AutoSi` 的
+                        // Display 不同，**不会**保留尾零（如 `.780` → `.78`），但仍是合法
+                        // RFC 3339 —— 下游 SSE consumer 用标准解析器即可兼容。
                         .data(json!({"timestamp": jiff::Timestamp::now().to_string()}).to_string()),
                 );
             }
