@@ -54,6 +54,8 @@
 
 ## [Unreleased]
 
+## [v0.4.1] - 2026-11-18
+
 ### Added
 
 - **评测 runner 阈值门禁**（2026-11-17）：`evals/runner.rs` 新增 `--threshold <f>` / `--min-pass <n>` 参数，总分或通过数低于下限时以非零码退出，使 runner 可直接作 CI 准确率回归线；参数解析失败由静默忽略改为显式报错，`bail!` 导入缺失已修复

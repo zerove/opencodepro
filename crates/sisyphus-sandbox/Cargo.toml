@@ -1,6 +1,6 @@
 [package]
 name = "sisyphus-sandbox"
-version = "0.4.0"
+version = "0.4.1"
 publish = false
 edition = "2021"
 repository.workspace = true
@@ -14,8 +14,8 @@ wat = "1"
 [dependencies]
 async-trait = { workspace = true }
 tokio = { version = "1", features = ["fs", "rt", "macros", "time"] }
-sisyphus-types = { version = "0.4.0", path = "../sisyphus-types" }
-sisyphus-metrics = { version = "0.4.0", path = "../sisyphus-metrics" }
+sisyphus-types = { version = "0.4.1", path = "../sisyphus-types" }
+sisyphus-metrics = { version = "0.4.1", path = "../sisyphus-metrics" }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 dashmap = "6.0"

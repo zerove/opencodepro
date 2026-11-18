@@ -23,7 +23,7 @@ OpenAPI 规范位于 [`/openapi.json`](/openapi.json)，也可通过 Swagger UI 
 ### `GET /health`
 
 ```json
-{ "status": "SERVING", "version": "0.4.0" }
+{ "status": "SERVING", "version": "0.4.1" }
 ```
 
 ## 工具执行

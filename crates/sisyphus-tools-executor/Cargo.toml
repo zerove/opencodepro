@@ -1,6 +1,6 @@
 [package]
 name = "sisyphus-tools-executor"
-version = "0.4.0"
+version = "0.4.1"
 publish = false
 edition = "2021"
 repository.workspace = true
@@ -9,12 +9,12 @@ authors.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-sisyphus-tools-core = { version = "0.4.0", path = "../sisyphus-tools-core" }
-sisyphus-tools-mcp = { version = "0.4.0", path = "../sisyphus-tools-mcp" }
-sisyphus-tools-llm = { version = "0.4.0", path = "../sisyphus-tools-llm" }
-sisyphus-tools-llm-tools = { version = "0.4.0", path = "../sisyphus-tools-llm-tools" }
-sisyphus-tools-system = { version = "0.4.0", path = "../sisyphus-tools-system" }
-sisyphus-types = { version = "0.4.0", path = "../sisyphus-types" }
+sisyphus-tools-core = { version = "0.4.1", path = "../sisyphus-tools-core" }
+sisyphus-tools-mcp = { version = "0.4.1", path = "../sisyphus-tools-mcp" }
+sisyphus-tools-llm = { version = "0.4.1", path = "../sisyphus-tools-llm" }
+sisyphus-tools-llm-tools = { version = "0.4.1", path = "../sisyphus-tools-llm-tools" }
+sisyphus-tools-system = { version = "0.4.1", path = "../sisyphus-tools-system" }
+sisyphus-types = { version = "0.4.1", path = "../sisyphus-types" }
 tokio = { version = "1.0", features = ["process", "fs", "io-util", "time", "rt", "macros"] }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
@@ -26,4 +26,4 @@ metrics = "0.24"
 
 [dev-dependencies]
 tempfile = "3"
-sisyphus-tools-session = { version = "0.4.0", path = "../sisyphus-tools-session" }
+sisyphus-tools-session = { version = "0.4.1", path = "../sisyphus-tools-session" }

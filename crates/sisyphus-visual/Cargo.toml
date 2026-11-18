@@ -1,6 +1,6 @@
 [package]
 name = "sisyphus_visual"
-version = "0.4.0"
+version = "0.4.1"
 publish = false
 edition = "2021"
 repository.workspace = true
@@ -9,13 +9,13 @@ authors.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-sisyphus-types = { version = "0.4.0", path = "../sisyphus-types" }
+sisyphus-types = { version = "0.4.1", path = "../sisyphus-types" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 metrics = "0.24"
 tokio = { version = "1.0", features = ["full"] }
 async-trait = "0.1"
 thiserror = "1.0"
-sisyphus-tools-llm = { version = "0.4.0", path = "../sisyphus-tools-llm" }
+sisyphus-tools-llm = { version = "0.4.1", path = "../sisyphus-tools-llm" }
 tracing.workspace = true
 reqwest = { version = "0.12", features = ["json"] }

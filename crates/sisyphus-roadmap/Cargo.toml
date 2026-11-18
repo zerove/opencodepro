@@ -1,6 +1,6 @@
 [package]
 name = "sisyphus-roadmap"
-version = "0.4.0"
+version = "0.4.1"
 publish = false
 edition = "2021"
 repository.workspace = true
@@ -16,9 +16,9 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 metrics = "0.24"
 thiserror = { workspace = true }
-sisyphus-types = { version = "0.4.0", path = "../sisyphus-types" }
-sisyphus-mem = { version = "0.4.0", path = "../sisyphus-mem" }
-sisyphus-tools-llm = { version = "0.4.0", path = "../sisyphus-tools-llm" }
+sisyphus-types = { version = "0.4.1", path = "../sisyphus-types" }
+sisyphus-mem = { version = "0.4.1", path = "../sisyphus-mem" }
+sisyphus-tools-llm = { version = "0.4.1", path = "../sisyphus-tools-llm" }
 anyhow.workspace = true
 
 [dev-dependencies]
