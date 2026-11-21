@@ -530,13 +530,13 @@
 
 ### 9.2 认知循环 v3 研究（探索性）
 
-#### 9.2.1 架构设计（ADR-010）
-- [ ] **问题分析**: 当前 v2 的瓶颈（token 预算限制、反思深度不足）
+#### 9.2.1 架构设计（ADR-022）
+- [x] **问题分析**: 当前 v2 的瓶颈（token 预算限制、反思深度不足）与 P1-P5 问题陈述（无测试：设计文档，见 `docs/adr/022-cognitive-loop-v3-problem-statement.md`）
 - [ ] **候选方向**:
   - SOP 图神经网络嵌入（节点语义编码）
   - 自适应 token 预算分配
   - 长期记忆压缩与检索
-- [ ] **决策记录**: ADR-010 编写
+- [ ] **决策记录**: ADR-022 在证据齐备后由 Proposed 更新为 Accepted/Rejected
 
 #### 9.2.2 认知能力原型
 - [ ] **SOP 嵌入实验**: 将 SOP 节点编码为向量
@@ -611,7 +611,7 @@
 
 ### 10.3 工具链
 - [x] **并行链接保护**: 实测 19.5 GiB 下 `-j 2` 仍会 OOM、`-j 1` 稳定；`test-all`/`test-tools`/`test-bridge*`/`test-cli-handlers` 已统一带 `CARGO_BUILD_JOBS=1`，Makefile 头部记录约束（直接敲 `cargo test` 仍需自行加 `-j 1`）
-- [ ] **认知循环 v3 (ADR-010)**: 先写问题陈述再谈方向，当前 TODO 9.2 只有候选词，不足以支撑决策
+- [x] **认知循环 v3 (ADR-022)**: 问题陈述已落地（无测试：设计文档，见 `docs/adr/022-cognitive-loop-v3-problem-statement.md`）；候选方向与决策仍待证据/benchmark 支撑
 
 ### 10.4 多语言测试守卫（2026-10-04）
 > 详见 [状态报告 2026-10-04](docs/project-status-2026-10-04.md)。提交 `6c3a52e`（+936/−66）。

@@ -56,6 +56,7 @@
 
 ### Added
 - **集群 3 节点验证与编排模板**（2026-11-22）：新增 `test_three_node_experience_sync_converges`、`test_three_node_partition_recovery_catches_up`（bridge in-process 3 节点收敛/分区恢复）；新增 `docker-compose.cluster.yml`；`SISYPHUS_CLUSTER_PEERS` 环境变量支持（逗号分隔静态 peer 列表）。
+- **ADR-022 认知循环 v3 问题陈述**（2026-11-22）：记录 P1-P5（预算分配、反思结构、经验/SOP 语义统一、演进归因、长会话压缩）与约束/候选方向；状态 Proposed，不含架构决策。
 
 ### Fixed
 - **evals-ci 稳定 case Mock 覆盖率修复**（2026-11-21）：`MockLlmClient` 按 prompt 启发式输出 metis actionable/non-actionable、librarian 三段式 synthesis、scribe bun 更新；`eval-runner`/`schema.json` 新增 `not_keyword`/`not_regex` check_type（Rust `regex` 无 lookahead）；`scripts/evals-ci-run.sh` 稳定集识别扩展。`./scripts/evals-ci-run.sh` 默认稳定集 7/7 pass（artifact `docs/benchmarks/evals-ci/2026-11-21-bf056a9.json`）
