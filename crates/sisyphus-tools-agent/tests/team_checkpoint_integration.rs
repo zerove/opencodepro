@@ -4,7 +4,6 @@ use serde_json::json;
 use sisyphus_tools_agent::team::{
     checkpoint::TeamCheckpoint, ConflictStats, TaskNode, TaskResult, TeamContext, TeamPlan,
 };
-use std::sync::Arc;
 
 #[tokio::test]
 async fn test_team_checkpoint_persistence_and_resume() {
