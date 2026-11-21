@@ -595,5 +595,54 @@ mod fuzz_tests {
                 prop_assert!(r.is_ok(), "v={} in [{},{}] should pass", v, min, max);
             }
         }
+
+        #[test]
+        fn test_array_schema_rejects_non_array(value in arb_json_value()) {
+            let schema = serde_json::json!({"type": "array"});
+            if !value.is_array() {
+                prop_assert!(SchemaValidator::validate(&schema, &value).is_err());
+            }
+        }
+
+        #[test]
+        fn required_fields_enforced(
+            key in "[a-z]{1,8}",
+            include in any::<bool>()
+        ) {
+            let schema = serde_json::json!({
+                "type": "object",
+                "required": [key.clone()],
+                "properties": { (key.clone()): {"type": "string"} }
+            });
+            let value = if include {
+                serde_json::json!({ (key): "v" })
+            } else {
+                serde_json::json!({})
+            };
+            let r = SchemaValidator::validate(&schema, &value);
+            if include {
+                prop_assert!(r.is_ok());
+            } else {
+                prop_assert!(r.is_err());
+            }
+        }
+
+        #[test]
+        fn string_max_length_unicode_respected(max in 0u64..8, s in "\\PC{0,16}") {
+            let schema = serde_json::json!({"type": "string", "maxLength": max});
+            let value = Value::String(s.clone());
+            let r = SchemaValidator::validate(&schema, &value);
+            if (s.chars().count() as u64) > max {
+                prop_assert!(r.is_err());
+            } else {
+                prop_assert!(r.is_ok());
+            }
+        }
+
+        #[test]
+        fn arbitrary_bytes_never_panic_on_json_parse(data in proptest::collection::vec(any::<u8>(), 0..256)) {
+            // Host boundary: arbitrary bytes must not panic when parsed as JSON args.
+            let _ = serde_json::from_slice::<Value>(&data);
+        }
     }
 }

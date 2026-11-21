@@ -551,9 +551,9 @@
 - [ ] **修复 missed mutants**: 基于 cargo-mutants 报告
 
 #### 9.3.2 Fuzz Testing
-- [ ] **sandbox wasm proptest 扩展**: host function 边界覆盖
-- [ ] **HTTP handler fuzz**: axum 请求模糊测试
-- [ ] **gRPC payload fuzz**: prost message 变异测试
+- [x] **sandbox wasm proptest 扩展**: host function 边界覆盖（SchemaValidator + 任意字节 JSON 解析边界）— 证据：`crates/sisyphus-sandbox/src/custom_executor.rs::test_array_schema_rejects_non_array`
+- [x] **HTTP handler fuzz**: axum 请求类型 serde 反序列化 fuzz（任意字节不 panic）— 证据：`crates/sisyphus-bridge/tests/fuzz_payloads.rs::http_goal_execute_request_never_panics_on_arbitrary_json`
+- [x] **gRPC payload fuzz**: prost message 变异测试（任意字节 decode 不 panic）— 证据：`crates/sisyphus-bridge/tests/fuzz_payloads.rs::grpc_join_request_decode_never_panics`
 
 ### 9.4 文档与发布
 

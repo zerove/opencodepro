@@ -4374,6 +4374,8 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "parking_lot",
+ "proptest",
+ "prost 0.13.5",
  "rcgen",
  "reqwest 0.12.28",
  "rustls",
