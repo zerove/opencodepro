@@ -33,7 +33,7 @@
           "weight": { "type": "number", "minimum": 0, "maximum": 1 },
           "check_type": { 
             "type": "string", 
-            "enum": ["keyword", "regex", "llm_judge", "json_schema"] 
+            "enum": ["keyword", "regex", "not_keyword", "not_regex", "llm_judge", "json_schema"] 
           },
           "expected_value": { "type": "string" }
         },

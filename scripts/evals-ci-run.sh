@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# T4.3：evals 子集入 CI —— 选取稳定（criteria 全部为 keyword/regex，无 LLM judge）的 case，
+# T4.3：evals 子集入 CI —— 选取稳定（criteria 全部为 keyword/regex/not_keyword/not_regex，无 LLM judge）的 case，
 # 经 eval-runner（MockLlmClient，无外部 LLM）运行并记录运行时长与结果。
 # 用法: ./scripts/evals-ci-run.sh [cases]      # cases 形如 metis/metis-001,momus/momus-plan-002
 #      ./scripts/evals-ci-run.sh               # 默认取稳定 case 全集
@@ -37,7 +37,7 @@ for agent in agents:
     if not os.path.exists(p):
         continue
     for c in json.load(open(p)):
-        if all(x.get("check_type") in ("keyword", "regex") for x in c.get("criteria", [])):
+        if all(x.get("check_type") in ("keyword", "regex", "not_keyword", "not_regex") for x in c.get("criteria", [])):
             cases.append(f"{agent}/{c['id']}")
 print(",".join(cases))
 PY

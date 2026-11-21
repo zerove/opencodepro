@@ -11,7 +11,7 @@
 
 1. **证据必须能解析**。条目里出现的 `path/to/file.rs::test_name` 必须真的能在
    仓库里找到该文件与函数，且函数带测试属性、未被 `#[ignore]`；`make <target>`
-   必须真的在 Makefile 里定义；`scripts/x.py` 必须存在。引用写错、文件改名、
+   必须真的在 Makefile 里定义；`scripts/x.py` / `scripts/x.sh` 必须存在。引用写错、文件改名、
    测试被删，都会在这里暴露。
 2. **新增勾选项必须附证据**。没有证据、也没写显式豁免的勾选项会被拦下。
 3. **测试名书写约定**：引用的 `test_name` 限定为 `test_*` 前缀；文件级回归测试
@@ -68,8 +68,8 @@ HEADING_RE = re.compile(r"^#{2,4}\s+(?P<title>.*)$")
 TEST_REF_RE = re.compile(r"([A-Za-z0-9_][A-Za-z0-9_./-]*\.rs)::([A-Za-z_][A-Za-z0-9_]*)")
 # 反引号里的 `make <target>`；不用裸文本匹配，避免英文 "make sure" 误判
 MAKE_REF_RE = re.compile(r"`\s*make\s+([A-Za-z0-9][A-Za-z0-9_.-]*)")
-# 反引号里的 `scripts/x.py`（含 `python3 scripts/x.py --self-check`）
-SCRIPT_REF_RE = re.compile(r"`[^`]*?\b(scripts/[A-Za-z0-9_]+\.py)\b")
+# 反引号里的 `scripts/x.py` / `scripts/x.sh`（含 `bash scripts/x.sh --self-check`）
+SCRIPT_REF_RE = re.compile(r"`[^`]*?\b(scripts/[A-Za-z0-9_.-]+\.(?:py|sh))\b")
 # 显式豁免：（无测试：理由） / (no-test: reason)
 EXEMPT_RE = re.compile(r"[（(]\s*(?:无测试|no-test)\s*[:：]\s*([^）)]*?)\s*[）)]")
 
@@ -390,7 +390,7 @@ def audit(
                 "errors": [
                     "已勾选但没有任何可验证证据：请附 `tests/foo.rs::test_name`"
                     "（须真实存在、带测试属性、未被 #[ignore]）、`make <target>`、"
-                    "`scripts/x.py`；确无自动化测试时写（无测试：理由）"
+                    "`scripts/x.py` / `scripts/x.sh`；确无自动化测试时写（无测试：理由）"
                 ],
             }
         )

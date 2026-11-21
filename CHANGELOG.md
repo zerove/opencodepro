@@ -54,6 +54,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- **evals-ci 稳定 case Mock 覆盖率修复**（2026-11-21）：`MockLlmClient` 按 prompt 启发式输出 metis actionable/non-actionable、librarian 三段式 synthesis、scribe bun 更新；`eval-runner`/`schema.json` 新增 `not_keyword`/`not_regex` check_type（Rust `regex` 无 lookahead）；`scripts/evals-ci-run.sh` 稳定集识别扩展。`./scripts/evals-ci-run.sh` 默认稳定集 7/7 pass（artifact `docs/benchmarks/evals-ci/2026-11-21-bf056a9.json`）
+
 ## [v0.4.2] - 2026-11-21
 
 ### Changed

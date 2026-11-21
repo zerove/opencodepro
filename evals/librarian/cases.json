@@ -307,8 +307,8 @@
         "id": "noise-filtered",
         "description": "Does not mention movies or IMDb/Marvel",
         "weight": 1.0,
-        "check_type": "regex",
-        "expected_value": "^((?!movie|film|IMDb|Marvel).)*$"
+        "check_type": "not_regex",
+        "expected_value": "movie|film|IMDb|Marvel"
       }
     ],
     "metadata": {
@@ -446,16 +446,76 @@
     "agent": "librarian",
     "input": {
       "findings": [
-        { "claim": "Python is great for AI.", "source_url": "u1", "source_title": "s1", "relevance": 0.9, "retrieved_at": "t" },
-        { "claim": "Python is widely used in machine learning.", "source_url": "u2", "source_title": "s2", "relevance": 0.9, "retrieved_at": "t" },
-        { "claim": "Python has many AI libraries like PyTorch.", "source_url": "u3", "source_title": "s3", "relevance": 0.9, "retrieved_at": "t" },
-        { "claim": "Python is the preferred language for data science.", "source_url": "u4", "source_title": "s4", "relevance": 0.9, "retrieved_at": "t" },
-        { "claim": "Python is used for building LLMs.", "source_url": "u5", "source_title": "s5", "relevance": 0.9, "retrieved_at": "t" },
-        { "claim": "Python is popular for neural networks.", "source_url": "u6", "source_title": "s6", "relevance": 0.9, "retrieved_at": "t" },
-        { "claim": "Python is used in AI research.", "source_url": "u7", "source_title": "s7", "relevance": 0.9, "retrieved_at": "t" },
-        { "claim": "Python is the standard for AI development.", "source_url": "u8", "source_title": "s8", "relevance": 0.9, "retrieved_at": "t" },
-        { "claim": "Python is used for deep learning.", "source_url": "u9", "source_title": "s9", "relevance": 0.9, "retrieved_at": "t" },
-        { "claim": "Python is used for AI agents.", "source_url": "u10", "source_title": "s10", "relevance": 0.9, "retrieved_at": "t" }
+        {
+          "claim": "Python is great for AI.",
+          "source_url": "u1",
+          "source_title": "s1",
+          "relevance": 0.9,
+          "retrieved_at": "t"
+        },
+        {
+          "claim": "Python is widely used in machine learning.",
+          "source_url": "u2",
+          "source_title": "s2",
+          "relevance": 0.9,
+          "retrieved_at": "t"
+        },
+        {
+          "claim": "Python has many AI libraries like PyTorch.",
+          "source_url": "u3",
+          "source_title": "s3",
+          "relevance": 0.9,
+          "retrieved_at": "t"
+        },
+        {
+          "claim": "Python is the preferred language for data science.",
+          "source_url": "u4",
+          "source_title": "s4",
+          "relevance": 0.9,
+          "retrieved_at": "t"
+        },
+        {
+          "claim": "Python is used for building LLMs.",
+          "source_url": "u5",
+          "source_title": "s5",
+          "relevance": 0.9,
+          "retrieved_at": "t"
+        },
+        {
+          "claim": "Python is popular for neural networks.",
+          "source_url": "u6",
+          "source_title": "s6",
+          "relevance": 0.9,
+          "retrieved_at": "t"
+        },
+        {
+          "claim": "Python is used in AI research.",
+          "source_url": "u7",
+          "source_title": "s7",
+          "relevance": 0.9,
+          "retrieved_at": "t"
+        },
+        {
+          "claim": "Python is the standard for AI development.",
+          "source_url": "u8",
+          "source_title": "s8",
+          "relevance": 0.9,
+          "retrieved_at": "t"
+        },
+        {
+          "claim": "Python is used for deep learning.",
+          "source_url": "u9",
+          "source_title": "s9",
+          "relevance": 0.9,
+          "retrieved_at": "t"
+        },
+        {
+          "claim": "Python is used for AI agents.",
+          "source_url": "u10",
+          "source_title": "s10",
+          "relevance": 0.9,
+          "retrieved_at": "t"
+        }
       ]
     },
     "expected": {
