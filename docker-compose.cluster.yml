@@ -1,0 +1,86 @@
+# ── Sisyphus 3-node Cluster (local verification) ───────────────────────
+# Usage:
+#   docker compose -f docker-compose.cluster.yml up -d --build
+#   docker compose -f docker-compose.cluster.yml ps
+#   # 网络分区模拟：docker network disconnect <net> sisyphus-node-b
+#   # 恢复：docker network connect <net> sisyphus-node-b
+#   docker compose -f docker-compose.cluster.yml down -v
+#
+# 验证目标（TODO 10.2）：
+# - 3 节点可互相发现并选主（字典序最小 node_id）
+# - 经验同步在 3 节点间收敛
+# - 分区恢复后通过 ADR-010 反熵补齐差量
+
+x-node-env: &node-env
+  RUST_LOG: ${RUST_LOG:-info}
+  SISYPHUS_CONFIG: /app/config.toml
+  SISYPHUS_CLUSTER_ENABLED: "true"
+  SISYPHUS_BRIDGE_ADDRESS: "0.0.0.0:50051"
+  SISYPHUS_HTTP_ADDRESS: "0.0.0.0:8080"
+
+services:
+  node-a:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-zerove}/sisyphus-bridge:${TAG:-latest}
+    hostname: node-a
+    environment:
+      <<: *node-env
+      SISYPHUS_CLUSTER_NODE_ID: node-a
+      SISYPHUS_CLUSTER_PEERS: "http://node-b:50051,http://node-c:50051"
+    ports:
+      - "50051:50051"
+      - "8080:8080"
+    volumes:
+      - node-a-data:/app/data
+    networks:
+      - cluster-net
+    restart: unless-stopped
+
+  node-b:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-zerove}/sisyphus-bridge:${TAG:-latest}
+    hostname: node-b
+    environment:
+      <<: *node-env
+      SISYPHUS_CLUSTER_NODE_ID: node-b
+      SISYPHUS_CLUSTER_PEERS: "http://node-a:50051,http://node-c:50051"
+    ports:
+      - "50052:50051"
+      - "8081:8080"
+    volumes:
+      - node-b-data:/app/data
+    networks:
+      - cluster-net
+    restart: unless-stopped
+
+  node-c:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-zerove}/sisyphus-bridge:${TAG:-latest}
+    hostname: node-c
+    environment:
+      <<: *node-env
+      SISYPHUS_CLUSTER_NODE_ID: node-c
+      SISYPHUS_CLUSTER_PEERS: "http://node-a:50051,http://node-b:50051"
+    ports:
+      - "50053:50051"
+      - "8082:8080"
+    volumes:
+      - node-c-data:/app/data
+    networks:
+      - cluster-net
+    restart: unless-stopped
+
+volumes:
+  node-a-data:
+  node-b-data:
+  node-c-data:
+
+networks:
+  cluster-net:
+    driver: bridge

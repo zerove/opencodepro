@@ -294,6 +294,7 @@ convergence_threshold = 0.15
 # mdns_service_type = "_sisyphus-bridge._tcp.local"
 
 # 静态 peer 列表（K8s 等多播受限环境 fallback）
+# 环境变量: SISYPHUS_CLUSTER_PEERS（逗号分隔，如 "node-1:50051,node-2:50051"）
 # 类型: ["host:port", ...] | 默认: []
 # peers = ["node-1:50051", "node-2:50051"]
 

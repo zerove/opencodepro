@@ -355,6 +355,10 @@ impl Config {
         if let Some(v) = env_string("SISYPHUS_CLUSTER_NAME") {
             self.cluster.cluster_name = v;
         }
+        if let Some(v) = env_string("SISYPHUS_CLUSTER_PEERS") {
+            self.cluster.peers =
+                v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        }
         if let Some(v) = env_u64("SISYPHUS_CLUSTER_JOIN_TIMEOUT_SECS") {
             self.cluster.join_timeout_secs = v;
         }

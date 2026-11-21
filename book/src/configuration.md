@@ -316,7 +316,7 @@ if let Some(shared) = registry.shared_http() {
 | `node_id` | `SISYPHUS_CLUSTER_NODE_ID` | string | `""`（由 `HOSTNAME` 派生） |
 | `cluster_name` | `SISYPHUS_CLUSTER_NAME` | string | `_sisyphus-bridge` |
 | `mdns_service_type` | — | string | `_sisyphus-bridge._tcp.local` |
-| `peers` | — | array | `[]` |
+| `peers` | `SISYPHUS_CLUSTER_PEERS`（逗号分隔） | array | `[]` |
 | `join_timeout_secs` | `SISYPHUS_CLUSTER_JOIN_TIMEOUT_SECS` | integer | 10 |
 | `peer_ttl_secs` | `SISYPHUS_CLUSTER_PEER_TTL_SECS` | integer | 30 |
 | `strategy_sync_interval_secs` | `SISYPHUS_CLUSTER_STRATEGY_SYNC_INTERVAL_SECS` | integer | 60 |

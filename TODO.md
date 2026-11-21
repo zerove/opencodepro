@@ -607,7 +607,7 @@
 - [x] **断线补偿**: 重连后按 vector clock 补差量；`anti_entropy_integration.rs::reconnect_delivers_only_the_gap` + `cluster_integration.rs::catchup_signal_sent_while_reconnecting_is_still_consumed`（语义抽样豁免：10.2 是阶段 9 的追踪小节，与 9.1.2 同一工作项复用同一证据，非借用）
 - [x] **`ExperienceSyncHandler` 关闭语义加固**: 任务全程持有 `Arc<PeerManager>`，Sender 存活由类型系统保证；`Closed` 分支由 `warn!` 提升为 `error!`
 - [x] **入站事件转发收敛**: `event_tx`（本地产生，拨号器订阅）与 `inbound_tx`（远端收到，仅 handler 订阅）分离，回弹在结构上不可达
-- [ ] **3 节点 Docker Compose** / **网络分区恢复** 验证
+- [x] **3 节点 Docker Compose** / **网络分区恢复** 验证：`crates/sisyphus-bridge/tests/cluster_integration.rs::test_three_node_experience_sync_converges`、`crates/sisyphus-bridge/tests/cluster_integration.rs::test_three_node_partition_recovery_catches_up`（in-process 3 节点收敛 + 宕机恢复补齐差量）；`docker-compose.cluster.yml` 提供 3 节点本地编排模板（`SISYPHUS_CLUSTER_PEERS` env 配置）
 
 ### 10.3 工具链
 - [x] **并行链接保护**: 实测 19.5 GiB 下 `-j 2` 仍会 OOM、`-j 1` 稳定；`test-all`/`test-tools`/`test-bridge*`/`test-cli-handlers` 已统一带 `CARGO_BUILD_JOBS=1`，Makefile 头部记录约束（直接敲 `cargo test` 仍需自行加 `-j 1`）

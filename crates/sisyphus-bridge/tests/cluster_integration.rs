@@ -259,6 +259,8 @@ struct SyncNode {
     /// 信源不活跃时 `shutdown_rx.recv()` 会立刻 Closed → 任务静默退出，同步循环
     /// 就退化成「只跑了一次」。
     _strategy_shutdown: tokio::sync::broadcast::Sender<()>,
+    /// gRPC server 句柄。保活；abort 可模拟节点宕机/网络分区。
+    server: tokio::task::JoinHandle<()>,
 }
 
 impl SyncNode {
@@ -311,7 +313,16 @@ async fn build_bank() -> Arc<VectorExperienceBank> {
 
 /// 启动一个节点；`dial_peers` 非空时按生产路径建立到对端的静态拨号。
 async fn start_sync_node(node_id: &'static str, dial_peers: Vec<String>) -> SyncNode {
-    start_sync_node_inner(node_id, dial_peers, false).await
+    start_sync_node_inner(node_id, dial_peers, false, None).await
+}
+
+/// 启动一个节点并复用既有 bank（用于模拟节点重启/分区恢复后回归）。
+async fn start_sync_node_with_bank(
+    node_id: &'static str,
+    dial_peers: Vec<String>,
+    bank: Arc<VectorExperienceBank>,
+) -> SyncNode {
+    start_sync_node_inner(node_id, dial_peers, false, Some(bank)).await
 }
 
 /// ADR-013：`gated` 为真时用**闸门关闭**的服务，从而把拨号器的 Join 挡在门外，
@@ -320,13 +331,17 @@ async fn start_sync_node_inner(
     node_id: &'static str,
     dial_peers: Vec<String>,
     gated: bool,
+    bank_override: Option<Arc<VectorExperienceBank>>,
 ) -> SyncNode {
     let manager = Arc::new(PeerManager::new(node_id, Duration::from_secs(30)));
     // 观察**入站**通道：用例关心的是「对端发来的事件到了没有」，而入站事件
     // 不再进入本地广播通道（否则会被拨号器转发回去，在集群里回弹）。
     // 必须在拨号与处理器启动前订阅，否则会漏掉先于订阅发出的事件。
     let events = manager.subscribe_inbound();
-    let bank = build_bank().await;
+    let bank = match bank_override {
+        Some(b) => b,
+        None => build_bank().await,
+    };
     let broadcast = Arc::new(PeerBroadcastExperienceBank::new(
         bank.clone(),
         manager.clone(),
@@ -344,7 +359,7 @@ async fn start_sync_node_inner(
     };
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let grpc_addr = format!("http://{}", listener.local_addr().expect("addr"));
-    let _server = tokio::spawn(async move {
+    let server = tokio::spawn(async move {
         Server::builder()
             .add_service(ClusterServer::new(service))
             .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
@@ -404,6 +419,7 @@ async fn start_sync_node_inner(
         meta_learner: strategy_meta_learner,
         _shutdown: shutdown_tx,
         _strategy_shutdown: strategy_shutdown_tx,
+        server,
     }
 }
 
@@ -1233,7 +1249,7 @@ async fn catchup_deferred_while_paging_converges_exactly() {
 async fn catchup_signal_sent_before_connect_is_still_consumed() {
     // 闸门必须装在**被拨号方 A** 上：B 是拨号方，它连的是 A。装在 B 自己的服务上
     // 毫无作用——没人会连 B，B 的拨号器会直接连上 A 并正常跑完，计数恒为 0。
-    let node_a = start_sync_node_inner("node-a", vec![], true).await;
+    let node_a = start_sync_node_inner("node-a", vec![], true, None).await;
     let gate = node_a.gate.clone().expect("闸门构造的节点必须带回闸门句柄");
 
     // B 作为拨号方去连 A；此时 A 的 Join 被闸门挡住，B 卡在 connect_and_join。
@@ -1341,7 +1357,7 @@ where
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn catchup_signal_sent_while_reconnecting_is_still_consumed() {
     // 闸门装在被拨号方 A 上：B 是拨号方。
-    let node_a = start_sync_node_inner("node-a", vec![], true).await;
+    let node_a = start_sync_node_inner("node-a", vec![], true, None).await;
     let gate = node_a.gate.clone().expect("闸门构造的节点必须带回闸门句柄");
 
     // B 作为拨号方去连 A。
@@ -1739,4 +1755,99 @@ async fn test_three_node_strategy_weights_converge_across_chain_topology() {
     );
     assert_eq!(after["depth-first"].successes, 2);
     assert_eq!(node_b.strategy_weights.read().node_count(), 3);
+}
+
+/// 3 节点 in-process：A<-B, A<-C, C<-B 拓扑下经验双向收敛。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_three_node_experience_sync_converges() {
+    let mut node_a = start_sync_node("node-a", vec![]).await;
+    let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
+    let mut node_c = start_sync_node(
+        "node-c",
+        vec![node_a.grpc_addr.clone(), node_b.grpc_addr.clone()],
+    )
+    .await;
+
+    wait_for_link(&node_a.manager, &node_b.manager).await;
+    wait_for_link(&node_a.manager, &node_c.manager).await;
+    wait_for_link(&node_b.manager, &node_c.manager).await;
+
+    let a_bank = node_a.bank();
+    let b_bank = node_b.bank();
+    let c_bank = node_c.bank();
+
+    node_a.broadcast.record(experience(1_700_100_001, "from-a")).await.expect("A 记录经验应成功");
+    node_c.broadcast.record(experience(1_700_100_002, "from-c")).await.expect("C 记录经验应成功");
+
+    wait_for("node-b 看到 A 的经验", &mut node_b.events, || async {
+        find_in(&b_bank, "hash-1700100001").await.is_some()
+    })
+    .await;
+    wait_for("node-c 看到 A 的经验", &mut node_c.events, || async {
+        find_in(&c_bank, "hash-1700100001").await.is_some()
+    })
+    .await;
+    wait_for("node-a 看到 C 的经验", &mut node_a.events, || async {
+        find_in(&a_bank, "hash-1700100002").await.is_some()
+    })
+    .await;
+    wait_for("node-b 看到 C 的经验", &mut node_b.events, || async {
+        find_in(&b_bank, "hash-1700100002").await.is_some()
+    })
+    .await;
+}
+
+/// 3 节点分区恢复：node-b 宕机期间 A 产生经验，B 以同 bank 重启并重连后应补齐差量。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_three_node_partition_recovery_catches_up() {
+    let node_a = start_sync_node("node-a", vec![]).await;
+    let mut node_b = start_sync_node("node-b", vec![node_a.grpc_addr.clone()]).await;
+    let mut node_c = start_sync_node("node-c", vec![node_a.grpc_addr.clone()]).await;
+
+    wait_for_link(&node_a.manager, &node_b.manager).await;
+    wait_for_link(&node_a.manager, &node_c.manager).await;
+
+    // 记录基线，确保 B 已在线。
+    node_a
+        .broadcast
+        .record(experience(1_700_200_001, "baseline-a"))
+        .await
+        .expect("baseline 记录应成功");
+    let b_bank = node_b.bank();
+    wait_for("node-b 看到 baseline", &mut node_b.events, || async {
+        find_in(&b_bank, "hash-1700200001").await.is_some()
+    })
+    .await;
+
+    // 分区：中止 B 的 gRPC server，模拟网络隔离/宕机。
+    node_b.server.abort();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // A 在分区期间写入新经验；C 仍在线应收到。
+    node_a
+        .broadcast
+        .record(experience(1_700_200_002, "during-partition"))
+        .await
+        .expect("分区期间记录应成功");
+    let c_bank = node_c.bank();
+    wait_for(
+        "node-c 看到分区期间经验",
+        &mut node_c.events,
+        || async { find_in(&c_bank, "hash-1700200002").await.is_some() },
+    )
+    .await;
+
+    // 恢复：B 以同一个 bank 重启，重新拨号 A。
+    let b_bank_old = node_b.bank();
+    let mut node_b_recovered =
+        start_sync_node_with_bank("node-b", vec![node_a.grpc_addr.clone()], b_bank_old).await;
+    wait_for_link(&node_a.manager, &node_b_recovered.manager).await;
+
+    let b_bank_recovered = node_b_recovered.bank();
+    wait_for(
+        "恢复后的 node-b 补齐分区期间经验",
+        &mut node_b_recovered.events,
+        || async { find_in(&b_bank_recovered, "hash-1700200002").await.is_some() },
+    )
+    .await;
 }
