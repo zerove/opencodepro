@@ -54,6 +54,12 @@
 
 ## [Unreleased]
 
+### Changed
+- **wasmtime 升级至 48.0.10**（2026-11-21）：`cargo update -p wasmtime`，解决 8 条 RUSTSEC-2026-0566..0573 漏洞（`cargo deny check advisories` 已修复；`justrust check -p sisyphus-sandbox -p sisyphus-sandboxd`、bridge clippy、workspace clippy 均已复验通过）
+
+### Fixed
+- **恢复 `VisualPerceptionManager::get_embedding` 与清理未用导入**（2026-11-21）：HEAD `d7f8d32`（feat(team)）删除 `manager.get_embedding` 未同步测试 `integration_tests.rs:293`，导致 `cargo test-all` 全量回归编译失败（E0599）；恢复后全量回归绿色（5263 passed / 0 failed / 26 ignored / 229 binaries，1270.9s）。同步删除新建 `team_checkpoint_integration.rs` 中未使用的 `use std::sync::Arc`
+
 ## [v0.4.1] - 2026-11-18
 
 ### Added
