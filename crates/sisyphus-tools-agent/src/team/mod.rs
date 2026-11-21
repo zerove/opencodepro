@@ -11,14 +11,21 @@
 pub mod error;
 pub(crate) mod parse;
 
+pub mod checkpoint;
 pub mod conflict;
 mod context;
 mod decomposer;
 mod orchestrator;
 mod scheduler;
 
-pub use conflict::{detect_conflicts, partition_by_write_conflicts, Conflict, ConflictKind};
-pub use context::TeamContext;
+pub use checkpoint::{TeamCheckpoint, TeamContextSnapshot, TeamResumeState};
+pub use conflict::{
+    detect_conflicts, partition_by_write_conflicts, read_keys_of, write_keys_of, Conflict,
+    ConflictKind,
+};
+pub use context::{
+    TeamContext, WorkspaceChange, WorkspaceChangeKind, WorkspaceImpactPolicy, WorkspaceImpactRecord,
+};
 pub use error::TeamError;
 pub use orchestrator::TeamOrchestrator;
 
@@ -88,6 +95,13 @@ impl TaskResult {
             duration_ms: 0,
         }
     }
+
+    /// 该结果是否因工作区影响守卫（`FailAffectedPending`）被定向标记为失败。
+    ///
+    /// 统一识别逻辑，避免调度层/恢复态/CLI 各自匹配错误字符串导致语义漂移。
+    pub fn is_workspace_impact_failure(&self) -> bool {
+        !self.success && self.error.as_deref().unwrap_or("").contains("workspace impact")
+    }
 }
 
 /// Delegation policy for a task with retry, timeout, and fallback semantics.
@@ -155,6 +169,25 @@ pub enum TeamEvent {
         /// 参与冲突的任务 id。
         task_ids: Vec<String>,
     },
+    /// M1.2（最小闭环）：批次执行后，已记录工作区变更对剩余任务的影响评估结果。
+    ///
+    /// 默认仅观测与重评估信号；调用方可选用
+    /// [`TeamOrchestrator::execute_plan_with_impact_retry`] 开启对影响类失败任务的自动定向重跑。
+    WorkspaceImpact {
+        /// 本次评估关联的执行批次序号（从 0 开始）。
+        batch_index: usize,
+        /// 触发评估的变更资源键（去重）。
+        changed_paths: Vec<String>,
+        /// 受影响的剩余任务 id（按发现顺序去重）。
+        affected_task_ids: Vec<String>,
+    },
+    /// M1.2（自动定向重跑）：即将对因工作区影响被标记失败的任务执行一轮重试。
+    ImpactRetry {
+        /// 重试轮次（从 1 开始）。
+        round: usize,
+        /// 本轮将重新调度的任务 id。
+        task_ids: Vec<String>,
+    },
     /// All tasks complete, synthesis starting.
     Synthesizing { completed: usize, failed: usize },
     /// Reflection phase started.
@@ -184,6 +217,37 @@ pub struct Reflection {
     pub summary: String,
 }
 
+/// 并行冲突与串行化统计（M1.3 可观测性）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ConflictStats {
+    /// 检测到的冲突总数（write-write + read-write）。
+    #[serde(default)]
+    pub detected: usize,
+    /// 写写冲突次数。
+    #[serde(default)]
+    pub write_write: usize,
+    /// 读写冲突次数。
+    #[serde(default)]
+    pub read_write: usize,
+    /// 因写冲突拆分出的总执行波次数（仅统计发生拆分的批次，`> ready_count` 时意味着串行化）。
+    #[serde(default)]
+    pub serialized_waves: usize,
+    /// 发生冲突并被串行化处理的批次数。
+    #[serde(default)]
+    pub conflict_batches: usize,
+}
+
+impl ConflictStats {
+    /// 合并另一份统计（用于多轮/多阶段执行聚合）。
+    pub fn merge(&mut self, other: &ConflictStats) {
+        self.detected += other.detected;
+        self.write_write += other.write_write;
+        self.read_write += other.read_write;
+        self.serialized_waves += other.serialized_waves;
+        self.conflict_batches += other.conflict_batches;
+    }
+}
+
 /// Final report from a team execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TeamReport {
@@ -194,6 +258,15 @@ pub struct TeamReport {
     pub total_duration_ms: u128,
     /// Number of iterations executed (for iterative workflows).
     pub iterations: usize,
+    /// 并行冲突与串行化统计（可观测性；旧数据缺失时为默认值）。
+    #[serde(default)]
+    pub conflict_stats: ConflictStats,
+    /// 工作区变更影响评估的可审计记录（M1.2；旧数据缺失时为空）。
+    #[serde(default)]
+    pub workspace_impact_records: Vec<WorkspaceImpactRecord>,
+    /// 已消费的工作区变更数量（用于 S5 检查点/恢复续跑；旧数据缺失时为 0）。
+    #[serde(default)]
+    pub processed_change_count: usize,
 }
 
 /// Predefined team workflow patterns.

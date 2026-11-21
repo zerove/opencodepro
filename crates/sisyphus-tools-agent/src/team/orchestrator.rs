@@ -78,6 +78,16 @@ impl TeamOrchestrator {
         self.execute_plan_internal(plan, None, context).await
     }
 
+    /// 从检查点恢复执行团队计划（M0.3/S5 最小恢复路径）。
+    pub async fn execute_plan_from_checkpoint(
+        &self,
+        checkpoint: crate::team::checkpoint::TeamCheckpoint,
+    ) -> Result<TeamReport, TeamError> {
+        let context = Arc::new(checkpoint.restore_context());
+        let resume = checkpoint.to_resume_state();
+        self.execute_plan_with_resume(checkpoint.plan, None, context, Some(resume)).await
+    }
+
     /// Decompose a goal and execute the resulting plan in one step.
     ///
     /// This is the main entry point for end-to-end team execution:
@@ -144,6 +154,8 @@ impl TeamOrchestrator {
     ) -> Result<TeamReport, TeamError> {
         let context = self.context.clone().unwrap_or_else(|| Arc::new(TeamContext::new()));
         let mut all_results = Vec::new();
+        let mut all_conflict_stats = crate::team::ConflictStats::default();
+        let mut all_workspace_impact_records = Vec::new();
         let mut plan = self.decompose_goal(&goal).await?;
         let mut total_iterations = 0;
         let start = std::time::Instant::now();
@@ -153,6 +165,8 @@ impl TeamOrchestrator {
 
             // Execute current plan
             let report = self.execute_plan_internal(plan.clone(), None, context.clone()).await?;
+            all_conflict_stats.merge(&report.conflict_stats);
+            all_workspace_impact_records.extend(report.workspace_impact_records.clone());
             all_results.extend(report.task_results.clone());
 
             // Reflect on results
@@ -170,6 +184,9 @@ impl TeamOrchestrator {
                         synthesis,
                         total_duration_ms: start.elapsed().as_millis(),
                         iterations: total_iterations,
+                        conflict_stats: all_conflict_stats.clone(),
+                        workspace_impact_records: all_workspace_impact_records.clone(),
+                        processed_change_count: context.workspace_changes().len(),
                     });
                 }
 
@@ -194,6 +211,9 @@ impl TeamOrchestrator {
                     synthesis,
                     total_duration_ms: start.elapsed().as_millis(),
                     iterations: total_iterations,
+                    conflict_stats: all_conflict_stats.clone(),
+                    workspace_impact_records: all_workspace_impact_records.clone(),
+                    processed_change_count: context.workspace_changes().len(),
                 });
             }
         }
@@ -212,6 +232,9 @@ impl TeamOrchestrator {
             synthesis,
             total_duration_ms: start.elapsed().as_millis(),
             iterations: total_iterations,
+            conflict_stats: all_conflict_stats,
+            workspace_impact_records: all_workspace_impact_records,
+            processed_change_count: context.workspace_changes().len(),
         })
     }
 
@@ -275,6 +298,8 @@ impl TeamOrchestrator {
     ) -> Result<Reflection, TeamError> {
         let context_snapshot = context.snapshot();
         let execution_log = context.execution_log();
+        let impact_records = context.workspace_impact_records();
+        let recent_changes = context.workspace_changes();
 
         let prompt = format!(
             r#"You are a reflection engine for a multi-agent cognitive system.
@@ -288,6 +313,15 @@ EXECUTION REPORT:
 - Tasks successful: {}
 - Tasks failed: {}
 - Total duration: {} ms
+
+CONFLICT STATS:
+{}
+
+WORKSPACE IMPACT RECORDS (auditable):
+{}
+
+RECENT WORKSPACE CHANGES:
+{}
 
 SHARED CONTEXT SNAPSHOT:
 {}
@@ -314,6 +348,7 @@ Rules:
 - gaps = what's missing to achieve the goal
 - deviations = how execution drifted from the goal
 - suggested_tasks = concrete remedial tasks (empty if is_complete)
+- If workspace impacts/conflicts invalidated pending or completed assumptions, include targeted remediation/re-run tasks in suggested_tasks and explain in gaps/deviations/summary
 - summary = concise reflection for logging"#,
             goal.objective,
             goal.context.as_deref().unwrap_or("None"),
@@ -322,6 +357,10 @@ Rules:
             report.task_results.iter().filter(|r| r.success).count(),
             report.task_results.iter().filter(|r| !r.success).count(),
             report.total_duration_ms,
+            serde_json::to_string_pretty(&report.conflict_stats).unwrap_or_default(),
+            serde_json::to_string_pretty(&impact_records).unwrap_or_default(),
+            serde_json::to_string_pretty(&recent_changes.iter().rev().take(20).collect::<Vec<_>>())
+                .unwrap_or_default(),
             serde_json::to_string_pretty(&context_snapshot).unwrap_or_default(),
             serde_json::to_string_pretty(&execution_log.iter().rev().take(5).collect::<Vec<_>>())
                 .unwrap_or_default(),
@@ -398,6 +437,8 @@ Rules:
     ) -> Result<TeamReport, TeamError> {
         let context = self.context.clone().unwrap_or_else(|| Arc::new(TeamContext::new()));
         let mut all_results = Vec::new();
+        let mut all_conflict_stats = crate::team::ConflictStats::default();
+        let mut all_workspace_impact_records = Vec::new();
         let start = std::time::Instant::now();
 
         for round in 0..max_rounds {
@@ -421,6 +462,8 @@ Rules:
 
             let analysis_report =
                 self.execute_plan_internal(analysis_plan, None, context.clone()).await?;
+            all_conflict_stats.merge(&analysis_report.conflict_stats);
+            all_workspace_impact_records.extend(analysis_report.workspace_impact_records.clone());
             all_results.extend(analysis_report.task_results);
 
             // Phase 2: momus reviews
@@ -442,6 +485,8 @@ Rules:
 
             let review_report =
                 self.execute_plan_internal(review_plan.clone(), None, context.clone()).await?;
+            all_conflict_stats.merge(&review_report.conflict_stats);
+            all_workspace_impact_records.extend(review_report.workspace_impact_records.clone());
             all_results.extend(review_report.task_results.clone());
 
             // Check if review passes (no critical issues)
@@ -467,6 +512,9 @@ Rules:
                     synthesis,
                     total_duration_ms: start.elapsed().as_millis(),
                     iterations: round + 1,
+                    conflict_stats: all_conflict_stats.clone(),
+                    workspace_impact_records: all_workspace_impact_records.clone(),
+                    processed_change_count: context.workspace_changes().len(),
                 });
             }
 
@@ -494,6 +542,8 @@ Rules:
 
             let revise_report =
                 self.execute_plan_internal(revise_plan, None, context.clone()).await?;
+            all_conflict_stats.merge(&revise_report.conflict_stats);
+            all_workspace_impact_records.extend(revise_report.workspace_impact_records.clone());
             all_results.extend(revise_report.task_results);
         }
 
@@ -525,6 +575,9 @@ Rules:
             synthesis,
             total_duration_ms: start.elapsed().as_millis(),
             iterations: max_rounds,
+            conflict_stats: all_conflict_stats,
+            workspace_impact_records: all_workspace_impact_records,
+            processed_change_count: context.workspace_changes().len(),
         })
     }
 
@@ -536,6 +589,8 @@ Rules:
     ) -> Result<TeamReport, TeamError> {
         let context = self.context.clone().unwrap_or_else(|| Arc::new(TeamContext::new()));
         let mut all_results = Vec::new();
+        let mut all_conflict_stats = crate::team::ConflictStats::default();
+        let mut all_workspace_impact_records = Vec::new();
         let start = std::time::Instant::now();
 
         for round in 0..max_rounds {
@@ -559,6 +614,8 @@ Rules:
 
             let research_report =
                 self.execute_plan_internal(research_plan, None, context.clone()).await?;
+            all_conflict_stats.merge(&research_report.conflict_stats);
+            all_workspace_impact_records.extend(research_report.workspace_impact_records.clone());
             all_results.extend(research_report.task_results);
 
             // Phase 2: metis synthesizes
@@ -581,6 +638,8 @@ Rules:
 
             let synth_report =
                 self.execute_plan_internal(synthesize_plan.clone(), None, context.clone()).await?;
+            all_conflict_stats.merge(&synth_report.conflict_stats);
+            all_workspace_impact_records.extend(synth_report.workspace_impact_records.clone());
             all_results.extend(synth_report.task_results);
 
             // Check if synthesis is sufficient (has concrete spec)
@@ -598,6 +657,9 @@ Rules:
                     synthesis,
                     total_duration_ms: start.elapsed().as_millis(),
                     iterations: round + 1,
+                    conflict_stats: all_conflict_stats.clone(),
+                    workspace_impact_records: all_workspace_impact_records.clone(),
+                    processed_change_count: context.workspace_changes().len(),
                 });
             }
         }
@@ -629,6 +691,9 @@ Rules:
             synthesis,
             total_duration_ms: start.elapsed().as_millis(),
             iterations: max_rounds,
+            conflict_stats: all_conflict_stats,
+            workspace_impact_records: all_workspace_impact_records,
+            processed_change_count: context.workspace_changes().len(),
         })
     }
 }

@@ -124,20 +124,18 @@ impl DagRenderer {
             *in_degree.entry(to.clone()).or_insert(0) += 1;
         }
 
-        // 拓扑排序并分配层级
-        let mut queue: Vec<String> =
+        // 拓扑排序并分配层级：优化队列操作为 VecDeque 避免 O(N) 的 queue.remove(0) 内存搬移开销
+        let queue: std::collections::VecDeque<String> =
             in_degree.iter().filter(|(_, &d)| d == 0).map(|(id, _)| id.clone()).collect();
+        // 预先排序队列
+        let mut queue_vec: Vec<String> = queue.into();
+        queue_vec.sort_unstable();
+        let mut queue = std::collections::VecDeque::from(queue_vec);
 
         let mut levels: HashMap<String, usize> = HashMap::new();
         let mut col_counters: HashMap<usize, usize> = HashMap::new();
 
-        // 优化（TODO 8.1.1）：sort_unstable 更快（不保证等值元素的相对顺序，
-        // 但节点 ID 唯一性保证输出仍确定）；同时按子节点已确定的 level
-        // 排序，避免后续二次遍历。
-        while !queue.is_empty() {
-            queue.sort_unstable();
-            // 每轮取队首（最小字典序），与原算法语义等价
-            let current = queue.remove(0);
+        while let Some(current) = queue.pop_front() {
             let level = levels.get(&current).copied().unwrap_or(0);
 
             let col = col_counters.entry(level).or_insert(0);
@@ -155,10 +153,17 @@ impl DagRenderer {
                     if let Some(degree) = in_degree.get_mut(child) {
                         *degree -= 1;
                         if *degree == 0 {
-                            queue.push(child.clone());
+                            // 保持按字典序插入或稍后统一排序
+                            queue.push_back(child.clone());
                         }
                     }
                 }
+            }
+            // 若新入队了元素，对队列重新排序以维持确定性与字典序（针对大规模图可分批）
+            if queue.len() > 1 {
+                let mut v: Vec<String> = queue.into();
+                v.sort_unstable();
+                queue = std::collections::VecDeque::from(v);
             }
         }
 

@@ -29,6 +29,7 @@ fn make_executor() -> Arc<dyn ToolExecutor> {
         registry: HookRegistry::new(),
         llm_client: dummy,
         feedback_store: feedback,
+        file_mutation_sink: None,
     })
 }
 
@@ -171,6 +172,12 @@ async fn test_execute_parallel_tasks() {
         "three parallel metis tasks should all succeed"
     );
     assert_eq!(report.task_results.len(), 3);
+    // M1.3 / S1 基线：无冲突并行任务的冲突统计应为零
+    assert_eq!(report.conflict_stats.detected, 0);
+    assert_eq!(report.conflict_stats.write_write, 0);
+    assert_eq!(report.conflict_stats.read_write, 0);
+    assert_eq!(report.conflict_stats.conflict_batches, 0);
+    assert_eq!(report.conflict_stats.serialized_waves, 0);
 }
 
 #[tokio::test]
@@ -1093,7 +1100,7 @@ fn test_delegation_policy_from_args() {
 
 #[tokio::test]
 async fn test_parallel_write_conflict_is_detected_and_serialized() {
-    // T3.4：同批任务写同一资源 → 产生冲突告警事件，且两个任务仍都执行
+    // T3.4 / M1.3：同批任务写同一资源 → 产生冲突告警事件、记录串行化统计，且两个任务仍都执行
     let orch = make_orchestrator();
     let tasks = vec![
         TaskNode {
@@ -1129,6 +1136,15 @@ async fn test_parallel_write_conflict_is_detected_and_serialized() {
         report.task_results.iter().all(|r| r.success),
         "冲突串行化后任务仍应成功"
     );
+    // M1.3：报告级冲突统计可观测（S2 冲突压力场景的最小确定性断言）
+    assert_eq!(report.conflict_stats.detected, 1, "应记录 1 次冲突检测");
+    assert_eq!(report.conflict_stats.write_write, 1);
+    assert_eq!(report.conflict_stats.read_write, 0);
+    assert_eq!(report.conflict_stats.conflict_batches, 1);
+    assert_eq!(
+        report.conflict_stats.serialized_waves, 2,
+        "同键写冲突应拆分为 2 个串行波次"
+    );
 
     let mut conflicts = Vec::new();
     while let Ok(event) = rx.try_recv() {
@@ -1145,4 +1161,589 @@ async fn test_parallel_write_conflict_is_detected_and_serialized() {
     assert_eq!(conflicts[0].0, "write_write");
     assert_eq!(conflicts[0].1, "src/lib.rs");
     assert_eq!(conflicts[0].2.len(), 2, "告警应指出两个冲突任务");
+}
+
+#[tokio::test]
+async fn test_parallel_read_write_conflict_is_detected() {
+    // M0.3/S3（确定性子场景）：同批次读写同一资源应被检测并可观测（read-write 统计/事件）
+    let orch = make_orchestrator();
+    let tasks = vec![
+        TaskNode {
+            id: "reader".into(),
+            agent_id: "metis".into(),
+            tool_id: "metis/analyse".into(),
+            args: json!({"request": "read shared state"}),
+            depends_on: vec![],
+            read_keys: vec!["src/lib.rs".into()],
+            write_keys: vec![],
+        },
+        TaskNode {
+            id: "writer".into(),
+            agent_id: "metis".into(),
+            tool_id: "metis/analyse".into(),
+            args: json!({"request": "write shared state"}),
+            depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec!["src/lib.rs".into()],
+        },
+    ];
+    let plan = TeamPlan {
+        goal_id: "rw-conflict".into(),
+        tasks,
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+    let ctx = Arc::new(TeamContext::new());
+    let report = orch.execute_plan_internal(plan, Some(tx), ctx).await.expect("计划应执行完成");
+
+    assert_eq!(report.task_results.len(), 2, "两个任务都应执行");
+    assert!(
+        report.task_results.iter().all(|r| r.success),
+        "任务应可执行完成（冲突检测不等同于失败）"
+    );
+    assert_eq!(report.conflict_stats.detected, 1, "应记录 1 次冲突检测");
+    assert_eq!(report.conflict_stats.write_write, 0);
+    assert_eq!(report.conflict_stats.read_write, 1);
+    assert_eq!(report.conflict_stats.conflict_batches, 1);
+
+    let mut conflicts = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        if let TeamEvent::ConflictDetected {
+            kind,
+            key,
+            task_ids,
+        } = event
+        {
+            conflicts.push((kind, key, task_ids));
+        }
+    }
+    assert_eq!(conflicts.len(), 1, "应产生 1 个读写冲突告警");
+    assert_eq!(conflicts[0].0, "read_write");
+    assert_eq!(conflicts[0].1, "src/lib.rs");
+}
+
+#[tokio::test]
+async fn test_workspace_impact_recorded_for_pending_task() {
+    // M1.2 深化：批次内任务写入影响后续待执行任务时，应发出 WorkspaceImpact 并按策略记录标记
+    let orch = make_orchestrator();
+    // batch 0: t1(write shared), t2(no conflict, gates t3) 并行
+    // batch 1: t3(depends on t2) becomes ready and reads shared -> impacted by t1's write in batch 0
+    let tasks = vec![
+        TaskNode {
+            id: "t1".into(),
+            agent_id: "metis".into(),
+            tool_id: "metis/analyse".into(),
+            args: json!({"request": "produce shared"}),
+            depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec!["shared".into()],
+        },
+        TaskNode {
+            id: "t2".into(),
+            agent_id: "metis".into(),
+            tool_id: "metis/analyse".into(),
+            args: json!({"request": "independent gate"}),
+            depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec!["gate".into()],
+        },
+        TaskNode {
+            id: "t3".into(),
+            agent_id: "metis".into(),
+            tool_id: "metis/analyse".into(),
+            args: json!({"request": "consume shared after gate"}),
+            depends_on: vec!["t2".into()],
+            read_keys: vec!["shared".into()],
+            write_keys: vec![],
+        },
+    ];
+    let plan = TeamPlan {
+        goal_id: "impact".into(),
+        tasks,
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+    let ctx = Arc::new(TeamContext::new());
+    ctx.set_workspace_impact_policy(crate::team::WorkspaceImpactPolicy::RecordAffected);
+    let report =
+        orch.execute_plan_internal(plan, Some(tx), ctx.clone()).await.expect("计划应执行完成");
+
+    assert!(report.success);
+    assert_eq!(report.task_results.len(), 3);
+    assert_eq!(ctx.impacted_task_ids(), vec!["t3".to_string()]);
+    let records = ctx.workspace_impact_records();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].batch_index, 0);
+    assert!(records[0].changed_paths.iter().any(|p| p == "shared"));
+    assert_eq!(records[0].affected_task_ids, vec!["t3".to_string()]);
+
+    let mut impacts = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        if let TeamEvent::WorkspaceImpact {
+            batch_index,
+            changed_paths,
+            affected_task_ids,
+        } = event
+        {
+            impacts.push((batch_index, changed_paths, affected_task_ids));
+        }
+    }
+    assert_eq!(impacts.len(), 1, "应产生 1 次 WorkspaceImpact 事件");
+    assert_eq!(impacts[0].0, 0);
+    assert_eq!(impacts[0].2, vec!["t3".to_string()]);
+}
+
+#[tokio::test]
+async fn test_workspace_impact_fail_affected_pending_strategy() {
+    // M1.2 深化：FailAffectedPending 策略应将受影响的待执行任务定向标记为失败（可审计、可复现）
+    let orch = make_orchestrator();
+    let tasks = vec![
+        TaskNode {
+            id: "t1".into(),
+            agent_id: "metis".into(),
+            tool_id: "metis/analyse".into(),
+            args: json!({"request": "produce shared"}),
+            depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec!["shared".into()],
+        },
+        TaskNode {
+            id: "t2".into(),
+            agent_id: "metis".into(),
+            tool_id: "metis/analyse".into(),
+            args: json!({"request": "independent gate"}),
+            depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec!["gate".into()],
+        },
+        TaskNode {
+            id: "t3".into(),
+            agent_id: "metis".into(),
+            tool_id: "metis/analyse".into(),
+            args: json!({"request": "consume shared after gate"}),
+            depends_on: vec!["t2".into()],
+            read_keys: vec!["shared".into()],
+            write_keys: vec![],
+        },
+    ];
+    let plan = TeamPlan {
+        goal_id: "impact-fail".into(),
+        tasks,
+    };
+
+    let ctx = Arc::new(TeamContext::new());
+    ctx.set_workspace_impact_policy(crate::team::WorkspaceImpactPolicy::FailAffectedPending);
+    let report = orch.execute_plan_internal(plan, None, ctx.clone()).await.expect("计划应执行完成");
+
+    assert!(!report.success, "受影响任务被定向失败后计划应失败");
+    assert_eq!(report.task_results.len(), 3);
+    let t3 = report.task_results.iter().find(|r| r.task_id == "t3").expect("t3 result");
+    assert!(!t3.success);
+    assert!(
+        t3.error.as_deref().unwrap_or("").contains("workspace impact"),
+        "error={:?}",
+        t3.error
+    );
+    assert_eq!(ctx.impacted_task_ids(), vec!["t3".to_string()]);
+    assert_eq!(ctx.workspace_impact_records().len(), 1);
+    assert_eq!(report.workspace_impact_records.len(), 1);
+}
+
+/// 构造 M1.2 自动定向重跑用例：t3 在首批影响评估中被标记失败。
+fn impact_retry_plan(goal_id: &str) -> TeamPlan {
+    TeamPlan {
+        goal_id: goal_id.to_string(),
+        tasks: vec![
+            TaskNode {
+                id: "t1".into(),
+                agent_id: "metis".into(),
+                tool_id: "metis/analyse".into(),
+                args: json!({"request": "produce shared"}),
+                depends_on: vec![],
+                read_keys: vec![],
+                write_keys: vec!["shared".into()],
+            },
+            TaskNode {
+                id: "t2".into(),
+                agent_id: "metis".into(),
+                tool_id: "metis/analyse".into(),
+                args: json!({"request": "independent gate"}),
+                depends_on: vec![],
+                read_keys: vec![],
+                write_keys: vec!["gate".into()],
+            },
+            TaskNode {
+                id: "t3".into(),
+                agent_id: "metis".into(),
+                tool_id: "metis/analyse".into(),
+                args: json!({"request": "consume shared after gate"}),
+                depends_on: vec!["t2".into()],
+                read_keys: vec!["shared".into()],
+                write_keys: vec![],
+            },
+        ],
+    }
+}
+
+#[tokio::test]
+async fn test_impact_retry_recovers_failed_pending_task() {
+    // M1.2 自动定向重跑：FailAffectedPending 标记的失败任务在重试轮次中恢复，
+    // 已完成任务不重复调度，且发出可观测的 ImpactRetry 事件。
+    let orch = make_orchestrator();
+    let ctx = Arc::new(TeamContext::new());
+    ctx.set_workspace_impact_policy(crate::team::WorkspaceImpactPolicy::FailAffectedPending);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+
+    let report = orch
+        .execute_plan_with_impact_retry(impact_retry_plan("impact-retry"), Some(tx), ctx.clone(), 2)
+        .await
+        .expect("计划应执行完成");
+
+    assert!(
+        report.success,
+        "自动重试后应全部成功: {:?}",
+        report.task_results
+    );
+    assert_eq!(report.iterations, 2, "一次初始执行 + 一轮重试");
+    assert_eq!(report.task_results.len(), 3);
+    assert!(report.task_results.iter().all(|r| r.success));
+    assert_eq!(ctx.workspace_impact_records().len(), 1);
+    assert!(
+        report.synthesis.as_deref().unwrap_or("").contains("impact-retry"),
+        "synthesis 应标注自动重跑: {:?}",
+        report.synthesis
+    );
+
+    let mut saw_impact_retry = false;
+    let mut t1_started = 0usize;
+    while let Ok(event) = rx.try_recv() {
+        match event {
+            TeamEvent::ImpactRetry { round, task_ids } => {
+                saw_impact_retry = true;
+                assert_eq!(round, 1);
+                assert_eq!(task_ids, vec!["t3".to_string()]);
+            },
+            TeamEvent::TaskStarted { task_id, .. } if task_id == "t1" => t1_started += 1,
+            _ => {},
+        }
+    }
+    assert!(saw_impact_retry, "应发出 ImpactRetry 事件");
+    assert_eq!(t1_started, 1, "已完成任务不应在重试轮次重复调度");
+}
+
+#[tokio::test]
+async fn test_impact_retry_disabled_with_zero_rounds() {
+    // 轮次为 0 时保持原有 FailAffectedPending 行为（不自动重跑）。
+    let orch = make_orchestrator();
+    let ctx = Arc::new(TeamContext::new());
+    ctx.set_workspace_impact_policy(crate::team::WorkspaceImpactPolicy::FailAffectedPending);
+
+    let report = orch
+        .execute_plan_with_impact_retry(impact_retry_plan("impact-retry-off"), None, ctx.clone(), 0)
+        .await
+        .expect("计划应执行完成");
+
+    assert!(!report.success);
+    assert_eq!(report.iterations, 1);
+    let t3 = report.task_results.iter().find(|r| r.task_id == "t3").expect("t3 result");
+    assert!(!t3.success);
+    assert!(t3.is_workspace_impact_failure());
+    assert_eq!(ctx.workspace_impact_records().len(), 1);
+}
+
+#[tokio::test]
+async fn test_impact_retry_skips_non_impact_failures() {
+    // 非工作区影响类失败（如未知 agent）不应触发定向重跑。
+    let orch = make_orchestrator();
+    let ctx = Arc::new(TeamContext::new());
+    ctx.set_workspace_impact_policy(crate::team::WorkspaceImpactPolicy::FailAffectedPending);
+    let plan = TeamPlan {
+        goal_id: "impact-retry-skip".into(),
+        tasks: vec![TaskNode {
+            id: "bad".into(),
+            agent_id: "unknown-agent".into(),
+            tool_id: "unknown/tool".into(),
+            args: json!({}),
+            depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec![],
+        }],
+    };
+
+    let report = orch
+        .execute_plan_with_impact_retry(plan, None, ctx.clone(), 3)
+        .await
+        .expect("计划应执行完成");
+
+    assert!(!report.success);
+    assert_eq!(report.iterations, 1, "非影响类失败不应触发重试轮次");
+    assert_eq!(report.task_results.len(), 1);
+    assert!(!report.task_results[0].is_workspace_impact_failure());
+    assert!(ctx.workspace_impact_records().is_empty());
+}
+
+#[tokio::test]
+async fn test_resume_plan_from_checkpoint_continues_remaining_tasks() {
+    // M0.3/S5（最小可测中断恢复切片）：从检查点恢复后继续执行剩余任务
+    let orch = make_orchestrator();
+    let plan = TeamPlan {
+        goal_id: "resume".into(),
+        tasks: vec![
+            TaskNode {
+                id: "t1".into(),
+                agent_id: "metis".into(),
+                tool_id: "metis/analyse".into(),
+                args: json!({"request": "first"}),
+                depends_on: vec![],
+                read_keys: vec![],
+                write_keys: vec![],
+            },
+            TaskNode {
+                id: "t2".into(),
+                agent_id: "metis".into(),
+                tool_id: "metis/analyse".into(),
+                args: json!({"request": "second"}),
+                depends_on: vec!["t1".into()],
+                read_keys: vec![],
+                write_keys: vec![],
+            },
+        ],
+    };
+    let ctx = Arc::new(TeamContext::new());
+    let t1 = TaskResult {
+        task_id: "t1".into(),
+        agent_id: "metis".into(),
+        success: true,
+        output: Some(json!({"ok": true})),
+        error: None,
+        duration_ms: 1,
+    };
+    let ckpt = crate::team::checkpoint::TeamCheckpoint::from_state(
+        "resume",
+        plan,
+        vec![t1],
+        crate::team::ConflictStats::default(),
+        &ctx,
+        0,
+    );
+
+    let report =
+        orch.execute_plan_from_checkpoint(ckpt).await.expect("checkpoint resume should succeed");
+
+    assert!(report.success);
+    assert_eq!(report.task_results.len(), 2, "应包含已完成与恢复执行任务");
+    assert!(report.task_results.iter().any(|r| r.task_id == "t1" && r.success));
+    assert!(report.task_results.iter().any(|r| r.task_id == "t2" && r.success));
+}
+
+#[tokio::test]
+async fn test_interrupt_recovery_via_persisted_checkpoint_file() {
+    // M0.3/S5：模拟“中断后从持久化检查点恢复”——将中断点状态落盘后加载并续跑剩余任务
+    let orch = make_orchestrator();
+    let plan = TeamPlan {
+        goal_id: "resume-file".into(),
+        tasks: vec![
+            TaskNode {
+                id: "t1".into(),
+                agent_id: "metis".into(),
+                tool_id: "metis/analyse".into(),
+                args: json!({"request": "done-before-interrupt"}),
+                depends_on: vec![],
+                read_keys: vec![],
+                write_keys: vec!["shared".into()],
+            },
+            TaskNode {
+                id: "t2".into(),
+                agent_id: "metis".into(),
+                tool_id: "metis/analyse".into(),
+                args: json!({"request": "after-restart"}),
+                depends_on: vec!["t1".into()],
+                read_keys: vec!["shared".into()],
+                write_keys: vec![],
+            },
+        ],
+    };
+    let ctx = Arc::new(TeamContext::new());
+    ctx.write("shared".into(), json!({"v": 1}), "t1");
+    let t1 = TaskResult {
+        task_id: "t1".into(),
+        agent_id: "metis".into(),
+        success: true,
+        output: Some(json!({"ok": true})),
+        error: None,
+        duration_ms: 1,
+    };
+    let ckpt = crate::team::checkpoint::TeamCheckpoint::from_state(
+        "resume-file",
+        plan,
+        vec![t1],
+        crate::team::ConflictStats::default(),
+        &ctx,
+        ctx.workspace_changes().len(),
+    );
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let path = tmp.path().join("team-checkpoint.json");
+    ckpt.save_to_file(&path).expect("save checkpoint");
+    assert!(path.exists());
+
+    let loaded =
+        crate::team::checkpoint::TeamCheckpoint::load_from_file(&path).expect("load checkpoint");
+    assert_eq!(loaded.remaining_task_ids(), vec!["t2".to_string()]);
+
+    let report = orch
+        .execute_plan_from_checkpoint(loaded)
+        .await
+        .expect("resume from persisted checkpoint should succeed");
+    assert!(report.success);
+    assert_eq!(report.task_results.len(), 2);
+    assert!(report.task_results.iter().any(|r| r.task_id == "t2" && r.success));
+}
+
+#[tokio::test]
+async fn test_periodic_checkpoint_saved_during_execution() {
+    // S5：周期性检查点持久化触发（每批次保存）在执行过程中产出可恢复快照
+    let orch = make_orchestrator();
+    let plan = TeamPlan {
+        goal_id: "periodic-ckpt".into(),
+        tasks: vec![
+            TaskNode {
+                id: "t1".into(),
+                agent_id: "metis".into(),
+                tool_id: "metis/analyse".into(),
+                args: json!({"request": "a"}),
+                depends_on: vec![],
+                read_keys: vec![],
+                write_keys: vec![],
+            },
+            TaskNode {
+                id: "t2".into(),
+                agent_id: "metis".into(),
+                tool_id: "metis/analyse".into(),
+                args: json!({"request": "b"}),
+                depends_on: vec!["t1".into()],
+                read_keys: vec![],
+                write_keys: vec![],
+            },
+        ],
+    };
+    let ctx = Arc::new(TeamContext::new());
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let path = tmp.path().join("periodic.json");
+
+    let report = orch
+        .execute_plan_with_resume_and_checkpoint(plan, None, ctx, None, Some(&path), None)
+        .await
+        .expect("execution with periodic checkpoint should succeed");
+    assert!(report.success);
+    assert!(path.exists(), "周期性检查点文件应已生成");
+
+    let loaded = crate::team::checkpoint::TeamCheckpoint::load_from_file(&path)
+        .expect("load periodic checkpoint");
+    assert_eq!(loaded.goal_id, "periodic-ckpt");
+    assert_eq!(loaded.completed_results.len(), 2);
+}
+
+#[tokio::test]
+async fn test_interrupt_after_batches_returns_partial_report_and_resumable_checkpoint() {
+    // S5：确定性中断注入——在指定批次后停止并返回部分报告，结合检查点可恢复执行
+    let orch = make_orchestrator();
+    let plan = TeamPlan {
+        goal_id: "interrupt-inject".into(),
+        tasks: vec![
+            TaskNode {
+                id: "t1".into(),
+                agent_id: "metis".into(),
+                tool_id: "metis/analyse".into(),
+                args: json!({"request": "batch-1"}),
+                depends_on: vec![],
+                read_keys: vec![],
+                write_keys: vec![],
+            },
+            TaskNode {
+                id: "t2".into(),
+                agent_id: "metis".into(),
+                tool_id: "metis/analyse".into(),
+                args: json!({"request": "batch-2"}),
+                depends_on: vec!["t1".into()],
+                read_keys: vec![],
+                write_keys: vec![],
+            },
+        ],
+    };
+    let ctx = Arc::new(TeamContext::new());
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let path = tmp.path().join("interrupt.json");
+
+    let partial = orch
+        .execute_plan_with_resume_and_checkpoint(
+            plan.clone(),
+            None,
+            ctx,
+            None,
+            Some(&path),
+            Some(1),
+        )
+        .await
+        .expect("interrupted execution should return partial report");
+
+    assert!(!partial.success, "中断后的部分报告应标记为未成功完成");
+    assert_eq!(partial.task_results.len(), 1, "应仅完成第一批任务");
+    assert!(partial.task_results.iter().any(|r| r.task_id == "t1" && r.success));
+    assert!(partial.synthesis.as_deref().unwrap_or("").contains("Interrupted"));
+    assert!(path.exists(), "中断时应保存检查点");
+
+    let ckpt = crate::team::checkpoint::TeamCheckpoint::load_from_file(&path)
+        .expect("load interrupted checkpoint");
+    assert_eq!(ckpt.remaining_task_ids(), vec!["t2".to_string()]);
+
+    let resumed = orch
+        .execute_plan_from_checkpoint(ckpt)
+        .await
+        .expect("resume after interrupt should succeed");
+    assert!(resumed.success);
+    assert_eq!(resumed.task_results.len(), 2);
+    assert!(resumed.task_results.iter().any(|r| r.task_id == "t2" && r.success));
+}
+
+#[tokio::test]
+async fn test_resume_is_idempotent_when_all_tasks_already_completed() {
+    // S5 幂等性（调度层）：已完成任务在恢复时不应被重复调度，结果保持一致
+    let orch = make_orchestrator();
+    let plan = TeamPlan {
+        goal_id: "idempotent".into(),
+        tasks: vec![TaskNode {
+            id: "t1".into(),
+            agent_id: "metis".into(),
+            tool_id: "metis/analyse".into(),
+            args: json!({"request": "done"}),
+            depends_on: vec![],
+            read_keys: vec![],
+            write_keys: vec![],
+        }],
+    };
+    let ctx = Arc::new(TeamContext::new());
+    let t1 = TaskResult {
+        task_id: "t1".into(),
+        agent_id: "metis".into(),
+        success: true,
+        output: Some(json!({"ok": true})),
+        error: None,
+        duration_ms: 5,
+    };
+    let ckpt = crate::team::checkpoint::TeamCheckpoint::from_state(
+        "idempotent",
+        plan,
+        vec![t1.clone()],
+        crate::team::ConflictStats::default(),
+        &ctx,
+        0,
+    );
+    let report = orch
+        .execute_plan_from_checkpoint(ckpt)
+        .await
+        .expect("resume with all tasks completed should succeed");
+    assert!(report.success);
+    assert_eq!(report.task_results.len(), 1);
+    assert_eq!(report.task_results[0].task_id, "t1");
+    assert_eq!(report.task_results[0].output, t1.output);
 }

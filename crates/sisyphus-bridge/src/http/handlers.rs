@@ -255,7 +255,7 @@ pub(super) async fn health_deep_handler(State(state): State<RestApiState>) -> im
 /// 返回 JoinHandle；调用方 drop 掉 sender 后应 await 它，确保缓冲区事件
 /// 已全部推送（直接 abort 会丢掉执行末尾的完成事件）。
 fn spawn_sse_event_forwarder(
-    broadcaster: tokio::sync::broadcast::Sender<crate::http::sse_handlers::SseEvent>,
+    publisher: crate::http::sse_replay::SsePublisher,
     mut rx: mpsc::UnboundedReceiver<sisyphus_types::ExecutionEvent>,
     sop_id: String,
     trace_id: Option<String>,
@@ -268,9 +268,9 @@ fn spawn_sse_event_forwarder(
                 &sop_id,
                 trace_id.as_deref(),
             );
-            // send 失败仅表示当前无 SSE 订阅者，属正常情况（没人订阅时
-            // 不该让内核执行失败），因此只忽略错误继续消费。
-            let _ = broadcaster.send(sse_event);
+            // 无订阅者时 receivers=0 属正常情况（不该让内核执行失败）；
+            // 事件仍会写入重放缓冲，断线重连的客户端可凭 ID 补收。
+            let _ = publisher.publish(sse_event);
         }
     })
 }
@@ -288,7 +288,7 @@ fn spawn_sse_event_forwarder(
 /// `event_tx` 语义：`None` 或 `Some(true)` 表示转发（内核已产生事件，
 /// 丢弃反而是错的）；`Some(false)` 是调用方明确不要，才完全不转发。
 fn wire_execution_events(
-    broadcaster: tokio::sync::broadcast::Sender<crate::http::sse_handlers::SseEvent>,
+    publisher: crate::http::sse_replay::SsePublisher,
     event_tx: Option<bool>,
     sop_id: String,
     trace_id: Option<String>,
@@ -302,7 +302,7 @@ fn wire_execution_events(
     let (tx, rx) = mpsc::unbounded_channel();
     (
         Some(tx),
-        Some(spawn_sse_event_forwarder(broadcaster, rx, sop_id, trace_id)),
+        Some(spawn_sse_event_forwarder(publisher, rx, sop_id, trace_id)),
     )
 }
 
@@ -414,6 +414,105 @@ pub(super) async fn execute_goal_handler(
                 Json(body),
             )
         },
+    }
+}
+
+// --- Team Execution Handler ---
+
+/// 执行显式团队计划，并把 `TeamEvent` 流转发到全局 SSE 广播器（M1.3）。
+///
+/// - `plan` 由请求显式提供（bridge 当前未装配 planner LLM，无法从 objective 分解）；
+/// - 事件带 `goal_id`/`project_id`/`trace_id` 维度，客户端可用
+///   `GET /api/events?goal_id=<id>&project_id=<id>` 精确订阅本次执行；
+/// - `impact_retry_rounds > 0` 时启用工作区影响自动定向重跑（M1.2）；
+/// - 返回最终 `TeamReport` 与订阅维度建议。
+#[instrument(
+    name = "http.team_execute",
+    skip(state, req, workspace),
+    fields(goal_id = %req.plan.goal_id, task_count = req.plan.tasks.len(), project_id)
+)]
+pub(super) async fn team_execute_handler(
+    State(state): State<RestApiState>,
+    workspace: WorkspaceContext,
+    maybe_trace_id: Option<Extension<sisyphus_types::trace::TraceId>>,
+    Json(req): Json<TeamExecuteRequest>,
+) -> Response {
+    let goal_id = req.plan.goal_id.trim().to_string();
+    if goal_id.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "plan.goal_id must not be empty" })),
+        )
+            .into_response();
+    }
+    if req.plan.tasks.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "plan.tasks must not be empty" })),
+        )
+            .into_response();
+    }
+
+    let project_id =
+        workspace.project_id.or(req.project_id.clone()).unwrap_or_else(|| "default".to_string());
+    tracing::Span::current().record("project_id", project_id.as_str());
+
+    let scope = crate::http::sse_handlers::TeamSseScope {
+        goal_id: Some(goal_id.clone()),
+        project_id: Some(project_id.clone()),
+        trace_id: maybe_trace_id.map(|ext| ext.0 .0.clone()),
+    };
+
+    let (event_tx, event_rx) = mpsc::channel(1024);
+    let forwarder = if req.event_tx == Some(false) {
+        drop(event_rx);
+        None
+    } else {
+        // usage-scope: no-llm:forwarding team telemetry events to SSE broadcaster without direct LLM generation inside task
+        Some(tokio::spawn(
+            crate::http::sse_handlers::forward_team_events_to_sse(
+                event_rx,
+                state.sse_broadcaster.clone(),
+                scope,
+            ),
+        ))
+    };
+
+    let orchestrator = state.bridge.team_orchestrator.clone();
+    let context = std::sync::Arc::new(sisyphus_tools_agent::team::TeamContext::new());
+    let impact_retry_rounds = req.impact_retry_rounds.unwrap_or(0);
+    let result = if impact_retry_rounds > 0 {
+        orchestrator
+            .execute_plan_with_impact_retry(req.plan, Some(event_tx), context, impact_retry_rounds)
+            .await
+    } else {
+        orchestrator.execute_plan_with_resume(req.plan, Some(event_tx), context, None).await
+    };
+
+    // 执行结束 → sender 全部释放 → 转发器排空后退出；必须 await 以免丢末尾事件。
+    if let Some(handle) = forwarder {
+        let _ = handle.await;
+    }
+
+    match result {
+        Ok(report) => (
+            StatusCode::OK,
+            Json(TeamExecuteResponse {
+                goal_id: goal_id.clone(),
+                success: report.success,
+                report,
+                sse_filter: TeamSseFilter {
+                    goal_id,
+                    project_id,
+                },
+            }),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
     }
 }
 
@@ -1953,7 +2052,7 @@ pub(super) async fn intervene_cognitive_map_handler(
             .unwrap_or(0),
     });
     let event = crate::http::sse_handlers::SseEvent::custom("intervention".to_string(), payload);
-    let _ = state.sse_broadcaster.send(event);
+    let _ = state.sse_broadcaster.publish(event);
 
     let status = if applied {
         StatusCode::OK
@@ -2016,7 +2115,7 @@ pub(super) async fn health_ready_handler(State(state): State<RestApiState>) -> i
 #[cfg(test)]
 mod wiring_tests {
     use super::wire_execution_events;
-    use crate::http::sse_handlers::SseEvent;
+    use crate::http::sse_replay::SsePublisher;
     use sisyphus_types::ExecutionEvent;
 
     /// 核心回归测试：接线必须产生一个**活的**转发器，
@@ -2027,9 +2126,10 @@ mod wiring_tests {
     #[tokio::test]
     async fn wired_sender_delivers_events_to_sse() {
         for (label, event_tx_param) in [("未传", None), ("显式 true", Some(true))] {
-            let (sse_tx, mut sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(16);
+            let publisher = SsePublisher::new(16, 16);
+            let mut sse_rx = publisher.subscribe();
             let (kern_tx, handle) =
-                wire_execution_events(sse_tx, event_tx_param, "sop-w".to_string(), None);
+                wire_execution_events(publisher, event_tx_param, "sop-w".to_string(), None);
 
             let kern_tx = kern_tx.expect(
                 "event_tx 未传或为 true 时必须返回内核 sender —— \
@@ -2057,9 +2157,9 @@ mod wiring_tests {
     /// 显式 `event_tx: false` 是调用方明确不要，必须完全不建转发器。
     #[tokio::test]
     async fn explicit_false_disables_forwarding() {
-        let (sse_tx, _rx) = tokio::sync::broadcast::channel::<SseEvent>(16);
+        let publisher = SsePublisher::new(16, 16);
         let (kern_tx, handle) =
-            wire_execution_events(sse_tx, Some(false), "sop-off".to_string(), None);
+            wire_execution_events(publisher, Some(false), "sop-off".to_string(), None);
 
         assert!(kern_tx.is_none(), "event_tx=false 时不应创建内核 sender");
         assert!(handle.is_none(), "event_tx=false 时不应创建转发器");
@@ -2070,8 +2170,9 @@ mod wiring_tests {
     /// handler 里 `handle.await` 能够正常返回的前提。
     #[tokio::test]
     async fn forwarder_handle_resolves_after_sender_dropped() {
-        let (sse_tx, mut sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(16);
-        let (kern_tx, handle) = wire_execution_events(sse_tx, None, "sop-q".to_string(), None);
+        let publisher = SsePublisher::new(16, 16);
+        let mut sse_rx = publisher.subscribe();
+        let (kern_tx, handle) = wire_execution_events(publisher, None, "sop-q".to_string(), None);
         let kern_tx = kern_tx.expect("应有 sender");
 
         kern_tx
@@ -2095,7 +2196,8 @@ mod wiring_tests {
 #[cfg(test)]
 mod sse_forwarder_tests {
     use super::spawn_sse_event_forwarder;
-    use crate::http::sse_handlers::{matches_filters, SseEvent, SseFilters};
+    use crate::http::sse_handlers::{matches_filters, SseFilters};
+    use crate::http::sse_replay::SsePublisher;
     use sisyphus_types::ExecutionEvent;
     use tokio::sync::mpsc;
 
@@ -2103,10 +2205,11 @@ mod sse_forwarder_tests {
     /// SSE 广播订阅者。旧实现丢弃 receiver，此链路完全不存在。
     #[tokio::test]
     async fn execution_events_reach_sse_subscribers() {
-        let (sse_tx, mut sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(32);
+        let publisher = SsePublisher::new(32, 32);
+        let mut sse_rx = publisher.subscribe();
         let (kern_tx, kern_rx) = mpsc::unbounded_channel::<ExecutionEvent>();
 
-        let handle = spawn_sse_event_forwarder(sse_tx, kern_rx, "sop-live".to_string(), None);
+        let handle = spawn_sse_event_forwarder(publisher, kern_rx, "sop-live".to_string(), None);
 
         // 模拟内核在执行过程中推送的典型事件序列
         kern_tx
@@ -2167,11 +2270,11 @@ mod sse_forwarder_tests {
     /// 无 SSE 订阅者时，转发器必须安静地丢弃事件而不是让内核执行失败。
     #[tokio::test]
     async fn forwarder_survives_absent_subscribers() {
-        let (sse_tx, sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(8);
-        drop(sse_rx); // 模拟无人订阅
+        // 无人订阅：发布器创建时内部接收端即被丢弃。
+        let publisher = SsePublisher::new(8, 8);
 
         let (kern_tx, kern_rx) = mpsc::unbounded_channel::<ExecutionEvent>();
-        let handle = spawn_sse_event_forwarder(sse_tx, kern_rx, "sop-x".to_string(), None);
+        let handle = spawn_sse_event_forwarder(publisher, kern_rx, "sop-x".to_string(), None);
 
         for _ in 0..20 {
             kern_tx
@@ -2192,7 +2295,8 @@ mod sse_forwarder_tests {
     /// 若实现为「收到即 abort」，执行末尾的完成事件会在客户端侧丢失。
     #[tokio::test]
     async fn forwarder_drains_buffered_events_before_exit() {
-        let (sse_tx, mut sse_rx) = tokio::sync::broadcast::channel::<SseEvent>(64);
+        let publisher = SsePublisher::new(64, 64);
+        let mut sse_rx = publisher.subscribe();
         let (kern_tx, kern_rx) = mpsc::unbounded_channel::<ExecutionEvent>();
 
         // 先灌满缓冲，再启动转发器 —— 事件必须一条不落地送达
@@ -2203,7 +2307,7 @@ mod sse_forwarder_tests {
                 })
                 .expect("转发器未启动，channel 仍有容量");
         }
-        let handle = spawn_sse_event_forwarder(sse_tx, kern_rx, "sop-drain".to_string(), None);
+        let handle = spawn_sse_event_forwarder(publisher, kern_rx, "sop-drain".to_string(), None);
         drop(kern_tx);
 
         let mut received = 0;

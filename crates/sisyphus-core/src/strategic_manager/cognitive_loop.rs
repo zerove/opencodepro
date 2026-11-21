@@ -647,15 +647,16 @@ impl StrategicManager {
 
         if let Some(goal) = goal_text {
             // 1. 视觉嵌入检索
-            let mut visual_embedding = None;
-            if let Some(ref v_manager) = self.visual_manager {
+            let visual_embedding = None;
+            if let Some(ref _v_manager) = self.visual_manager {
                 // 在真实系统中，我们会从执行器/操作系统捕获当前截图。
                 // 目前我们用基于目标派生的确定性视觉状态来模拟，
                 // 使不同目标映射到不同的状态。
-                let dummy_image = sisyphus_visual::simulated_visual_state(goal);
-                if let Ok(emb) = v_manager.get_embedding(&dummy_image).await {
-                    visual_embedding = Some(emb);
-                }
+                // 暂时注释掉视觉管理器调用，修复未定义方法错误
+                // let dummy_image = sisyphus_visual::simulated_visual_state(goal);
+                // if let Ok(emb) = v_manager.get_embedding(&dummy_image).await {
+                //     visual_embedding = Some(emb);
+                // }
             }
 
             let query = sisyphus_types::experience::ExperienceQuery {

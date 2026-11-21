@@ -29,17 +29,19 @@ impl InternalizationManager {
     }
 
     /// Internalize feedback.
-    pub async fn internalize_feedback(&self, req: InternalizationRequest) -> Result<(), String> {
+    pub async fn internalize_feedback(
+        &self,
+        req: InternalizationRequest,
+    ) -> Result<(), crate::CoreError> {
         info!(node_id = %req.node_id, "Starting cognitive internalization for human feedback");
 
         // 1. 将原始修正提炼为可泛化的洞察
-        let insight = self.distill_insight(&req).await?;
+        let insight =
+            self.distill_insight(&req).await.map_err(crate::CoreError::InternalizationError)?;
 
         info!(node_id = %req.node_id, insight = %insight, "Distilled cognitive insight from feedback");
 
         // 2. 将洞察作为高置信度资产持久化到知识图谱
-        // 在真实系统中，我们会创建结构化的 'Insight' 资产。
-        // 目前，我们将其作为元数据标签或特定资产类型存储在知识管理器中。
         let asset_id = format!("insight_{}_{}", req.node_id, uuid::Uuid::new_v4());
 
         // 我们将洞察封装为专用的 Insight 资产。
@@ -59,7 +61,7 @@ impl InternalizationManager {
                 1.0, // Max confidence since it's human-provided
             )
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| crate::CoreError::InternalizationError(e.to_string()))?;
 
         info!(asset_id = %asset_id, "Successfully internalized feedback into knowledge graph");
         Ok(())

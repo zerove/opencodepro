@@ -236,6 +236,7 @@ async fn setup_kernel(db_url: Option<&str>) -> SisyphusKernel {
         registry: HookRegistry::new(),
         llm_client: Arc::new(sisyphus_tools_llm::metis::DummyLlmClient),
         feedback_store: Arc::new(FeedbackStore::new(test_state_dir("feedback"))),
+        file_mutation_sink: None,
     });
     let router = Arc::new(ExecutorRouter::new(tool_executor.clone()));
     router.register(

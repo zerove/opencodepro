@@ -34,6 +34,7 @@ impl<H: Hasher> std::io::Write for HashWriter<'_, H> {
 /// 基于 DAG 的执行器，以并行节点调度运行 SOP 图谱，
 /// 并支持可选的事件流。
 pub struct Executor {
+    pub resource_registry: Arc<crate::resource_registry::ResourceRegistry>,
     pub concurrency_limit: Arc<tokio::sync::Semaphore>,
     /// 当前配置的并发上限。`Semaphore::available_permits()` 会被在途节点
     /// 占用，不能当作上限使用，因此单独跟踪目标值以支持热重载。
@@ -59,6 +60,9 @@ impl Executor {
     ) -> Self {
         Self {
             concurrency_limit: Arc::new(tokio::sync::Semaphore::new(16)), // Default limit: 16 concurrent nodes
+            resource_registry: Arc::new(crate::resource_registry::ResourceRegistry::new(
+                1000, 1000,
+            )),
             configured_limit: Arc::new(std::sync::atomic::AtomicUsize::new(16)),
             pending_reduction: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             graph_cache: Arc::new(dashmap::DashMap::new()),
@@ -133,6 +137,7 @@ impl Executor {
     ) -> BoxFuture<'static, Result<Arc<ExecutionContext>, CoreError>> {
         let executor = Arc::new(Executor {
             concurrency_limit: Arc::clone(&self.concurrency_limit),
+            resource_registry: Arc::clone(&self.resource_registry),
             configured_limit: Arc::clone(&self.configured_limit),
             pending_reduction: Arc::clone(&self.pending_reduction),
             graph_cache: Arc::clone(&self.graph_cache),
@@ -267,6 +272,13 @@ impl Executor {
                     let result = async {
                         let permit = sem.acquire().await.map_err(|e| sisyphus_types::TypesError::NodeExecutionError(format!("Semaphore acquire failed: {e}")))?;
 
+                        // 资源抢占
+                        let mut requirements = HashMap::new();
+                        requirements.insert(crate::resource_registry::ResourceType::Fuel, 10);
+                        if !exec_self.resource_registry.try_acquire(&requirements) {
+                            return Err(sisyphus_types::TypesError::NodeExecutionError("Insufficient resources".into()));
+                        }
+
                         if let Some(tx) = tx.as_ref() {
                             if let Err(e) = tx.send(ExecutionEvent::NodeStarted { node_name: name.clone() }) {
                                 tracing::warn!(node = %name, error = %e, "Failed to send NodeStarted event");
@@ -278,16 +290,21 @@ impl Executor {
                         // 会形成 hold-and-wait 死锁（≥16 个并发子图时必现）。
                         if node_ref.as_any().is::<sisyphus_types::SubGraphSOPNode>() {
                             drop(permit);
+                            // 注意：这里没有释放资源，资源在节点执行期间应一直持有
                         }
 
-                        exec_self.execute_node_cognitively(
+                        let result = exec_self.execute_node_cognitively(
                             node_ref.clone(),
                             ctx_ref.clone(),
                             tx.clone(),
                             tool_exec.clone(),
                             micro_ref.clone(),
                             name.clone()
-                        ).await
+                        ).await;
+
+                        // 资源释放
+                        exec_self.resource_registry.release(&requirements);
+                        result
                     }.await;
                     let duration = start_time.elapsed().as_millis() as i64;
 

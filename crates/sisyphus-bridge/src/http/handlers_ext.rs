@@ -292,7 +292,7 @@ fn emit_tool_call(
         }
     }
     let event = crate::http::sse_handlers::SseEvent::custom("tool_call".to_string(), payload);
-    let _ = state.sse_broadcaster.send(event);
+    let _ = state.sse_broadcaster.publish(event);
 }
 
 pub(super) async fn delegate_cognitive_task_handler(

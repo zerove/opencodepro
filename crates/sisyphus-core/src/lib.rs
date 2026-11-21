@@ -40,6 +40,7 @@ pub use sisyphus_types::{
     NodeOutput, SOPGraph, SOPGraphConfig, StateStore, ToolExecutor, WasmSOPNode,
 };
 
+pub mod cognitive_dashboard;
 pub mod dag;
 
 pub use dag::*;
@@ -72,7 +73,8 @@ pub use self_programming_manager::*;
 pub mod swarm_coordinator;
 pub use swarm_coordinator::*;
 
-pub mod cognitive_dashboard;
+pub mod resource_registry;
+pub use resource_registry::*;
 
 pub use execution_manager::*;
 
@@ -197,6 +199,9 @@ pub enum CoreError {
 
     #[error("Execution context error: {0}")]
     ExecutionError(String),
+
+    #[error("Internalization failed: {0}")]
+    InternalizationError(String),
 
     #[error("Internal error: {0}")]
     Internal(String),

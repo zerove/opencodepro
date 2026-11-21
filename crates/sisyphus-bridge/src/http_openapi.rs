@@ -173,6 +173,20 @@ fn build_document() -> Result<serde_json::Value, String> {
                 }
             },
 
+            "/api/team/execute": {
+                "post": {
+                    "summary": "Execute an explicit team plan and broadcast team events to SSE",
+                    "operationId": "executeTeamPlan",
+                    "description": "Runs a caller-supplied task DAG with the bridge team orchestrator and forwards TeamEvent as Custom SSE events (team_planning / team_plan_ready / team_task_started / team_task_completed / team_conflict_detected / team_workspace_impact / team_impact_retry / team_synthesizing / team_complete / team_error). Every event carries goal_id / project_id / trace_id, so clients can subscribe with GET /api/events?goal_id=<plan.goal_id>&project_id=<id>. Set impact_retry_rounds > 0 to automatically retry tasks failed by workspace-impact gating (FailAffectedPending). bridge does not currently wire a planner LLM, so the plan must be supplied explicitly.",
+                    "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TeamExecuteRequest"}}}},
+                    "responses": {
+                        "200": {"description": "Team execution report", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TeamExecuteResponse"}}}},
+                        "400": {"description": "Empty goal_id or task list", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+                        "500": {"description": "Team execution failed", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+                    }
+                }
+            },
+
             // ── SSE ──────────────────────────────────────────────────────
         }
     }));
@@ -183,14 +197,16 @@ fn build_document() -> Result<serde_json::Value, String> {
                 "get": {
                     "summary": "Subscribe to the server-sent event stream",
                     "operationId": "streamEvents",
-                    "description": "Long-lived SSE stream. All provided filters are ANDed; blank values are treated as absent. An event is delivered only when it carries every requested dimension (a missing dimension never matches). NOTE: reconnecting does not replay past events — event ids are random per push and last_event_id is parsed but unused.",
+                    "description": "Long-lived SSE stream. All provided filters are ANDed; blank values are treated as absent. An event is delivered only when it carries every requested dimension (a missing dimension never matches). Every frame carries an `id:` assigned at publish time (monotonic per bridge process). On reconnect, send the last received id via the `Last-Event-ID` header (preferred) or `?last_event_id=`; the server first replays buffered events with a strictly greater id, then continues live. Replay is bounded by an in-memory window (see /api/events/health `replay` stats). Non-numeric legacy ids (old random UUIDs) are treated as absent. If the id is greater than the current latest (bridge restarted and the counter reset), replay is skipped and the stream starts live.",
                     "parameters": [
                         {"name": "events", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Comma-separated event types to include"},
                         {"name": "sop_id", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Only events carrying this SOP id"},
                         {"name": "session_id", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Only events carrying this session id"},
                         {"name": "project_id", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Only events carrying this project id"},
+                        {"name": "goal_id", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Only events carrying this goal id (cognitive iteration / SOP / team execution events)"},
                         {"name": "heartbeat", "in": "query", "required": false, "schema": {"type": "integer", "default": 30}, "description": "Heartbeat interval in seconds; 0 disables"},
-                        {"name": "last_event_id", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Parsed but currently unused; resumption is not implemented"}
+                        {"name": "last_event_id", "in": "query", "required": false, "schema": {"type": "string"}, "description": "Last received event id for reconnect replay. Equivalent to the Last-Event-ID header, which takes precedence when both are present"},
+                        {"name": "Last-Event-ID", "in": "header", "required": false, "schema": {"type": "string"}, "description": "Standard SSE reconnect header; identical to ?last_event_id= and wins when both are present"}
                     ],
                     "responses": {
                         "200": {"description": "Server-sent event stream", "content": {"text/event-stream": {"schema": {"type": "string"}}}},
@@ -202,11 +218,11 @@ fn build_document() -> Result<serde_json::Value, String> {
                 "post": {
                     "summary": "Broadcast a custom event to SSE subscribers",
                     "operationId": "broadcastEvent",
-                    "description": "Top-level sop_id / session_id / project_id declare the event's ownership and take precedence over same-named keys inside payload. Blank values count as absent, leaving any payload-provided dimension intact.",
+                    "description": "Top-level sop_id / session_id / project_id declare the event's ownership and take precedence over same-named keys inside payload. Blank values count as absent, leaving any payload-provided dimension intact. The event is always recorded in the replay buffer (bounded window) even when no subscriber is connected; the returned event_id is the publish-time sequence number a client can later use as Last-Event-ID.",
                     "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/BroadcastEventRequest"}}}},
                     "responses": {
-                        "200": {"description": "Event broadcast", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}}}}}},
-                        "500": {"description": "No active subscribers", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+                        "200": {"description": "Event broadcast; event_id is the publish-time id usable as Last-Event-ID", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "event_id": {"type": "integer"}}}}}},
+                        "500": {"description": "Event recorded but no subscriber was connected at publish time", "content": {"application/json": {"schema": {"type": "object", "properties": {"error": {"type": "string"}, "event_id": {"type": "integer"}}}}}}
                     }
                 }
             },
@@ -215,7 +231,7 @@ fn build_document() -> Result<serde_json::Value, String> {
                     "summary": "SSE subsystem health",
                     "operationId": "sseHealth",
                     "responses": {
-                        "200": {"description": "SSE status", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "service": {"type": "string"}}}}}}
+                        "200": {"description": "SSE status plus replay window stats", "content": {"application/json": {"schema": {"type": "object", "properties": {"status": {"type": "string"}, "service": {"type": "string"}, "replay": {"type": "object", "properties": {"buffered": {"type": "integer"}, "capacity": {"type": "integer"}, "latest_id": {"type": "integer"}}}}}}}}
                     }
                 }
             },
@@ -1306,6 +1322,67 @@ fn build_document() -> Result<serde_json::Value, String> {
                         "goals": {"type": "array", "items": {"type": "string"}},
                         "project_id": {"type": "string"},
                         "event_tx": {"type": "boolean"}
+                    }
+                },
+                "TeamExecuteRequest": {
+                    "type": "object",
+                    "required": ["plan"],
+                    "properties": {
+                        "plan": {"$ref": "#/components/schemas/TeamPlan"},
+                        "project_id": {"type": "string", "description": "Project ownership; falls back to X-Sisyphus-Workspace-Id header or 'default'"},
+                        "event_tx": {"type": "boolean", "description": "Forward team events to SSE; None/true forwards, false disables"},
+                        "impact_retry_rounds": {"type": "integer", "minimum": 0, "description": "Automatic targeted retry rounds for workspace-impact failures (0 disables)"}
+                    }
+                },
+                "TeamPlan": {
+                    "type": "object",
+                    "required": ["goal_id", "tasks"],
+                    "properties": {
+                        "goal_id": {"type": "string"},
+                        "tasks": {"type": "array", "items": {"$ref": "#/components/schemas/TeamTaskNode"}}
+                    }
+                },
+                "TeamTaskNode": {
+                    "type": "object",
+                    "required": ["id", "agent_id", "tool_id", "args", "depends_on", "read_keys", "write_keys"],
+                    "properties": {
+                        "id": {"type": "string"},
+                        "agent_id": {"type": "string"},
+                        "tool_id": {"type": "string"},
+                        "args": {"description": "Tool-specific JSON arguments"},
+                        "depends_on": {"type": "array", "items": {"type": "string"}},
+                        "read_keys": {"type": "array", "items": {"type": "string"}},
+                        "write_keys": {"type": "array", "items": {"type": "string"}}
+                    }
+                },
+                "TeamExecuteResponse": {
+                    "type": "object",
+                    "properties": {
+                        "goal_id": {"type": "string"},
+                        "success": {"type": "boolean"},
+                        "report": {"$ref": "#/components/schemas/TeamReport"},
+                        "sse_filter": {"$ref": "#/components/schemas/TeamSseFilter"}
+                    }
+                },
+                "TeamSseFilter": {
+                    "type": "object",
+                    "properties": {
+                        "goal_id": {"type": "string", "description": "Use as ?goal_id= on /api/events"},
+                        "project_id": {"type": "string", "description": "Use as ?project_id= on /api/events"}
+                    }
+                },
+                "TeamReport": {
+                    "type": "object",
+                    "properties": {
+                        "goal_id": {"type": "string"},
+                        "success": {"type": "boolean"},
+                        "task_results": {"type": "array", "items": {"type": "object"}, "description": "Per-task results (task_id/agent_id/success/output/error/duration_ms)"},
+                        "synthesis": {"type": "string"},
+                        "total_duration_ms": {"type": "integer"},
+                        "iterations": {"type": "integer"},
+                        "conflict_stats": {"type": "object", "description": "detected/write_write/read_write/serialized_waves/conflict_batches"},
+                        "workspace_impact_records": {"type": "array", "items": {"type": "object"}, "description": "batch_index/changed_paths/affected_task_ids"},
+                        "processed_change_count": {"type": "integer"}
                     }
                 },
                 "ErrorResponse": {

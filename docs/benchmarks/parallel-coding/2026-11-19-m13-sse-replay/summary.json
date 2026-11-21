@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "scenario": "M1.3",
+  "timestamp_utc": "2026-11-19T01:41:54Z",
+  "git": {
+    "head": "254786eeb671c53861a9b3cc2b2c304e27813b16",
+    "dirty_files": 24
+  },
+  "output_dir": "docs/benchmarks/parallel-coding/2026-11-19-m13-sse-replay",
+  "note": "M1.3 SSE reconnect replay: publish-time monotonic event ids + bounded replay buffer (SseReplayBuffer/PublishedSseEvent/SsePublisher); GET /api/events honors Last-Event-ID header (preferred) or ?last_event_id=, replays buffered events with strictly greater ids, dedupes the subscribe/snapshot overlap, falls back to live on stale ids after restart, keeps dimension/type filters on replay, and is verified through the real axum Router. /api/events/health reports replay window stats. Counts from actual output.",
+  "environment": {
+    "host": "zeron",
+    "kernel": "Linux zeron 6.18.58.1-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Tue Oct 27 00:24:11 UTC 2026 x86_64 GNU/Linux",
+    "pwd": "/home/zeron/dev/opencodepro",
+    "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+    "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)",
+    "env_file": "env.txt"
+  },
+  "execution": {
+    "status": "COMPLETED",
+    "command": [
+      "bash",
+      "-lc",
+      "cargo test -j 1 -p sisyphus-bridge --lib sse_replay && cargo test -j 1 -p sisyphus-bridge --lib replay && cargo test -j 1 -p sisyphus-bridge --lib stale_cursor && cargo test -j 1 -p sisyphus-bridge --lib router_replays && cargo test -j 1 -p sisyphus-bridge --lib http_openapi"
+    ],
+    "exit_code": 0,
+    "elapsed_ms": 8235,
+    "log": "run.log"
+  },
+  "metrics": {
+    "scenario_pass": true,
+    "wall_time_ms": 8235,
+    "command_exit_code": 0
+  }
+}

@@ -51,6 +51,7 @@ async fn setup_executor(registry: HookRegistry) -> BuiltinToolExecutor {
         registry,
         llm_client: Arc::new(DummyLlmClient),
         feedback_store: Arc::new(sisyphus_tools_core::feedback::FeedbackStore::default_dir()),
+        file_mutation_sink: None,
     }
 }
 

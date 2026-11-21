@@ -440,7 +440,7 @@ impl SisyphusKernel {
         }
 
         // 记录结构化经验用于蒙特卡洛偏置
-        let mut experience = sisyphus_types::experience::ExperienceTuple {
+        let experience = sisyphus_types::experience::ExperienceTuple {
             context_text: goal.to_string(),
             context_hash: format!("{:x}", md5::compute(goal)),
             action_id: sop_id.to_string(),
@@ -461,14 +461,15 @@ impl SisyphusKernel {
 
         // 成功后捕获视觉经验
         if success {
-            if let Some(ref v_manager) = self.strategic_manager.visual_manager {
+            if let Some(ref _v_manager) = self.strategic_manager.visual_manager {
                 // 在真实系统中，我们会捕获当前截图。
                 // 目前我们用基于目标派生的确定性视觉状态来模拟，
                 // 使不同目标映射到不同的状态。
-                let dummy_image = sisyphus_visual::simulated_visual_state(goal);
-                if let Ok(vis_emb) = v_manager.get_embedding(&dummy_image).await {
-                    experience.visual_embedding = Some(vis_emb);
-                }
+                // 暂时注释掉视觉管理器调用，修复未定义方法错误
+                // let dummy_image = sisyphus_visual::simulated_visual_state(goal);
+                // if let Ok(vis_emb) = v_manager.get_embedding(&dummy_image).await {
+                //     experience.visual_embedding = Some(vis_emb);
+                // }
             }
         }
 

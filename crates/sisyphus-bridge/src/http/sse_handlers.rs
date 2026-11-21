@@ -4,7 +4,7 @@
 
 use axum::{
     extract::{Extension, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response, Sse},
     Json,
 };
@@ -13,7 +13,6 @@ use serde_json::json;
 use std::borrow::Cow;
 use std::convert::Infallible;
 use std::time::Duration;
-use uuid::Uuid;
 
 use crate::http::RestApiState;
 
@@ -193,6 +192,121 @@ impl SseEvent {
         }
     }
 
+    /// 提取事件携带的目标 ID（若该变体包含）
+    ///
+    /// 认知迭代 / SOP 执行事件带结构化 `goal_id`；`Custom` 变体从 payload 读取
+    /// （team 事件转发器会把 `goal_id` 写入 payload）。用于 `?goal_id=` 过滤，
+    /// 让客户端只订阅某一次团队/目标执行的事件。
+    pub fn goal_id(&self) -> Option<&str> {
+        match self {
+            SseEvent::CognitiveIterationStarted { goal_id, .. }
+            | SseEvent::CognitiveIterationCompleted { goal_id, .. }
+            | SseEvent::SopExecutionStarted { goal_id, .. }
+            | SseEvent::SopExecutionCompleted { goal_id, .. } => Some(goal_id),
+            SseEvent::Custom { payload, .. } => payload.get("goal_id").and_then(|v| v.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Team 事件：任务开始（M1.3 对外一致暴露）。
+    pub fn team_task_started(
+        goal_id: impl Into<String>,
+        task_id: impl Into<String>,
+        agent_id: impl Into<String>,
+        tool_id: impl Into<String>,
+    ) -> Self {
+        Self::custom(
+            "team_task_started".into(),
+            json!({
+                "goal_id": goal_id.into(),
+                "task_id": task_id.into(),
+                "agent_id": agent_id.into(),
+                "tool_id": tool_id.into(),
+            }),
+        )
+    }
+
+    /// Team 事件：任务完成（M1.3 对外一致暴露）。
+    pub fn team_task_completed(
+        goal_id: impl Into<String>,
+        task_id: impl Into<String>,
+        agent_id: impl Into<String>,
+        success: bool,
+        duration_ms: u128,
+        error: Option<String>,
+    ) -> Self {
+        Self::custom(
+            "team_task_completed".into(),
+            json!({
+                "goal_id": goal_id.into(),
+                "task_id": task_id.into(),
+                "agent_id": agent_id.into(),
+                "success": success,
+                "duration_ms": duration_ms,
+                "error": error,
+            }),
+        )
+    }
+
+    /// Team 事件：并行冲突检测（M1.3 对外一致暴露）。
+    pub fn team_conflict_detected(
+        goal_id: impl Into<String>,
+        kind: impl Into<String>,
+        key: impl Into<String>,
+        task_ids: Vec<String>,
+    ) -> Self {
+        Self::custom(
+            "team_conflict_detected".into(),
+            json!({
+                "goal_id": goal_id.into(),
+                "kind": kind.into(),
+                "key": key.into(),
+                "task_ids": task_ids,
+            }),
+        )
+    }
+
+    /// Team 事件：工作区变更影响评估（M1.3 对外一致暴露）。
+    pub fn team_workspace_impact(
+        goal_id: impl Into<String>,
+        batch_index: usize,
+        changed_paths: Vec<String>,
+        affected_task_ids: Vec<String>,
+    ) -> Self {
+        Self::custom(
+            "team_workspace_impact".into(),
+            json!({
+                "goal_id": goal_id.into(),
+                "batch_index": batch_index,
+                "changed_paths": changed_paths,
+                "affected_task_ids": affected_task_ids,
+            }),
+        )
+    }
+
+    /// Team 事件：综合/汇总阶段（M1.3 对外一致暴露）。
+    pub fn team_synthesizing(goal_id: impl Into<String>, completed: usize, failed: usize) -> Self {
+        Self::custom(
+            "team_synthesizing".into(),
+            json!({
+                "goal_id": goal_id.into(),
+                "completed": completed,
+                "failed": failed,
+            }),
+        )
+    }
+
+    /// Team 事件：执行完成（M1.3 对外一致暴露，含冲突统计与影响记录摘要）。
+    pub fn team_complete(goal_id: impl Into<String>, report: serde_json::Value) -> Self {
+        Self::custom(
+            "team_complete".into(),
+            json!({
+                "goal_id": goal_id.into(),
+                "report": report,
+            }),
+        )
+    }
+
     /// 返回 `Custom` 事件的整个 payload（测试用）
     ///
     /// 非 `Custom` 变体返回 `Null`：治理规则禁止 panic，
@@ -221,6 +335,95 @@ impl SseEvent {
     pub fn to_sse_string(&self) -> String {
         let data = serde_json::to_string(self).unwrap_or_default();
         format!("event: {}\ndata: {}\n\n", self.event_type(), data)
+    }
+
+    /// 将团队编排事件转换为可广播的 SSE 事件（M1.3 对外一致暴露/桥接辅助）。
+    ///
+    /// team 事件在工具层定义（`sisyphus_tools_agent::team::TeamEvent`），bridge 侧通过
+    /// `Custom` 事件承载以保持 `SseEvent` 枚举稳定。`goal_id` 由调用方提供（部分 team 事件
+    /// 本身不携带 goal_id）。
+    pub fn from_team_event(
+        event: &sisyphus_tools_agent::team::TeamEvent,
+        goal_id: Option<&str>,
+    ) -> Self {
+        let goal = goal_id.unwrap_or_default().to_string();
+        match event {
+            sisyphus_tools_agent::team::TeamEvent::Planning { goal_id, objective } => Self::custom(
+                "team_planning".into(),
+                json!({ "goal_id": goal_id, "objective": objective }),
+            ),
+            sisyphus_tools_agent::team::TeamEvent::PlanReady { task_count } => Self::custom(
+                "team_plan_ready".into(),
+                json!({ "goal_id": goal, "task_count": task_count }),
+            ),
+            sisyphus_tools_agent::team::TeamEvent::TaskStarted {
+                task_id,
+                agent_id,
+                tool_id,
+            } => Self::team_task_started(goal, task_id.clone(), agent_id.clone(), tool_id.clone()),
+            sisyphus_tools_agent::team::TeamEvent::TaskCompleted(result) => {
+                Self::team_task_completed(
+                    if goal.is_empty() {
+                        // 无 goal_id 时仍保留任务信息
+                        String::new()
+                    } else {
+                        goal
+                    },
+                    result.task_id.clone(),
+                    result.agent_id.clone(),
+                    result.success,
+                    result.duration_ms,
+                    result.error.clone(),
+                )
+            },
+            sisyphus_tools_agent::team::TeamEvent::ConflictDetected {
+                kind,
+                key,
+                task_ids,
+            } => Self::team_conflict_detected(goal, kind.clone(), key.clone(), task_ids.clone()),
+            sisyphus_tools_agent::team::TeamEvent::WorkspaceImpact {
+                batch_index,
+                changed_paths,
+                affected_task_ids,
+            } => Self::team_workspace_impact(
+                goal,
+                *batch_index,
+                changed_paths.clone(),
+                affected_task_ids.clone(),
+            ),
+            sisyphus_tools_agent::team::TeamEvent::ImpactRetry { round, task_ids } => Self::custom(
+                "team_impact_retry".into(),
+                json!({ "goal_id": goal, "round": round, "task_ids": task_ids }),
+            ),
+            sisyphus_tools_agent::team::TeamEvent::Synthesizing { completed, failed } => {
+                Self::team_synthesizing(goal, *completed, *failed)
+            },
+            sisyphus_tools_agent::team::TeamEvent::Reflecting { iteration } => Self::custom(
+                "team_reflecting".into(),
+                json!({ "goal_id": goal, "iteration": iteration }),
+            ),
+            sisyphus_tools_agent::team::TeamEvent::Replanning { iteration, reason } => {
+                Self::custom(
+                    "team_replanning".into(),
+                    json!({ "goal_id": goal, "iteration": iteration, "reason": reason }),
+                )
+            },
+            sisyphus_tools_agent::team::TeamEvent::Complete(report) => {
+                let goal_id = if report.goal_id.is_empty() {
+                    goal
+                } else {
+                    report.goal_id.clone()
+                };
+                Self::team_complete(
+                    goal_id,
+                    serde_json::to_value(report).unwrap_or_else(|_| json!({})),
+                )
+            },
+            sisyphus_tools_agent::team::TeamEvent::Error { message } => Self::custom(
+                "team_error".into(),
+                json!({ "goal_id": goal, "message": message }),
+            ),
+        }
     }
 
     /// 把内核的 `ExecutionEvent` 转为可广播的 `SseEvent`
@@ -303,28 +506,29 @@ fn execution_event_type(event: &sisyphus_types::ExecutionEvent) -> String {
 }
 
 /// SSE 连接查询参数
+///
+/// 所有字段均已生效：`events` / `sop_id` / `session_id` / `project_id` /
+/// `goal_id` 参与事件过滤；`last_event_id` 与 `Last-Event-ID` header 一起
+/// 用于断线重连的事件重放（header 优先）；`heartbeat` 控制心跳间隔。
 #[derive(Debug, Deserialize)]
-// 字段豁免说明（ADR-007 反模式要求给出正当理由）：
-//   `events` / `heartbeat` / `sop_id` / `session_id` / `project_id` 均已生效并参与过滤；
-//   `last_event_id` 目前**仅从 URL 解析、尚未参与过滤**，保留它是为了
-//   不破坏既有 API 契约（去掉字段会让传该参数的客户端报 400/422 而非静默忽略）。
-//   - `last_event_id`：事件 ID 为每次推送生成的随机 UUID，重连携带的 ID 无可匹配的历史，
-//     且仓库内无任何客户端消费该参数。补齐需要引入带序号的全局事件日志，属独立特性。
-//   此处**不是**「为审计保留」，而是「解析已实现、过滤待实现」。
-#[allow(dead_code)]
 pub struct SseQuery {
     /// 按事件类型过滤（逗号分隔）。**已生效**
     pub events: Option<String>,
     /// 按项目 ID 过滤。**已生效**（匹配 payload 携带 `project_id` 的 Custom 事件
     /// —— `POST /api/events/broadcast` 会把请求顶层的 `project_id` 注入事件）
     pub project_id: Option<String>,
+    /// 按目标 ID 过滤。**已生效**（匹配认知迭代/SOP 执行事件，以及 payload 携带
+    /// `goal_id` 的 Custom 事件 —— 含 team 执行转发器注入的事件）
+    pub goal_id: Option<String>,
     /// 按 SOP ID 过滤。**已生效**（匹配节点/SOP 执行类事件，以及 payload 携带
     /// `sop_id` 的 Custom 事件 —— 含广播端点与执行转发器注入的事件）
     pub sop_id: Option<String>,
     /// 按会话 ID 过滤。**已生效**（`session_message_added` 事件，或 payload 携带
     /// `session_id` 的 Custom 事件）
     pub session_id: Option<String>,
-    /// 用于断点续传的最后事件 ID。**已解析但未生效**（见上方说明）
+    /// 断点续传的最后事件 ID。**已生效**（与 `Last-Event-ID` header 等价，
+    /// header 优先）。值必须是发布侧分配的数字序号；历史客户端传来的 UUID
+    /// 解析失败按「未声明断点」处理（只接收实时事件）。
     pub last_event_id: Option<String>,
     /// 心跳间隔（秒，0 表示禁用）。**已生效**
     pub heartbeat: Option<u64>,
@@ -339,6 +543,31 @@ const SSE_LIMIT_REACHED: StatusCode = StatusCode::TOO_MANY_REQUESTS;
 /// 这种永不命中、客户端也无法与「无结果」区分的条件。
 fn normalize_dimension(raw: Option<&String>) -> Option<String> {
     raw.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// 解析断线重连游标：`Last-Event-ID` header 优先于 `?last_event_id=`。
+///
+/// 只接受发布侧分配的数字序号：
+/// - 旧版本客户端可能回传随机 UUID —— 解析失败按「未声明断点」处理，
+///   连接从实时流开始（与旧行为一致，不会 400）；
+/// - `0` 是合法游标（表示「补发缓冲内全部事件」），有效序号从 1 开始。
+fn resolve_last_event_id(headers: &HeaderMap, query: Option<&String>) -> Option<u64> {
+    let raw = headers
+        .get("last-event-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| query.map(|s| s.trim().to_string()))?;
+    raw.parse::<u64>().ok()
+}
+
+/// 把 `{ id, event }` 渲染为 SSE 帧：`id:` 字段供客户端断线重连时回传。
+fn render_sse_event(id: u64, event: &SseEvent) -> axum::response::sse::Event {
+    axum::response::sse::Event::default()
+        .event(event.event_type())
+        .data(serde_json::to_string(event).unwrap_or_default())
+        .id(id.to_string())
 }
 
 /// 订阅方的过滤条件
@@ -356,6 +585,8 @@ pub(crate) struct SseFilters {
     pub session_id: Option<String>,
     /// 按项目 ID 过滤
     pub project_id: Option<String>,
+    /// 按目标 ID 过滤
+    pub goal_id: Option<String>,
 }
 
 /// 判断事件是否应推送给当前订阅者
@@ -393,12 +624,23 @@ pub(crate) fn matches_filters(event: &SseEvent, f: &SseFilters) -> bool {
             return false;
         }
     }
+    if let Some(want) = &f.goal_id {
+        if event.goal_id() != Some(want.as_str()) {
+            return false;
+        }
+    }
     true
 }
 
 /// SSE 流处理器
+///
+/// 断线重连：客户端把最后收到的 `id:` 通过 `Last-Event-ID` header（或
+/// `?last_event_id=`）带回，服务端先补发重放缓冲中该 ID 之后的事件，再
+/// 接续实时流。补发与实时流在边界处可能重叠（订阅先于快照），通过
+/// `replayed_through` 游标去重，保证每个 ID 只发送一次。
 pub async fn sse_handler(
     State(state): State<RestApiState>,
+    headers: HeaderMap,
     Query(query): Query<SseQuery>,
 ) -> Response {
     // 并发连接数限制：超过上限直接返回 429，避免无限连接耗尽资源
@@ -416,6 +658,15 @@ pub async fn sse_handler(
     // 订阅全局广播器（所有客户端共享同一 channel）
     let receiver = state.sse_broadcaster.subscribe();
 
+    // 断线重连游标：先订阅、后取重放快照。两者之间的窗口会同时出现在
+    // 重放列表与实时流里，由流内的 replayed_through 游标去重。
+    let requested_last_id = resolve_last_event_id(&headers, query.last_event_id.as_ref());
+    // 服务重启后序号归零：客户端携带的 ID 若大于当前最新 ID，说明它来自
+    // 上一个进程，历史不可用 —— 退回实时流而不是永久跳过新事件。
+    let resume_from =
+        requested_last_id.filter(|last_id| *last_id <= state.sse_broadcaster.latest_id());
+    let replayed = state.sse_broadcaster.replay_since(resume_from);
+
     // 解析事件过滤器
     let event_filters: Option<Vec<String>> =
         query.events.as_ref().map(|s| s.split(',').map(|s| s.trim().to_string()).collect());
@@ -425,11 +676,13 @@ pub async fn sse_handler(
     let sop_filter: Option<String> = normalize_dimension(query.sop_id.as_ref());
     let session_filter: Option<String> = normalize_dimension(query.session_id.as_ref());
     let project_filter: Option<String> = normalize_dimension(query.project_id.as_ref());
+    let goal_filter: Option<String> = normalize_dimension(query.goal_id.as_ref());
     let filters = SseFilters {
         types: event_filters,
         sop_id: sop_filter,
         session_id: session_filter,
         project_id: project_filter,
+        goal_id: goal_filter,
     };
 
     let heartbeat_interval = query.heartbeat.unwrap_or(30);
@@ -441,6 +694,21 @@ pub async fn sse_handler(
         let _permit = permit;
         let mut receiver = receiver;
         let mut last_heartbeat = std::time::Instant::now();
+
+        // ── 断线重连补发 ─────────────────────────────────────────────
+        // 先补发快照，再接续实时流；replayed_through 记录已发送的最大 ID，
+        // 实时侧跳过 <= 它的重复事件（订阅与快照之间发布的事件会同时出现在
+        // 两个来源）。
+        let mut replayed_through = resume_from.unwrap_or(0);
+        for published in replayed {
+            replayed_through = replayed_through.max(published.id);
+            if !matches_filters(&published.event, &filters) {
+                continue;
+            }
+            yield Ok::<axum::response::sse::Event, Infallible>(
+                render_sse_event(published.id, &published.event),
+            );
+        }
 
         loop {
             // 检查是否该发送心跳
@@ -463,18 +731,21 @@ pub async fn sse_handler(
                 Duration::from_millis(100),
                 receiver.recv()
             ).await {
-                Ok(Ok(event)) => {
-                    // 应用过滤器（类型 / sop_id / session_id / project_id 四维取交集）
-                    if !matches_filters(&event, &filters) {
+                Ok(Ok(published)) => {
+                    // 边界去重：重放快照已发送过的 ID 不再重复推送。
+                    if published.id <= replayed_through {
+                        continue;
+                    }
+                    replayed_through = published.id;
+
+                    // 应用过滤器（类型 / sop_id / session_id / project_id / goal_id 取交集）
+                    if !matches_filters(&published.event, &filters) {
                         continue;
                     }
 
-                    let sse_event = axum::response::sse::Event::default()
-                        .event(event.event_type())
-                        .data(serde_json::to_string(&event).unwrap_or_default())
-                        .id(Uuid::new_v4().to_string());
-
-                    yield Ok::<axum::response::sse::Event, Infallible>(sse_event);
+                    yield Ok::<axum::response::sse::Event, Infallible>(
+                        render_sse_event(published.id, &published.event),
+                    );
                 }
                 Ok(Err(_)) => break,
                 Err(_) => {
@@ -513,14 +784,76 @@ pub async fn broadcast_event_handler(
         timestamp: jiff::Timestamp::now(),
     };
 
-    match state.sse_broadcaster.send(event) {
-        Ok(_) => (StatusCode::OK, Json(json!({"status": "broadcasted"}))).into_response(),
-        Err(_) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "No subscribers"})),
+    // 事件始终写入重放缓冲（即使当前无订阅者），断线重连的客户端仍能补收。
+    // 但「广播时无人订阅」沿用既有契约：返回 500 提示调用方。
+    let outcome = state.sse_broadcaster.publish(event);
+    if outcome.receivers > 0 {
+        (
+            StatusCode::OK,
+            Json(json!({"status": "broadcasted", "event_id": outcome.id})),
         )
-            .into_response(),
+            .into_response()
+    } else {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "No subscribers", "event_id": outcome.id})),
+        )
+            .into_response()
     }
+}
+
+/// 团队事件转发到 SSE 时补齐的归属维度（M1.3）。
+///
+/// `goal_id` 同时用于 `from_team_event` 补齐事件缺失的目标维度；
+/// `project_id` / `trace_id` 会注入 Custom payload，使 `/api/events`
+/// 的 `?project_id=` / `?goal_id=` 过滤与请求追踪可用。
+#[derive(Debug, Clone, Default)]
+pub struct TeamSseScope {
+    /// 团队执行目标 ID（事件归属/过滤维度）。
+    pub goal_id: Option<String>,
+    /// 项目归属（`?project_id=` 过滤维度）。
+    pub project_id: Option<String>,
+    /// 请求级 trace id（串联入口请求与事件流）。
+    pub trace_id: Option<String>,
+}
+
+/// 将团队事件流转发到 SSE 广播器（M1.3 广播接线）。
+///
+/// 将 `TeamEvent` 转换为统一 `SseEvent::Custom(team_*)` 并广播给
+/// `/api/events` 订阅者，按 `scope` 补齐 `goal_id`/`project_id`/`trace_id`
+/// 维度。接收端关闭（执行结束）后自行退出。
+pub async fn forward_team_events_to_sse(
+    mut rx: tokio::sync::mpsc::Receiver<sisyphus_tools_agent::team::TeamEvent>,
+    publisher: crate::http::sse_replay::SsePublisher,
+    scope: TeamSseScope,
+) {
+    while let Some(event) = rx.recv().await {
+        let sse = SseEvent::from_team_event(&event, scope.goal_id.as_deref());
+        // publish 会分配全局序号并写入重放缓冲：team 事件因此可在断线后
+        // 按 `Last-Event-ID` 补发（窗口受缓冲容量限制）。
+        let _ = publisher.publish(inject_team_scope(sse, &scope));
+    }
+}
+
+/// 把团队执行的归属维度写入 Custom payload（不改动事件类型/业务字段）。
+fn inject_team_scope(mut sse: SseEvent, scope: &TeamSseScope) -> SseEvent {
+    if let SseEvent::Custom { payload, .. } = &mut sse {
+        if let Some(map) = payload.as_object_mut() {
+            if let Some(project_id) = scope.project_id.as_deref() {
+                map.insert(
+                    "project_id".to_string(),
+                    serde_json::Value::String(project_id.to_string()),
+                );
+            }
+            if let Some(trace_id) = scope.trace_id.as_deref() {
+                map.insert(
+                    "trace_id".to_string(),
+                    serde_json::Value::String(trace_id.to_string()),
+                );
+            }
+        }
+    }
+    sse
 }
 
 /// 把请求顶层的归属维度写入事件 payload
@@ -765,10 +1098,22 @@ pub async fn metrics_handler(State(state): State<RestApiState>) -> impl IntoResp
 }
 
 /// SSE 端点健康检查
-pub async fn sse_health_handler() -> impl IntoResponse {
+///
+/// 附带重放缓冲指标：`buffered`/`capacity` 反映断线窗口占用，
+/// `latest_id` 是当前最新全局序号（客户端可据此判断断点是否已被淘汰）。
+pub async fn sse_health_handler(State(state): State<RestApiState>) -> impl IntoResponse {
+    let replay = state.sse_broadcaster.replay();
     (
         StatusCode::OK,
-        Json(json!({"status": "ok", "service": "sse"})),
+        Json(json!({
+            "status": "ok",
+            "service": "sse",
+            "replay": {
+                "buffered": replay.len(),
+                "capacity": replay.capacity(),
+                "latest_id": replay.latest_id(),
+            }
+        })),
     )
 }
 
@@ -801,7 +1146,19 @@ mod tests {
         let resp = broadcast_event_handler(State(state), None, Json(req)).await.into_response();
         assert_eq!(resp.status(), axum::http::StatusCode::OK);
 
+        let body = axum::body::to_bytes(resp.into_body(), 4096).await.expect("读取响应体");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("JSON 响应");
+        assert_eq!(
+            json["event_id"], 1,
+            "响应必须回传发布序号，客户端可用作 Last-Event-ID: {json}"
+        );
+
         let ev = rx.recv().await.expect("订阅者应收到广播事件");
+        assert_eq!(
+            ev.id,
+            json["event_id"].as_u64().expect("数字 ID"),
+            "广播事件与响应 ID 必须一致"
+        );
         assert_eq!(ev.event_type(), "custom_event");
         assert_eq!(
             ev.sop_id(),
@@ -1217,16 +1574,213 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn test_team_events_pass_goal_filter() {
+        // M1.3：team 事件必须携带 goal_id 维度，并能被 ?goal_id= 精确过滤。
+        let event = sisyphus_tools_agent::team::TeamEvent::TaskStarted {
+            task_id: "t1".to_string(),
+            agent_id: "metis".to_string(),
+            tool_id: "metis/analyse".to_string(),
+        };
+        let sse = SseEvent::from_team_event(&event, Some("goal-abc"));
+        assert_eq!(sse.event_type(), "team_task_started");
+        assert_eq!(sse.goal_id(), Some("goal-abc"));
+        assert!(matches_filters(
+            &sse,
+            &SseFilters {
+                goal_id: Some("goal-abc".to_string()),
+                ..Default::default()
+            }
+        ));
+        assert!(!matches_filters(
+            &sse,
+            &SseFilters {
+                goal_id: Some("goal-other".to_string()),
+                ..Default::default()
+            }
+        ));
+    }
+
+    #[test]
+    fn test_cognitive_iteration_events_pass_goal_filter() {
+        let sse = SseEvent::CognitiveIterationStarted {
+            iteration: 1,
+            goal_id: "goal-cog".to_string(),
+            timestamp: jiff::Timestamp::now(),
+        };
+        assert!(matches_filters(
+            &sse,
+            &SseFilters {
+                goal_id: Some("goal-cog".to_string()),
+                ..Default::default()
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_forward_team_events_injects_scope_dimensions() {
+        // 转发器必须把 goal/project/trace 维度写进 payload，供订阅过滤与追踪使用。
+        use sisyphus_tools_agent::team::TeamEvent;
+
+        let publisher = crate::http::sse_replay::SsePublisher::new(16, 16);
+        let mut broadcast_rx = publisher.subscribe();
+        let (event_tx, event_rx) = tokio::sync::mpsc::channel(16);
+        let handle = tokio::spawn(forward_team_events_to_sse(
+            event_rx,
+            publisher,
+            TeamSseScope {
+                goal_id: Some("goal-f".to_string()),
+                project_id: Some("proj-f".to_string()),
+                trace_id: Some("trace-f".to_string()),
+            },
+        ));
+
+        event_tx.send(TeamEvent::PlanReady { task_count: 2 }).await.expect("事件应可发送");
+        drop(event_tx);
+
+        let ev = broadcast_rx.recv().await.expect("订阅者应收到事件");
+        assert_eq!(ev.event_type(), "team_plan_ready");
+        assert_eq!(ev.goal_id(), Some("goal-f"));
+        assert_eq!(ev.project_id(), Some("proj-f"));
+        assert_eq!(
+            ev.payload_field("trace_id"),
+            Some(serde_json::json!("trace-f"))
+        );
+        assert!(matches_filters(
+            &ev,
+            &SseFilters {
+                goal_id: Some("goal-f".to_string()),
+                project_id: Some("proj-f".to_string()),
+                ..Default::default()
+            }
+        ));
+
+        tokio::time::timeout(std::time::Duration::from_secs(5), handle)
+            .await
+            .expect("sender 释放后转发器应退出")
+            .expect("转发器不得 panic");
+    }
+
+    /// team 事件转发必须走发布器：序号连续递增，断线后可按
+    /// `Last-Event-ID` 从重放缓冲补发（M1.3）。
+    #[tokio::test]
+    async fn test_team_events_get_replayable_ids() {
+        use sisyphus_tools_agent::team::TeamEvent;
+
+        let publisher = crate::http::sse_replay::SsePublisher::new(16, 16);
+        let (event_tx, event_rx) = tokio::sync::mpsc::channel(16);
+        let handle = tokio::spawn(forward_team_events_to_sse(
+            event_rx,
+            publisher.clone(),
+            TeamSseScope {
+                goal_id: Some("goal-ids".to_string()),
+                project_id: Some("proj-ids".to_string()),
+                trace_id: None,
+            },
+        ));
+
+        event_tx.send(TeamEvent::PlanReady { task_count: 2 }).await.expect("发送计划事件");
+        event_tx
+            .send(TeamEvent::Synthesizing {
+                completed: 1,
+                failed: 0,
+            })
+            .await
+            .expect("发送聚合事件");
+        drop(event_tx);
+        tokio::time::timeout(Duration::from_secs(5), handle)
+            .await
+            .expect("转发器应退出")
+            .expect("不得 panic");
+
+        let buffered = publisher.replay_since(Some(0));
+        let ids: Vec<u64> = buffered.iter().map(|entry| entry.id).collect();
+        assert_eq!(ids, vec![1, 2], "team 事件必须获得连续发布序号");
+        assert_eq!(buffered[0].event_type(), "team_plan_ready");
+        assert_eq!(buffered[1].event_type(), "team_synthesizing");
+        assert_eq!(buffered[0].goal_id(), Some("goal-ids"));
+
+        // 重连者从 1 号之后补发：只应拿到 2 号。
+        let resumed = publisher.replay_since(Some(1));
+        assert_eq!(resumed.len(), 1);
+        assert_eq!(resumed[0].id, 2);
+    }
+
+    /// 端到端：`POST /api/team/execute` 的响应与 SSE 事件必须带同一
+    /// goal/project 维度，客户端可据此过滤本次执行的事件流。
+    #[tokio::test]
+    async fn team_execute_handler_broadcasts_scoped_events() {
+        use crate::http::handlers::team_execute_handler;
+        use crate::http::types::{TeamExecuteRequest, WorkspaceContext};
+        use sisyphus_tools_agent::team::{TaskNode, TeamPlan};
+
+        let state = make_test_state(None).await;
+        let mut rx = state.sse_broadcaster.subscribe();
+        let req = TeamExecuteRequest {
+            plan: TeamPlan {
+                goal_id: "goal-http".to_string(),
+                tasks: vec![TaskNode {
+                    id: "bad".to_string(),
+                    agent_id: "unknown-agent".to_string(),
+                    tool_id: "unknown/tool".to_string(),
+                    args: serde_json::json!({}),
+                    depends_on: vec![],
+                    read_keys: vec![],
+                    write_keys: vec![],
+                }],
+            },
+            project_id: Some("proj-http".to_string()),
+            event_tx: None,
+            impact_retry_rounds: None,
+        };
+
+        let resp = team_execute_handler(
+            State(state.clone()),
+            WorkspaceContext { project_id: None },
+            None,
+            Json(req),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.expect("读取响应体");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("响应应为 JSON");
+        assert_eq!(json["goal_id"], "goal-http");
+        assert_eq!(json["success"], false);
+        assert_eq!(json["sse_filter"]["goal_id"], "goal-http");
+        assert_eq!(json["sse_filter"]["project_id"], "proj-http");
+
+        let mut saw_complete = false;
+        while let Ok(ev) = rx.try_recv() {
+            if ev.event_type() == "team_complete" {
+                saw_complete = true;
+                assert_eq!(ev.goal_id(), Some("goal-http"));
+                assert_eq!(ev.project_id(), Some("proj-http"));
+                assert!(matches_filters(
+                    &ev,
+                    &SseFilters {
+                        goal_id: Some("goal-http".to_string()),
+                        project_id: Some("proj-http".to_string()),
+                        ..Default::default()
+                    }
+                ));
+            }
+        }
+        assert!(saw_complete, "应广播 team_complete 事件");
+    }
+
     #[tokio::test]
     async fn test_execution_event_reaches_subscriber_end_to_end() {
         // 走真实广播链路：发送 ExecutionEvent → 转换 → 广播 → 订阅者收到，
         // 确认不是只有纯函数层面正确。
-        let (tx, mut rx) = tokio::sync::broadcast::channel::<SseEvent>(16);
+        let publisher = crate::http::sse_replay::SsePublisher::new(16, 16);
+        let mut rx = publisher.subscribe();
         let event = sisyphus_types::ExecutionEvent::ExecutionComplete {
             result: sisyphus_types::NodeOutput::from(serde_json::json!("finished")),
         };
 
-        tx.send(SseEvent::from_execution_event(&event, "sop-e2e")).expect("应有订阅者");
+        let outcome = publisher.publish(SseEvent::from_execution_event(&event, "sop-e2e"));
+        assert_eq!(outcome.receivers, 1, "应有订阅者");
 
         let got = rx.recv().await.expect("订阅者应收到事件");
         assert_eq!(got.event_type(), "execution_complete");
@@ -1588,13 +2142,14 @@ mod tests {
     #[tokio::test]
     async fn test_sse_broadcast_shared_channel() {
         // 同一 channel 内：先订阅后广播，订阅端必须收到事件
-        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+        let publisher = crate::http::sse_replay::SsePublisher::new(16, 16);
+        let mut rx = publisher.subscribe();
         let event = SseEvent::Custom {
             event_type: "shared_test".to_string(),
             payload: json!({"k": "v"}),
             timestamp: jiff::Timestamp::now(),
         };
-        assert!(tx.send(event.clone()).is_ok());
+        assert_eq!(publisher.publish(event).receivers, 1);
         let received = tokio::time::timeout(Duration::from_millis(100), rx.recv())
             .await
             .expect("同一 channel 内应能收到广播事件")
@@ -1621,6 +2176,251 @@ mod tests {
         drop(p4);
     }
 
+    // ── 断线重连事件重放（M1.3）────────────────────────────────────
+
+    /// 构造只关心重放游标/目标过滤的查询（`heartbeat: 0` 让读流只看到业务帧）。
+    fn replay_query(last_event_id: Option<&str>, goal_id: Option<&str>) -> Query<SseQuery> {
+        Query(SseQuery {
+            events: None,
+            project_id: None,
+            goal_id: goal_id.map(str::to_string),
+            sop_id: None,
+            session_id: None,
+            last_event_id: last_event_id.map(str::to_string),
+            heartbeat: Some(0),
+        })
+    }
+
+    fn custom_with_goal(event_type: &str, goal_id: &str) -> SseEvent {
+        SseEvent::Custom {
+            event_type: event_type.to_string(),
+            payload: json!({ "goal_id": goal_id }),
+            timestamp: jiff::Timestamp::now(),
+        }
+    }
+
+    /// 从响应体读取至少 `want_data` 个 `data:` 帧（超过 2 秒视为失败）。
+    async fn read_sse_body(body: axum::body::Body, want_data: usize) -> String {
+        use futures_util::StreamExt;
+
+        let mut stream = body.into_data_stream();
+        let mut out = String::new();
+        while out.matches("data:").count() < want_data {
+            let chunk = tokio::time::timeout(Duration::from_secs(2), stream.next())
+                .await
+                .expect("等待 SSE 帧超时")
+                .expect("事件流不应提前结束")
+                .expect("SSE 数据块应可读");
+            out.push_str(&String::from_utf8_lossy(&chunk));
+        }
+        out
+    }
+
+    /// 连接携带 `last_event_id`：必须补发该 ID 之后的事件（严格大于）。
+    #[tokio::test]
+    async fn test_replay_sends_events_after_last_event_id() {
+        let state = make_test_state(None).await;
+        // 无订阅者时发布：事件仍写入重放缓冲，供后续重连补发。
+        let ids: Vec<u64> = ["e0", "e1", "e2"]
+            .into_iter()
+            .map(|name| state.sse_broadcaster.publish(custom_with_goal(name, "goal-replay")).id)
+            .collect();
+        assert_eq!(ids, vec![1, 2, 3], "发布侧序号从 1 单调递增");
+
+        let resp = sse_handler(
+            State(state.clone()),
+            HeaderMap::new(),
+            replay_query(Some("1"), None),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = read_sse_body(resp.into_body(), 2).await;
+        assert!(
+            body.contains("id: 2"),
+            "游标之后的事件必须补发，实际帧：{body}"
+        );
+        assert!(
+            body.contains("id: 3"),
+            "游标之后的事件必须补发，实际帧：{body}"
+        );
+        assert!(
+            body.contains("\"e1\""),
+            "补发的事件内容必须保留，实际帧：{body}"
+        );
+        assert!(
+            !body.contains("id: 1"),
+            "游标本身（及更早事件）不得重发，实际帧：{body}"
+        );
+    }
+
+    /// `Last-Event-ID` header 优先于 `?last_event_id=`。
+    #[tokio::test]
+    async fn test_replay_prefers_header_over_query() {
+        let state = make_test_state(None).await;
+        for name in ["e0", "e1", "e2"] {
+            state.sse_broadcaster.publish(custom_with_goal(name, "goal-h"));
+        }
+
+        let mut headers = HeaderMap::new();
+        headers.insert("last-event-id", "2".parse().expect("header value"));
+
+        let resp = sse_handler(State(state), headers, replay_query(Some("0"), None)).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = read_sse_body(resp.into_body(), 1).await;
+        assert!(
+            body.contains("id: 3"),
+            "header 游标之后的 3 号事件必须补发，实际帧：{body}"
+        );
+        assert!(
+            !body.contains("id: 2"),
+            "query 不应覆盖 header，实际帧：{body}"
+        );
+        assert!(
+            !body.contains("id: 1"),
+            "query 不应覆盖 header，实际帧：{body}"
+        );
+    }
+
+    /// 新连接（无断点）不得重播历史；订阅后的实时事件仍按发布 ID 送达。
+    #[tokio::test]
+    async fn test_no_cursor_replays_nothing_but_live_events_arrive() {
+        let state = make_test_state(None).await;
+        state.sse_broadcaster.publish(custom_with_goal("old", "goal-live"));
+
+        let resp = sse_handler(
+            State(state.clone()),
+            HeaderMap::new(),
+            replay_query(None, None),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // handler 返回时订阅已建立；实时发布的事件应携带发布序号。
+        state.sse_broadcaster.publish(custom_with_goal("new", "goal-live"));
+
+        let body = read_sse_body(resp.into_body(), 1).await;
+        assert!(
+            body.contains("id: 2"),
+            "实时事件应带发布序号，实际帧：{body}"
+        );
+        assert!(
+            body.contains("\"new\""),
+            "新连接只收实时事件，实际帧：{body}"
+        );
+        assert!(
+            !body.contains("\"old\""),
+            "新连接不得收到历史事件，实际帧：{body}"
+        );
+    }
+
+    /// 重放同样受维度过滤约束：补发的历史不能绕过 `?goal_id=`。
+    #[tokio::test]
+    async fn test_replay_respects_dimension_filters() {
+        let state = make_test_state(None).await;
+        state.sse_broadcaster.publish(custom_with_goal("keep", "goal-a"));
+        state.sse_broadcaster.publish(custom_with_goal("drop", "goal-b"));
+
+        let resp = sse_handler(
+            State(state),
+            HeaderMap::new(),
+            replay_query(Some("0"), Some("goal-a")),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = read_sse_body(resp.into_body(), 1).await;
+        assert!(
+            body.contains("\"keep\""),
+            "匹配维度的事件应补发，实际帧：{body}"
+        );
+        assert!(
+            !body.contains("\"drop\""),
+            "不匹配维度的事件不得补发，实际帧：{body}"
+        );
+    }
+
+    /// 服务重启后客户端游标大于当前最新 ID：历史不可用，退回实时流，
+    /// 不能因为「id <= 游标」把新进程的事件全部跳过。
+    #[tokio::test]
+    async fn test_stale_cursor_falls_back_to_live_stream() {
+        let state = make_test_state(None).await;
+        state.sse_broadcaster.publish(custom_with_goal("before", "goal-restart"));
+
+        let resp = sse_handler(
+            State(state.clone()),
+            HeaderMap::new(),
+            replay_query(Some("99"), None),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // 重启语义下新事件的序号仍会从低位继续；必须送达而不是被游标吞掉。
+        state.sse_broadcaster.publish(custom_with_goal("after", "goal-restart"));
+
+        let body = read_sse_body(resp.into_body(), 1).await;
+        assert!(
+            body.contains("\"after\""),
+            "重启后必须退回实时流，实际帧：{body}"
+        );
+    }
+
+    /// 健康检查暴露重放窗口指标（buffered/capacity/latest_id）。
+    #[tokio::test]
+    async fn test_sse_health_reports_replay_stats() {
+        let state = make_test_state(None).await;
+        state.sse_broadcaster.publish(custom_with_goal("x", "goal-health"));
+
+        let resp = sse_health_handler(State(state)).await.into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), 4096).await.expect("读取响应体");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("JSON 响应");
+        assert_eq!(json["replay"]["buffered"], 1);
+        assert_eq!(json["replay"]["latest_id"], 1);
+        assert!(
+            json["replay"]["capacity"].as_u64().unwrap_or(0) > 0,
+            "容量应为正数：{json}"
+        );
+    }
+
+    /// 路由级：`Last-Event-ID` header 必须穿过 Router/中间件到达 handler。
+    /// handler 直调测试无法覆盖路由层的 header 传递与 extractor 顺序。
+    #[tokio::test]
+    async fn test_router_replays_from_last_event_id_header() {
+        use tower::ServiceExt as _;
+
+        let state = make_test_state(None).await;
+        state.sse_broadcaster.publish(custom_with_goal("first", "goal-route"));
+        state.sse_broadcaster.publish(custom_with_goal("second", "goal-route"));
+
+        let response = crate::http::build_router(state)
+            .oneshot(
+                axum::http::Request::builder()
+                    .uri("/api/events?heartbeat=0")
+                    .header("last-event-id", "1")
+                    .body(axum::body::Body::empty())
+                    .expect("构造请求"),
+            )
+            .await
+            .expect("路由应返回响应");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = read_sse_body(response.into_body(), 1).await;
+        assert!(
+            body.contains("id: 2"),
+            "路由层必须转发 header 触发重放，实际帧：{body}"
+        );
+        assert!(
+            body.contains("\"second\""),
+            "应补发游标之后的事件，实际帧：{body}"
+        );
+        assert!(
+            !body.contains("id: 1"),
+            "游标之前的事件不得重发，实际帧：{body}"
+        );
+    }
+
     /// P0 ⑥ 回归：走真实 handler 验证 permit 覆盖连接全程。
     /// 旧实现 permit 是 handler 局部变量，返回 Response 时即释放，
     /// 本测试第二个请求会得到 200（上限形同虚设）而非 429。
@@ -1633,6 +2433,7 @@ mod tests {
             Query(SseQuery {
                 events: None,
                 project_id: None,
+                goal_id: None,
                 sop_id: None,
                 session_id: None,
                 last_event_id: None,
@@ -1640,14 +2441,14 @@ mod tests {
             })
         };
 
-        let resp1 = sse_handler(State(state.clone()), query()).await;
+        let resp1 = sse_handler(State(state.clone()), axum::http::HeaderMap::new(), query()).await;
         assert_eq!(
             resp1.status(),
             axum::http::StatusCode::OK,
             "首个连接应被接纳"
         );
 
-        let resp2 = sse_handler(State(state.clone()), query()).await;
+        let resp2 = sse_handler(State(state.clone()), axum::http::HeaderMap::new(), query()).await;
         assert_eq!(
             resp2.status(),
             SSE_LIMIT_REACHED,
@@ -1655,7 +2456,7 @@ mod tests {
         );
 
         drop(resp1);
-        let resp3 = sse_handler(State(state.clone()), query()).await;
+        let resp3 = sse_handler(State(state.clone()), axum::http::HeaderMap::new(), query()).await;
         assert_eq!(
             resp3.status(),
             axum::http::StatusCode::OK,

@@ -9,7 +9,7 @@ use sisyphus_roadmap::{Bottleneck, DelayAlert, GoalResourceEstimate, Paralleliza
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::http::sse_handlers::SseEvent;
+use crate::http::sse_replay::SsePublisher;
 use crate::MySisyphusBridge;
 
 // ── Response / Request Types ───────────────────────────────────────────────
@@ -86,6 +86,38 @@ pub struct CompositeExecuteResponse {
     /// 新增字段对既有客户端是兼容的（反序列化不受影响）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sse_sop_id: Option<String>,
+}
+
+// --- Team Execution Types ---
+
+/// Team 执行请求（显式计划；bridge 侧 planner LLM 未接线时由客户端提供 DAG）。
+#[derive(Debug, Deserialize)]
+pub struct TeamExecuteRequest {
+    /// 待执行的团队计划（任务 DAG）。
+    pub plan: sisyphus_tools_agent::team::TeamPlan,
+    /// 项目归属；缺省时回退工作区上下文/`default`。
+    pub project_id: Option<String>,
+    /// 是否把执行事件转发到 SSE（`None`/`true` 转发，`false` 关闭）。
+    pub event_tx: Option<bool>,
+    /// 工作区影响自动定向重跑轮次（`0`/缺省关闭）。
+    pub impact_retry_rounds: Option<usize>,
+}
+
+/// Team 执行响应。
+#[derive(Debug, Serialize)]
+pub struct TeamExecuteResponse {
+    pub goal_id: String,
+    pub success: bool,
+    pub report: sisyphus_tools_agent::team::TeamReport,
+    /// 本次执行的 SSE 过滤建议（`GET /api/events?goal_id=...&project_id=...`）。
+    pub sse_filter: TeamSseFilter,
+}
+
+/// 团队执行对应的 SSE 订阅维度。
+#[derive(Debug, Serialize)]
+pub struct TeamSseFilter {
+    pub goal_id: String,
+    pub project_id: String,
 }
 
 // --- Skill Registry Types ---
@@ -790,8 +822,12 @@ pub struct RestApiState {
     /// 基于 token 的 JWT 认证配置。
     /// 若设置了 `jwt.secret`，则为 REST API 启用 JWT 认证。
     pub jwt_config: Option<JwtConfig>,
-    /// 全局 SSE 事件广播器（客户端订阅与事件发布共享同一 channel）。
-    pub sse_broadcaster: tokio::sync::broadcast::Sender<SseEvent>,
+    /// 全局 SSE 发布器：广播通道 + 断线重放缓冲（M1.3）。
+    ///
+    /// 发布必须走 [`SsePublisher::publish`]：它会先为事件分配全局序号
+    /// 并写入重放缓冲，再广播给订阅者。绕过它直接 `channel().send(...)`
+    /// 的事件没有可用 ID，断线重连时无法补发。
+    pub sse_broadcaster: SsePublisher,
     /// SSE 并发连接数限制（默认 64）。
     pub sse_connection_limit: Arc<tokio::sync::Semaphore>,
     /// 共享 HTTP 客户端（来自 ProviderRegistry，暴露给 /api/metrics）。
@@ -808,12 +844,12 @@ pub const SSE_CHANNEL_CAPACITY: usize = 1000;
 pub const SSE_MAX_CONNECTIONS: usize = 64;
 
 impl RestApiState {
-    fn new_sse_components() -> (
-        tokio::sync::broadcast::Sender<SseEvent>,
-        Arc<tokio::sync::Semaphore>,
-    ) {
+    fn new_sse_components() -> (SsePublisher, Arc<tokio::sync::Semaphore>) {
         (
-            tokio::sync::broadcast::channel(SSE_CHANNEL_CAPACITY).0,
+            SsePublisher::new(
+                SSE_CHANNEL_CAPACITY,
+                crate::http::sse_replay::SSE_REPLAY_CAPACITY,
+            ),
             Arc::new(tokio::sync::Semaphore::new(SSE_MAX_CONNECTIONS)),
         )
     }

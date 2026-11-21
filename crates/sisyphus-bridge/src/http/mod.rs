@@ -10,6 +10,7 @@ pub(crate) mod handlers;
 pub(crate) mod handlers_ext;
 pub(crate) mod handlers_platform;
 pub(crate) mod sse_handlers;
+pub(crate) mod sse_replay;
 pub mod types;
 
 pub use types::RestApiState;
@@ -233,6 +234,7 @@ pub fn build_router(state: RestApiState) -> Router {
             get(goal_stream_handler),
         )
         .route("/api/execute/composite", post(execute_composite_handler))
+        .route("/api/team/execute", post(team_execute_handler))
         .route(
             "/api/roadmap/project/:id",
             get(roadmap_project_handler).post(roadmap_project_handler),

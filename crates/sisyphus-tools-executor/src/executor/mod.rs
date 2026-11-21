@@ -47,6 +47,11 @@ pub struct BuiltinToolExecutor {
     pub registry: sisyphus_tools_core::hook::HookRegistry,
     pub llm_client: Arc<dyn LlmClient>,
     pub feedback_store: Arc<sisyphus_tools_core::feedback::FeedbackStore>,
+    /// 可选：文件变更回调（M1.2 外部/工具回调事件源）。
+    ///
+    /// 在 `file_write` / `file_edit` / `file_edit_all` 成功后，以参数中的 `path` 触发。
+    /// 用于将实际工具写入事件接入工作区变更观测（如 `TeamContext::record_workspace_change`）。
+    pub file_mutation_sink: Option<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
 #[async_trait::async_trait]
@@ -59,6 +64,7 @@ impl sisyphus_types::ToolExecutor for BuiltinToolExecutor {
     ) -> Result<Vec<u8>, sisyphus_types::TypesError> {
         let llm_client = self.llm_client.clone();
         let feedback_store = self.feedback_store.clone();
+        let file_mutation_sink = self.file_mutation_sink.clone();
         let self_ref = Arc::new(self.clone());
         sisyphus_tools_core::hook::execute_with_hooks(
             tool_id,
@@ -66,14 +72,54 @@ impl sisyphus_types::ToolExecutor for BuiltinToolExecutor {
             &self.registry,
             move |enriched_args| {
                 let client = llm_client.clone();
+                let mutation_sink = file_mutation_sink.clone();
                 let _executor_ref = Arc::clone(&self_ref);
                 async move {
                     match tool_id {
                         // ── file commands ──────────────────────────────
                         "file_read" => file_cmds::cmd_file_read(enriched_args),
-                        "file_write" => file_cmds::cmd_file_write(enriched_args),
-                        "file_edit" => file_cmds::cmd_file_edit(enriched_args),
-                        "file_edit_all" => file_cmds::cmd_file_edit_all(enriched_args),
+                        "file_write" => {
+                            let path = serde_json::from_slice::<serde_json::Value>(&enriched_args)
+                                .ok()
+                                .and_then(|v| {
+                                    v.get("path").and_then(|p| p.as_str()).map(|s| s.to_string())
+                                });
+                            let res = file_cmds::cmd_file_write(enriched_args);
+                            if res.is_ok() {
+                                if let (Some(sink), Some(path)) = (mutation_sink.as_ref(), path) {
+                                    sink(path);
+                                }
+                            }
+                            res
+                        },
+                        "file_edit" => {
+                            let path = serde_json::from_slice::<serde_json::Value>(&enriched_args)
+                                .ok()
+                                .and_then(|v| {
+                                    v.get("path").and_then(|p| p.as_str()).map(|s| s.to_string())
+                                });
+                            let res = file_cmds::cmd_file_edit(enriched_args);
+                            if res.is_ok() {
+                                if let (Some(sink), Some(path)) = (mutation_sink.as_ref(), path) {
+                                    sink(path);
+                                }
+                            }
+                            res
+                        },
+                        "file_edit_all" => {
+                            let path = serde_json::from_slice::<serde_json::Value>(&enriched_args)
+                                .ok()
+                                .and_then(|v| {
+                                    v.get("path").and_then(|p| p.as_str()).map(|s| s.to_string())
+                                });
+                            let res = file_cmds::cmd_file_edit_all(enriched_args);
+                            if res.is_ok() {
+                                if let (Some(sink), Some(path)) = (mutation_sink.as_ref(), path) {
+                                    sink(path);
+                                }
+                            }
+                            res
+                        },
                         "file_read_lines" => file_cmds::cmd_file_read_lines(enriched_args),
                         "glob" => file_cmds::cmd_glob(enriched_args),
                         "grep" => file_cmds::cmd_grep(enriched_args),
@@ -275,6 +321,7 @@ mod tests {
             registry: sisyphus_tools_core::hook::HookRegistry::new(),
             llm_client: Arc::new(MockLlmClient),
             feedback_store: Arc::new(sisyphus_tools_core::feedback::FeedbackStore::default_dir()),
+            file_mutation_sink: None,
         }
     }
 
@@ -606,5 +653,32 @@ mod tests {
 
         let result = ex.execute("librarian/research", mkargs(json!({})), 0).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_file_mutation_sink_called_on_write_edit() {
+        use std::sync::Mutex;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("a.txt");
+        let path_str = path.to_string_lossy().to_string();
+
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen2 = seen.clone();
+        let ex = BuiltinToolExecutor {
+            registry: sisyphus_tools_core::hook::HookRegistry::new(),
+            llm_client: Arc::new(MockLlmClient),
+            feedback_store: Arc::new(sisyphus_tools_core::feedback::FeedbackStore::default_dir()),
+            file_mutation_sink: Some(Arc::new(move |p| {
+                seen2.lock().expect("lock").push(p);
+            })),
+        };
+
+        let args = mkargs(json!({"path": path_str, "content": "hello"}));
+        assert_ok(ex.execute("file_write", args, 0).await);
+        assert_eq!(seen.lock().expect("lock").as_slice(), [path_str.as_str()]);
+
+        let args = mkargs(json!({"path": path_str, "old": "hello", "new": "world"}));
+        assert_ok(ex.execute("file_edit", args, 0).await);
+        assert_eq!(seen.lock().expect("lock").len(), 2);
     }
 }

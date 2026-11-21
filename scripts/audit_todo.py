@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import sys
@@ -113,11 +114,14 @@ def parse_todo(path: pathlib.Path) -> list[dict]:
 
 
 def rust_sources(root: pathlib.Path) -> list[pathlib.Path]:
-    out = []
-    for p in root.rglob("*.rs"):
-        if any(part in SKIP_DIRS for part in p.relative_to(root).parts):
-            continue
-        out.append(p)
+    out: list[pathlib.Path] = []
+    # 使用 os.walk 并在遍历时就地剪枝 SKIP_DIRS（如 target/），避免 rglob 陷入海量构建产物导致卡死
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        base = pathlib.Path(dirpath)
+        for name in sorted(filenames):
+            if name.endswith(".rs"):
+                out.append(base / name)
     return out
 
 

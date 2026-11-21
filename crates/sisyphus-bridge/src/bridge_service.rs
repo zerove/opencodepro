@@ -446,6 +446,7 @@ impl MySisyphusBridge {
                 c
             },
             feedback_store: Arc::new(FeedbackStore::new(".omo/feedback")),
+            file_mutation_sink: None,
         });
 
         // Build router: WASM = default (backward compat), builtin = "builtin:" prefix

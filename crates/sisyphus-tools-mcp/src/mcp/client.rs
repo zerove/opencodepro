@@ -346,6 +346,21 @@ impl McpClient {
         &self.server_capabilities
     }
 
+    /// 检查服务器是否支持工具调用能力。
+    pub fn supports_tools(&self) -> bool {
+        self.server_capabilities.tools.is_some()
+    }
+
+    /// 检查服务器是否支持资源读取能力。
+    pub fn supports_resources(&self) -> bool {
+        self.server_capabilities.resources.is_some()
+    }
+
+    /// 检查服务器是否支持提示词模板能力。
+    pub fn supports_prompts(&self) -> bool {
+        self.server_capabilities.prompts.is_some()
+    }
+
     /// Close the transport.
     pub async fn close(&mut self) -> ToolResult<()> {
         self.transport.close().await

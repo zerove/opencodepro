@@ -66,6 +66,7 @@ async fn make_integration_orchestrator() -> Option<TeamOrchestrator> {
         registry: hooks,
         llm_client: llm.clone(),
         feedback_store: feedback,
+        file_mutation_sink: None,
     });
 
     Some(TeamOrchestrator::new(reg, executor, Some(llm)))

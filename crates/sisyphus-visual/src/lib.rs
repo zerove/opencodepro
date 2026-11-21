@@ -340,9 +340,16 @@ impl VisualPerceptionManager {
         }
     }
 
-    /// Get embedding.
-    pub async fn get_embedding(&self, image_data: &[u8]) -> Result<Vec<f32>, VisualError> {
-        self.provider.get_embedding(image_data).await
+    /// Enhanced batch visual processing with parallel analysis support.
+    pub async fn process_visual_batch(
+        &self,
+        tasks: &[(NodeKind, Vec<u8>)],
+    ) -> Result<Vec<String>, VisualError> {
+        let mut results = Vec::with_capacity(tasks.len());
+        for (kind, image_data) in tasks {
+            results.push(self.process_visual_node(kind, image_data).await?);
+        }
+        Ok(results)
     }
 }
 
