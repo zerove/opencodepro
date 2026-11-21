@@ -171,9 +171,9 @@ cargo bench -p sisyphus-core   # 认知循环 benchmark
   ——构建成功却判红，本地只 `cargo build` 时完全看不出来。
   `scripts/audit_workflows.py` 现在会拿 workspace 实际 bin 名单校验
   workflow 里所有 `target/.../release/<name>`（已接进 `make audit` 与 CI）
-- 内部 crate 的路径依赖均带显式 `version = "0.4.1"`，这是 `cargo package` 的
+- 内部 crate 的路径依赖均带显式 `version = "0.4.2"`，这是 `cargo package` 的
   硬性要求（缺 version 会报 “all dependencies must have a version
-  requirement specified when packaging”）。全部 27 个 crate 当前都是 0.4.1
+  requirement specified when packaging”）。全部 27 个 crate 当前都是 0.4.2
   （历史：v0.1.0 → v0.2.0 一次性 bump；当前 115 处内部 path 依赖带显式
   version，计数以实跑输出为准）。发版前跑 `make release-check`，见
   CONTRIBUTING §发布流程。

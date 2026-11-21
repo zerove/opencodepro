@@ -1,6 +1,6 @@
 [package]
 name = "sisyphus-tools-agent"
-version = "0.4.1"
+version = "0.4.2"
 publish = false
 edition = "2021"
 repository.workspace = true
@@ -9,11 +9,11 @@ authors.workspace = true
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-sisyphus-tools-core = { version = "0.4.1", path = "../sisyphus-tools-core" }
-sisyphus-tools-llm = { version = "0.4.1", path = "../sisyphus-tools-llm" }
-sisyphus-tools-system = { version = "0.4.1", path = "../sisyphus-tools-system" }
-sisyphus-types = { version = "0.4.1", path = "../sisyphus-types" }
-sisyphus-mem = { version = "0.4.1", path = "../sisyphus-mem" }
+sisyphus-tools-core = { version = "0.4.2", path = "../sisyphus-tools-core" }
+sisyphus-tools-llm = { version = "0.4.2", path = "../sisyphus-tools-llm" }
+sisyphus-tools-system = { version = "0.4.2", path = "../sisyphus-tools-system" }
+sisyphus-types = { version = "0.4.2", path = "../sisyphus-types" }
+sisyphus-mem = { version = "0.4.2", path = "../sisyphus-mem" }
 tokio = { version = "1.0", features = ["process", "fs", "io-util", "time", "rt", "macros"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -32,4 +32,4 @@ uuid = { version = "1.23.4", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"
-sisyphus-tools-executor = { version = "0.4.1", path = "../sisyphus-tools-executor" }
+sisyphus-tools-executor = { version = "0.4.2", path = "../sisyphus-tools-executor" }

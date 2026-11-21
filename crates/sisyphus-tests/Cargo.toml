@@ -1,6 +1,6 @@
 [package]
 name = "sisyphus-tests"
-version = "0.4.1"
+version = "0.4.2"
 publish = false
 edition = "2021"
 repository.workspace = true
@@ -15,22 +15,22 @@ serde_json = { workspace = true }
 async-trait = { workspace = true }
 parking_lot = "0.12"
 
-sisyphus-types = { version = "0.4.1", path = "../sisyphus-types" }
+sisyphus-types = { version = "0.4.2", path = "../sisyphus-types" }
 tokio = { version = "1", features = ["full"] }
 petgraph = "0.6"
 tempfile = "3.8"
-sisyphus-tools-llm = { version = "0.4.1", path = "../sisyphus-tools-llm" }
-sisyphus-tools-core = { version = "0.4.1", path = "../sisyphus-tools-core" }
-sisyphus-tools-build = { version = "0.4.1", path = "../sisyphus-tools-build" }
+sisyphus-tools-llm = { version = "0.4.2", path = "../sisyphus-tools-llm" }
+sisyphus-tools-core = { version = "0.4.2", path = "../sisyphus-tools-core" }
+sisyphus-tools-build = { version = "0.4.2", path = "../sisyphus-tools-build" }
 sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite"] }
-sisyphus-mem = { version = "0.4.1", path = "../sisyphus-mem" }
-sisyphus-tools-llm-tools = { version = "0.4.1", path = "../sisyphus-tools-llm-tools" }
-sisyphus-intel = { version = "0.4.1", path = "../sisyphus-intel" }
-sisyphus-knowledge = { version = "0.4.1", path = "../sisyphus-knowledge" }
-sisyphus_visual = { version = "0.4.1", path = "../sisyphus-visual" }
-sisyphus-core = { version = "0.4.1", path = "../sisyphus-core" }
-sisyphus-sandbox = { version = "0.4.1", path = "../sisyphus-sandbox" }
-sisyphus-tools-agent = { version = "0.4.1", path = "../sisyphus-tools-agent" }
-sisyphus-tools-executor = { version = "0.4.1", path = "../sisyphus-tools-executor" }
-sisyphus-bridge = { version = "0.4.1", path = "../sisyphus-bridge" }
-sisyphus-cli = { version = "0.4.1", path = "../sisyphus-cli" }
+sisyphus-mem = { version = "0.4.2", path = "../sisyphus-mem" }
+sisyphus-tools-llm-tools = { version = "0.4.2", path = "../sisyphus-tools-llm-tools" }
+sisyphus-intel = { version = "0.4.2", path = "../sisyphus-intel" }
+sisyphus-knowledge = { version = "0.4.2", path = "../sisyphus-knowledge" }
+sisyphus_visual = { version = "0.4.2", path = "../sisyphus-visual" }
+sisyphus-core = { version = "0.4.2", path = "../sisyphus-core" }
+sisyphus-sandbox = { version = "0.4.2", path = "../sisyphus-sandbox" }
+sisyphus-tools-agent = { version = "0.4.2", path = "../sisyphus-tools-agent" }
+sisyphus-tools-executor = { version = "0.4.2", path = "../sisyphus-tools-executor" }
+sisyphus-bridge = { version = "0.4.2", path = "../sisyphus-bridge" }
+sisyphus-cli = { version = "0.4.2", path = "../sisyphus-cli" }
