@@ -351,6 +351,11 @@ impl VisualPerceptionManager {
         }
         Ok(results)
     }
+
+    /// Get embedding.
+    pub async fn get_embedding(&self, image_data: &[u8]) -> Result<Vec<f32>, VisualError> {
+        self.provider.get_embedding(image_data).await
+    }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
