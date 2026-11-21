@@ -30,7 +30,8 @@ impl ResourceRegistry {
 
     /// 尝试抢占资源，如果成功返回 true，否则返回 false。
     pub fn try_acquire(&self, weights: &HashMap<ResourceType, u64>) -> bool {
-        let mut allocated = self.allocated.lock().unwrap();
+        // 锁中毒（持锁线程 panic）时恢复守护器而不 panic（ADR-007 §1：无新增 panic 路径）。
+        let mut allocated = self.allocated.lock().unwrap_or_else(|e| e.into_inner());
 
         // 校验：是否有足够的资源分配？
         for (r_type, cost) in weights {
@@ -50,7 +51,8 @@ impl ResourceRegistry {
 
     /// 释放资源。
     pub fn release(&self, weights: &HashMap<ResourceType, u64>) {
-        let mut allocated = self.allocated.lock().unwrap();
+        // 锁中毒（持锁线程 panic）时恢复守护器而不 panic（ADR-007 §1：无新增 panic 路径）。
+        let mut allocated = self.allocated.lock().unwrap_or_else(|e| e.into_inner());
         for (r_type, cost) in weights {
             if let Some(current) = allocated.get_mut(r_type) {
                 *current = current.saturating_sub(*cost);
