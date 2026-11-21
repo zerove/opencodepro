@@ -628,9 +628,12 @@
 ### 10.5 发布技术债
 - [ ] **内部 crate 无法 `cargo package`**: `sisyphus-bridge-api` / `sisyphus-metrics` 等内部 crate 未发布到 crates.io，`cargo package` 报 "no matching package named ... found"。仓库现已全覆盖 `publish = false`，但那只阻止误发布，**不解决** `cargo package` 解析内部 path 依赖的问题；发布产物是平台二进制 + Docker 镜像。若将来要发布 crate：先整体发布内部 crate，或改用 workspace 依赖 + 私有 registry（2026-11-16 发现，2026-11-18 复核）
 
+### 10.6 评测（evals-ci）覆盖度技术债（2026-11）
+- [ ] **evals-ci 稳定 case 的 Mock 覆盖率提升**（2026-11-21）：`scripts/evals-ci-run.sh`（CI 的 evals 门禁，`cargo run -q -p eval-runner --bin eval-runner -- --cases <stable>`，Mock 环境）在默认稳定 case 集合中仅 1 个通过（artifact `docs/benchmarks/evals-ci/2026-11-21-d7f8d32.json`：score 0.14，1/7，70.3s）。失败点全为 keyword/regex criteria 未被 `DummyLlmClient` 输出命中：metis-002/007/008（需 mock 输出含 "non-actionable" 相关文本）、librarian/lib-006-noise-medium（正则需 mock 输出不含 movies/IMDb/Marvel）、librarian/lib-009-structure-easy（需 `[Core Conclusions]…[Detailed Evidence]…[Comprehensive Recommendations]` 三段式）、scribe/doc_med_02（需 mock 输出含 "bun install"/"bun run start"）。门禁语义正常（exit 0，见脚本解析逻辑），但稳定 case 的 Mock 覆盖率偏低；建议方向：评估调整 criteria（如 non-actionable、struct-all 三段式）或补 mock 输出命中点，并把趋势纳入 artifact 评审。
+
 ---
 
-**更新日期**: 2026-11-16
+**更新日期**: 2026-11-21
 **当前重点**: 10.1 勾选门禁已落地（`make todo-audit`）；剩余为 3 节点 Docker Compose / 网络分区验证、mutation/fuzz 扩展
 **前置条件**:
 - 阶段 9.1 经验同步生产链路已打通并有端到端验证 ✅
