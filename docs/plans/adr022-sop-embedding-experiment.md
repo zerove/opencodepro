@@ -71,8 +71,8 @@ pub trait SopEmbedder {
 
 ## 6. 实施出口（路线图）
 
-1. `docs/plans/adr022-sop-embedding-experiment.md` 实验草图（本文件）。
-2. `docs/plans/adr022-sop-embedding-experiment-design.md`：一页 design sketch（接口与默认形态）。
-3. `docs/plans/adr022-sop-embedding-experiment-benchmark.md`：编码器/检索基准 + 实测数据。
-4. ADR-022 更新（可选 ADR-022B）：实验结论与接入语义演进。
-5. TODO 进阶跟踪：`TODO.md` 9.2.1 链接的草图（时间线：实验（1-2 周）+ 执行出口（需 ADR 决策））。
+1. ✅ `docs/plans/adr022-sop-embedding-experiment.md` 实验草图（本文件）。
+2. ⏳ `docs/plans/adr022-sop-embedding-experiment-design.md`：一页 design sketch（接口与默认形态）——当前接口/默认形态已并入本文件 §2.2/§2.3，独立一页待接入 `VectorExperienceStore` 时再写。
+3. ✅ `docs/plans/adr022-sop-embedding-experiment-benchmark.md`：编码器/检索基准 + 实测数据（2026-11-22；eval 与 Rust bench 一致）。
+4. ⏳ ADR-022 更新（可选 ADR-022B）：实验结论与接入语义演进——合成数据只验证管线，语义泛化证据不足，保持 Proposed。
+5. ⏳ TODO 进阶跟踪：`TODO.md` 9.2.1 链接的草图（时间线：实验（1-2 周）+ 执行出口（需 ADR 决策））。

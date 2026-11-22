@@ -59,12 +59,13 @@
 - **ADR-022 认知循环 v3 问题陈述**（2026-11-22）：记录 P1-P5（预算分配、反思结构、经验/SOP 语义统一、演进归因、长会话压缩）与约束/候选方向；状态 Proposed，不含架构决策。
 - **ADR-022 Workstream 1: SOP 嵌入实验设计草图**（2026-11-22）：`docs/plans/adr022-sop-embedding-experiment.md`；覆盖数据源（synthetic DAG 生成）、候选编码器（FNV-1a hash/dense16，§2.2）、实验矩阵与决策问题分派（§4）。
 - **ADR-022 Workstream 1: SOP 嵌入匹配实测基线**（2026-11-22）：
-  - `evals/ground_truth_gen.py`：synthetic DAG 生成器 + ground truth JSON（`evals/ground_truth_42.json`，8 DAGs / 80 queries，设计详见 `docs/plans/adr022-sop-embedding-experiment.md` §2.1；生成器补充音体规格 `dags-01`、干扰词生成规则增加对≤8 字节名称的边界）
-  - `evals/ground_truth_42.json`：ground truth artifact（`python3 evals/ground_truth_gen.py --seed 42 --dags 8 --queries 10 --backwards-case` 实跑生成：8 DAGs + Library backwards case）
+  - `evals/ground_truth_gen.py`：synthetic DAG 生成器 + ground truth JSON（`evals/ground_truth_42.json`，9 DAGs / 90 queries = 8 A/B DAG × 10 + Library backwards 10；设计详见 `docs/plans/adr022-sop-embedding-experiment.md` §2.1）
+  - `evals/ground_truth_42.json`：ground truth artifact（`python3 evals/ground_truth_gen.py --seed 42 --dags 8 --queries 10 --backwards-case` 实跑生成）
   - `evals/sop_embed_eval.py --case`：可过滤 Library case 的 eval 模式（可重复 `--case`，如 `--case q-lib-case-backwards-00`）
   - `evals/sop_embed_bench.rs --case lib-case-backwards`：Benchmark 同步新增（`bench-lib` 段）
-  - `evals/sop_embed_eval.py`：Library backwards case 结果（`name_hash` = hit@5 1.0）与原版一致，`none` = 0.1111（80 条 A/B 基线 + 10 条 lib 扩展）
-  - `evals/sop_embed_eval.py`：hit@5/mAP@5 评测（§3.2）；实测基线：`none` = hit@5 0.1111（全 90 条 query），原 A/B 80 条子集单独评测为 0.1375；`name_hash` = hit@5 1.0, mAP@5 1.0（eval+bench 一致，§6）
+  - `make sop-embed-eval`：评测入口（`SOP_CODEC=none|name_hash|name_hash_dense16`），输出 hit@5/mAP@5
+  - **实测基线**（eval 与 Rust bench 一致，详见 `docs/plans/adr022-sop-embedding-experiment-benchmark.md`）：90 query 上 `none` = hit@5 0.1111 / mAP@5 0.0602，`name_hash` 与 `name_hash_dense16` = 1.0 / 1.0；8-DAG A/B 子集（80 query）`none` = 0.1250 / 0.0677；Library case（10 query）`none` = 0.0 / 0.0，`name_hash` = 1.0 / 1.0。合成数据上哈希编码必然命中（查询名与语料节点名相同），**不构成语义泛化证据**，ADR-022 仍为 Proposed
+  - **评测工具缺陷修复**（同日）：Python `mAP` 误把 rank 当 AP（可 >1）→ 改为 `1/rank`，与 Rust 对齐；Python `name_hash` 被 `name_hash_dense16` 提前 return 遮蔽 → 移除；bench `--dag-file`/`--case` 解析与文档不符（路径被当成 flag 导致 NaN）→ 真实解析 + 载入失败非零退出；generator `--queries` 被忽略、未开 `--backwards-case` 仍追加 lib 查询 → 修复
 - **evals-ci Mock 覆盖率提升 + 10.6 收口**（2026-11-22）：`./scripts/evals-ci-run.sh` → 7/7 pass（artifact `docs/benchmarks/evals-ci/2026-11-22-72b4ed7.json`，score 1.0）；`TODO.md` 10.6 勾选完成；`CHANGELOG.md` Unreleased 条目。
   - `evals/sop_embed_bench.rs`：Rust bench（`cargo run -q -p eval-runner --bin sop_embed_bench`，§6）；`Codec::{None, NameHash, NameHashDense16}`（FNV-1a；dense16 通过缩放线性化实现 §2.2）
   - Bridge mutation missed（9.3.1 后续）：`crates/sisyphus-bridge/src/peer/anti_entropy.rs` 的分页 `more` 边界（首轮 `--timeout 180 -j 2`：25 caught / 3 missed / 1 timeout；`--timeout 300` 重跑在 24/30 处因并发冲突人工中断，已完成部分 19 caught / 3 missed / 1 timeout / 1 unviable）。整改曾试 `>= page_size + 1`，被 CI clippy `int_plus_one` 拦截且有 `usize` 溢出风险，已回退惯用 `page_keys.len() > page_size`；新增 `crates/sisyphus-bridge/tests/anti_entropy_integration.rs::page_boundary_more_flags_correct`（首页 8 条 more=true / 次页 8 条 more=false）覆盖精确边界，全量重跑跟踪见 TODO 9.3.1

@@ -121,76 +121,101 @@ fn eval_report(codec: Codec, dags: &[&[String]], queries: &[String]) -> (f64, f6
     )
 }
 
-fn load_fixture(path: &str) -> Result<(Vec<Vec<String>>, Vec<String>), String> {
+/// 一条 DAG 夹具：节点名列表。
+struct DagFixture {
+    node_names: Vec<String>,
+}
+
+/// 一条查询夹具：保留 id（`--case` 过滤用）与查询名。
+struct QueryFixture {
+    id: String,
+    name: String,
+}
+
+fn load_fixture(path: &str) -> Result<(Vec<DagFixture>, Vec<QueryFixture>), String> {
     let txt = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     let v: Value = serde_json::from_str(&txt).map_err(|e| e.to_string())?;
-    let mut dags = Vec::new();
-    for d in v["dags"].as_array().ok_or("no dags")? {
-        let names = d["node_names"]
-            .as_array()
-            .ok_or("no nodes")?
-            .iter()
-            .map(|n| n.as_str().unwrap_or("").to_string())
-            .collect();
-        dags.push(names);
-    }
+    let dags = v["dags"]
+        .as_array()
+        .ok_or("no dags")?
+        .iter()
+        .map(|d| {
+            let node_names = d["node_names"]
+                .as_array()
+                .ok_or("no nodes")?
+                .iter()
+                .map(|n| n.as_str().unwrap_or("").to_string())
+                .collect();
+            Ok(DagFixture { node_names })
+        })
+        .collect::<Result<Vec<_>, &str>>()?;
     let queries = v["queries"]
         .as_array()
         .ok_or("no queries")?
         .iter()
-        .map(|q| q["name"].as_str().unwrap_or("").to_string())
+        .map(|q| QueryFixture {
+            id: q["id"].as_str().unwrap_or("").to_string(),
+            name: q["name"].as_str().unwrap_or("").to_string(),
+        })
         .collect();
     Ok((dags, queries))
 }
 
+/// 解析参数：`--dag-file <path>`、`--case <dag-id>`；位置参数仍兼容。
+fn parse_args() -> (String, Option<String>) {
+    let mut path = "evals/ground_truth_42.json".to_string();
+    let mut case = None;
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--dag-file" => {
+                if let Some(p) = args.next() {
+                    path = p;
+                }
+            },
+            "--case" => case = args.next(),
+            other => path = other.to_string(),
+        }
+    }
+    (path, case)
+}
+
 fn main() {
-    let path = std::env::args().nth(1).unwrap_or_else(|| "evals/ground_truth_42.json".to_string());
-    let case_filter: Option<String> = std::env::args().nth(2);
-    let (dags, queries) = load_fixture(&path).unwrap_or((vec![], vec![]));
-    let (dags, queries) = if let Some(case_id) = case_filter {
-        // --case <id>：只评测指定 DAG（如 lib-case-backwards）
-        let filtered_dags: Vec<Vec<String>> =
-            dags.iter().filter(|d| d[0].contains(&case_id)).cloned().collect();
-        let filtered_queries: Vec<String> = queries
-            .iter()
-            .filter(|q| {
-                q.starts_with(&format!("q-{}", case_id))
-                    || filtered_dags.iter().any(|d| d.contains(q))
-            })
-            .cloned()
-            .collect();
-        (filtered_dags, filtered_queries)
-    } else {
-        (dags, queries)
+    let (path, case_filter) = parse_args();
+    let (dags, queries) = match load_fixture(&path) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("bench: failed to load {path}: {e}");
+            std::process::exit(2);
+        },
     };
 
-    // 基线 codec（§2.2）: none/name_hash/name_hash_dense16
-    let dags_refs: Vec<&[String]> = dags.iter().map(|d| d.as_slice()).collect();
-    for codec in [Codec::None, Codec::NameHash, Codec::NameHashDense16] {
-        let (hits, ap) = eval_report(codec, &dags_refs, &queries);
-        println!(
-            "bench: codec={} hit@5={:.4} mAP@5={:.4}",
-            codec.as_str(),
-            hits,
-            ap
-        );
+    // `--case` 与 Python eval 对齐：只过滤 query id（`q-<case-id>...`），
+    // 语料仍是全部 DAG 节点（保留干扰项，避免只测一个 DAG 的平凡命中）。
+    let (label, queries) = match case_filter {
+        Some(case_id) => {
+            let prefix = format!("q-{case_id}");
+            let filtered = queries
+                .into_iter()
+                .filter(|q| q.id.starts_with(&prefix))
+                .map(|q| q.name)
+                .collect::<Vec<_>>();
+            ("bench-lib", filtered)
+        },
+        None => ("bench", queries.into_iter().map(|q| q.name).collect()),
+    };
+    if queries.is_empty() {
+        eprintln!("bench: no queries selected (path={path}, case filter applied?)");
+        std::process::exit(2);
     }
 
-    // Library backwards case（--case lib-case-backwards：通过 arg[2] 过滤）
-    if let Some(id) = std::env::args().nth(2) {
-        let filtered: Vec<Vec<String>> =
-            dags.iter().filter(|d| d[0].contains(&id)).cloned().collect();
-        if let Some(dag) = filtered.first() {
-            let names = dag.clone();
-            for codec in [Codec::None, Codec::NameHash, Codec::NameHashDense16] {
-                let (hits, ap) = eval_report(codec, &[names.as_slice()], &queries);
-                println!(
-                    "bench-lib: codec={} hit@5={:.4} mAP@5={:.4}",
-                    codec.as_str(),
-                    hits,
-                    ap
-                );
-            }
-        }
+    // 基线 codec（§2.2）: none/name_hash/name_hash_dense16
+    let dag_refs: Vec<&[String]> = dags.iter().map(|d| d.node_names.as_slice()).collect();
+    for codec in [Codec::None, Codec::NameHash, Codec::NameHashDense16] {
+        let (hits, ap) = eval_report(codec, &dag_refs, &queries);
+        println!(
+            "{label}: codec={} hit@5={hits:.4} mAP@5={ap:.4}",
+            codec.as_str()
+        );
     }
 }

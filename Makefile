@@ -795,6 +795,15 @@ eval-check:
 eval-ci:
 	./scripts/evals-ci-run.sh
 
+# — ADR-022 SOP 嵌入实验（原型评测，hit@5/mAP@5） —
+# 编码器：none / name_hash / name_hash_dense16；默认 name_hash。
+SOP_CODEC ?= name_hash
+
+sop-embed-eval:
+	python3 evals/sop_embed_eval.py --truth evals/ground_truth_42.json --codec $(SOP_CODEC) --k 5
+
+.PHONY: sop-embed-eval
+
 # — T3.2 provider 引导端到端验收（真实 provider + mock 失败路径） —
 # 默认打本机 ollama；用 LLM_ENDPOINT/LLM_MODEL 指向其它 OpenAI 兼容服务。
 provider-acceptance:

@@ -539,10 +539,10 @@
 - [ ] **决策记录**: ADR-022 在证据齐备后由 Proposed 更新为 Accepted/Rejected（证据基于实验草图 `docs/plans/adr022-sop-embedding-experiment.md` 与代码接入点）
 
 #### 9.2.2 认知能力原型
-- [ ] **SOP 嵌入实验**: 将 SOP 节点编码为向量（草图：`docs/plans/adr022-sop-embedding-experiment.md`）
-- [ ] **相似度检索原型**: 基于嵌入的经验检索（草图：`docs/plans/adr022-sop-embedding-experiment.md`）
-- [ ] **评估基准搭建**: 命中率/MAP 实验，对比 A/B（草图：`docs/plans/adr022-sop-embedding-experiment.md`）
-  - Library fallback case (backwards)：`evals/ground_truth_gen.py --backwards-case` → `evals/ground_truth_42.json`（10 个回退 DAG，A/B 集合互斥）
+- [x] **SOP 嵌入实验**: 将 SOP 节点编码为向量——`evals/sop_embed_bench.rs` 实现 `Codec::{None, NameHash, NameHashDense16}`（FNV-1a），Python eval 与 Rust bench 双实现互证；实测基线见 `docs/plans/adr022-sop-embedding-experiment-benchmark.md` — 证据：`make sop-embed-eval`
+- [x] **相似度检索原型**: 基于嵌入的经验检索——`evals/sop_embed_bench.rs` 的 `eval_report` 对全部节点名做 cosine top-5，输出 hit@5/mAP@5；Library case 用 `--case lib-case-backwards` 只过滤 query、保留全语料干扰项 — 证据：`make sop-embed-eval`（原型脚本非测试，数字见 `docs/plans/adr022-sop-embedding-experiment-benchmark.md`）
+- [x] **评估基准搭建**: 命中率/MAP 实验，对比 A/B——`evals/ground_truth_42.json`（9 DAG/90 query）+ 8-DAG A/B 子集（80 query）；`none` 基线 90Q hit@5 0.1111 / mAP@5 0.0602，`name_hash`/`dense16` 1.0/1.0（合成数据仅验证管线，非语义泛化）— 证据：`make sop-embed-eval`
+  - Library fallback case (backwards)：`evals/ground_truth_gen.py --backwards-case` → `evals/ground_truth_42.json`（1 个回退 DAG / 10 条回退查询，与 A/B 查询集互斥）
   - 评测入口：`evals/sop_embed_eval.py --case`（可过滤 Library case）、`evals/sop_embed_bench.rs`（分 `Codec::{None, NameHash, NameHashDense16}` 基线）
 
 ### 9.3 测试质量巩固

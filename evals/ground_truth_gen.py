@@ -133,12 +133,14 @@ def generate_backwards_library_case() -> dict:
     }
 
 
-def generate_queries(seed: int, n_dags: int, rng: random.Random) -> list[dict]:
+def generate_queries(
+    seed: int, n_dags: int, per_dag: int, rng: random.Random, backwards_case: bool
+) -> list[dict]:
     """生成查询参考样本（§2.1）：名称相似度轮廓 + 质量标签。"""
     queries = []
     for q_id in range(n_dags):
         src_dag = f"eval_sop_{q_id:02d}"
-        for _ in range(10):
+        for _ in range(per_dag):
             name = _node_name(rng, src_dag, 0, "wordy")
             pads = [rng.choice(["near", "far", "deep"]) + str(rng.randint(0, 9)) for _ in range(rng.randint(0, 3))]
             queries.append({
@@ -147,15 +149,17 @@ def generate_queries(seed: int, n_dags: int, rng: random.Random) -> list[dict]:
                 "pattern_set": [name] + pads,
                 "quality": rng.choice(["a", "b"]),
             })
-    # Library backwards case（§5.3）：确定性名称，10 个节点。
-    lib_case = generate_backwards_library_case()
-    for i, nm in enumerate(lib_case["node_names"]):
-        queries.append({
-            "id": f"q-lib-case-backwards-{i:02d}",
-            "name": nm,
-            "pattern_set": [nm],
-            "quality": "a",
-        })
+    if backwards_case:
+        # Library backwards case（§5.3）：确定性名称，10 个节点。
+        # 只在显式开启时追加：否则 8-DAG A/B 子集的查询会引用语料中不存在的节点。
+        lib_case = generate_backwards_library_case()
+        for i, nm in enumerate(lib_case["node_names"]):
+            queries.append({
+                "id": f"q-lib-case-backwards-{i:02d}",
+                "name": nm,
+                "pattern_set": [nm],
+                "quality": "a",
+            })
     return queries
 
 
@@ -172,7 +176,7 @@ def main() -> None:
     dags = [generate_dag(args.seed, f"sop-{i:03d}", rng) for i in range(args.dags)]
     if args.backwards_case:
         dags.append(generate_backwards_library_case())
-    queries = generate_queries(args.seed, args.dags, rng)
+    queries = generate_queries(args.seed, args.dags, args.queries, rng, args.backwards_case)
 
     out = args.out or str(ROOT / "evals" / f"ground_truth_{args.seed}.json")
     Path(out).parent.mkdir(parents=True, exist_ok=True)

@@ -45,8 +45,6 @@ def fnv1a64(data: bytes) -> int:
 
 
 def make_vectors(names: list[str], codec: str) -> dict[str, list[float]]:
-    if codec == "name_hash":
-        return {nm: make_vectors([nm], "name_hash_dense16").get(nm, []) for nm in names}
     """§2.2 输出接口：name -> embedding vector（共享工具模块接入点）。"""
     if codec == "none":
         return {nm: [0.0] for nm in names}
@@ -74,10 +72,6 @@ def make_vectors(names: list[str], codec: str) -> dict[str, list[float]]:
                     dense[(i * 8) % 128] += b / 127.5
             out[nm] = dense
         return out
-
-    # 兼容 name_hash：按参数递归，确保一致
-    if codec == "name_hash":
-        return {nm: make_vectors([nm], "name_hash").get(nm, []) for nm in names}
     raise ValueError(f"unknown codec: {codec}")
 
 
@@ -89,9 +83,10 @@ def ap(query_names: list[str], truth_names: list[str], vec: dict[str, list[float
     hits = 1 if q in topk else 0
     if not hits:
         return {"hits": 0, "ap": 0.0, "topk": topk}
-    ranks = [i + 1 for i, t in enumerate(topk) if t == q]
-    ap_sum = sum(ranks[i] / (i + 1) for i in range(len(ranks))) / len(ranks)
-    return {"hits": 1, "ap": ap_sum, "topk": topk}
+    # 单条 ground truth：AP = 1 / rank（rank 从 1 起）。此前误把 rank 当 AP，
+    # 会让 mAP 大于 hit@k（例如 rank=2 记 2.0），与 Rust bench 口径不一致。
+    rank = topk.index(q) + 1
+    return {"hits": 1, "ap": 1.0 / rank, "topk": topk}
 
 
 def run(truth: dict, codec: str, k: int) -> dict:
@@ -121,7 +116,6 @@ def run(truth: dict, codec: str, k: int) -> dict:
             per_quality[qa][1] += r["ap"]
 
     n = max(1, len(truth["queries"]))
-    # per_quality 按质量项累积；修正：仅输出和truth 质量类别存在的项，分母用该质量项数
     cnt: dict[str, int] = Counter(x.get("quality", "a") for x in truth["queries"])
     result = {
         "codec": codec,
@@ -137,16 +131,6 @@ def run(truth: dict, codec: str, k: int) -> dict:
         },
         "n_queries": n,
     }
-    # per_quality 按质量项累积；修正：仅输出和truth 质量类别存在的项，分母用该质量项数
-    cnt: dict[str, int] = Counter(x.get("quality", "a") for x in truth["queries"])
-    if cnt:
-        result["by_quality"] = {
-            q: {
-                "hit@k": round(per_quality[q][0] / max(1, cnt[q]), 4),
-                "mAP@k": round(per_quality[q][1] / max(1, cnt[q]), 4),
-            }
-            for q in cnt
-        }
 
     # 双线输出：JSON（machine-readable）+ 单行摘要（human-readable）
     print(json.dumps(result, indent=2, ensure_ascii=False))
