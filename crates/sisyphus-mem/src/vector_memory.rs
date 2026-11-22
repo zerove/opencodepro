@@ -504,4 +504,53 @@ mod session_recall_tests {
         // 全部同分时应稳定返回前 3 条且都属于本会话
         assert!(results.iter().all(|r| r.key.starts_with("sess_solo_")));
     }
+
+    #[tokio::test]
+    async fn test_session_prefix_format() {
+        let store = setup_user_store("abc-123").await;
+        assert_eq!(store.session_prefix(), "sess_abc-123_");
+    }
+
+    #[tokio::test]
+    async fn test_cosine_similarity_bytes_known_vectors() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let store = VectorMemoryStore::new(pool).await.unwrap();
+        let a = vec![3.0f32, 4.0];
+        let b: Vec<u8> = [3.0f32, 4.0].iter().flat_map(|v| v.to_le_bytes()).collect();
+        let sim = store.cosine_similarity_bytes(&a, &b);
+        assert!(
+            (sim - 1.0).abs() < 1e-6,
+            "identical vectors => 1.0, got {sim}"
+        );
+
+        let c: Vec<u8> = [4.0f32, -3.0].iter().flat_map(|v| v.to_le_bytes()).collect();
+        let sim_orth = store.cosine_similarity_bytes(&a, &c);
+        assert!(sim_orth.abs() < 1e-6, "orthogonal => 0.0, got {sim_orth}");
+    }
+
+    #[tokio::test]
+    async fn test_cosine_similarity_bytes_zero_norm() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let store = VectorMemoryStore::new(pool).await.unwrap();
+        let zero = vec![0.0f32, 0.0];
+        let nonzero_bytes: Vec<u8> = [1.0f32, 0.0].iter().flat_map(|v| v.to_le_bytes()).collect();
+        assert_eq!(store.cosine_similarity_bytes(&zero, &nonzero_bytes), 0.0);
+        let zero_bytes: Vec<u8> = [0.0f32, 0.0].iter().flat_map(|v| v.to_le_bytes()).collect();
+        assert_eq!(
+            store.cosine_similarity_bytes(&vec![1.0, 0.0], &zero_bytes),
+            0.0
+        );
+    }
+
+    #[tokio::test]
+    async fn test_matches_filter_semantics() {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let store = VectorMemoryStore::new(pool).await.unwrap();
+        let meta = json!({"tag": "a", "val": 1});
+        assert!(store.matches_filter(&meta, &json!({"tag": "a"})));
+        assert!(store.matches_filter(&meta, &json!({"tag": "a", "val": 1})));
+        assert!(!store.matches_filter(&meta, &json!({"tag": "b"})));
+        assert!(!store.matches_filter(&meta, &json!({"tag": "a", "val": 2})));
+        assert!(!store.matches_filter(&meta, &json!({"missing": "x"})));
+    }
 }

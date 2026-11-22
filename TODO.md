@@ -546,9 +546,9 @@
 ### 9.3 测试质量巩固
 
 #### 9.3.1 Mutation Testing 扩展
-- [ ] **sisyphus-mem mutation**: 覆盖 store/memory 路径
+- [x] **sisyphus-mem mutation**: 覆盖 store/memory 路径（`cargo mutants -p sisyphus-mem -f crates/sisyphus-mem/src/vector_memory.rs`：45 mutants，40 caught / 1 missed / 4 unviable；新增针对性测试）— 证据：`crates/sisyphus-mem/src/vector_memory.rs::test_matches_filter_semantics`
 - [ ] **sisyphus-bridge mutation**: 覆盖 gRPC handler 路径
-- [ ] **修复 missed mutants**: 基于 cargo-mutants 报告
+- [ ] **修复 missed mutants**: 基于 cargo-mutants 报告（vector_memory.rs 8→1 missed，剩余 1 条待后续针对性覆盖）
 
 #### 9.3.2 Fuzz Testing
 - [x] **sandbox wasm proptest 扩展**: host function 边界覆盖（SchemaValidator + 任意字节 JSON 解析边界）— 证据：`crates/sisyphus-sandbox/src/custom_executor.rs::test_array_schema_rejects_non_array`

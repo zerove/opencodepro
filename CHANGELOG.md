@@ -58,6 +58,7 @@
 - **集群 3 节点验证与编排模板**（2026-11-22）：新增 `test_three_node_experience_sync_converges`、`test_three_node_partition_recovery_catches_up`（bridge in-process 3 节点收敛/分区恢复）；新增 `docker-compose.cluster.yml`；`SISYPHUS_CLUSTER_PEERS` 环境变量支持（逗号分隔静态 peer 列表）。
 - **ADR-022 认知循环 v3 问题陈述**（2026-11-22）：记录 P1-P5（预算分配、反思结构、经验/SOP 语义统一、演进归因、长会话压缩）与约束/候选方向；状态 Proposed，不含架构决策。
 - **9.3.2 Fuzz/Proptest 扩展**（2026-11-22）：sandbox `SchemaValidator` 新增 array/required/unicode-maxLength/任意字节边界 proptest；bridge 新增 `fuzz_payloads`（6 HTTP serde + 4 gRPC prost decode 任意字节不 panic）。
+- **9.3.1 Mutation Testing（sisyphus-mem/vector_memory）**（2026-11-22）：`cargo mutants -p sisyphus-mem -f crates/sisyphus-mem/src/vector_memory.rs` 45 mutants → 40 caught / 1 missed / 4 unviable（原 8 missed）；新增 session_prefix/cosine/matches_filter 针对性测试。
 
 ### Fixed
 - **evals-ci 稳定 case Mock 覆盖率修复**（2026-11-21）：`MockLlmClient` 按 prompt 启发式输出 metis actionable/non-actionable、librarian 三段式 synthesis、scribe bun 更新；`eval-runner`/`schema.json` 新增 `not_keyword`/`not_regex` check_type（Rust `regex` 无 lookahead）；`scripts/evals-ci-run.sh` 稳定集识别扩展。`./scripts/evals-ci-run.sh` 默认稳定集 7/7 pass（artifact `docs/benchmarks/evals-ci/2026-11-21-bf056a9.json`）
