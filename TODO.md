@@ -532,16 +532,16 @@
 
 #### 9.2.1 架构设计（ADR-022）
 - [x] **问题分析**: 当前 v2 的瓶颈（token 预算限制、反思深度不足）与 P1-P5 问题陈述（无测试：设计文档，见 `docs/adr/022-cognitive-loop-v3-problem-statement.md`）
-- [ ] **候选方向**:
-  - SOP 图神经网络嵌入（节点语义编码）
-  - 自适应 token 预算分配
-  - 长期记忆压缩与检索
-- [ ] **决策记录**: ADR-022 在证据齐备后由 Proposed 更新为 Accepted/Rejected
+- [ ] **候选方向草图**:
+  - SOP 节点/子图 embedding（P3；草图：`docs/plans/adr022-sop-embedding-experiment.md`）
+  - 自适应 token 预算分配（P1）
+  - 长期记忆压缩与检索（P5）
+- [ ] **决策记录**: ADR-022 在证据齐备后由 Proposed 更新为 Accepted/Rejected（证据基于实验草图 `docs/plans/adr022-sop-embedding-experiment.md` 与代码接入点）
 
 #### 9.2.2 认知能力原型
-- [ ] **SOP 嵌入实验**: 将 SOP 节点编码为向量
-- [ ] **相似度检索**: 基于嵌入的经验检索
-- [ ] **评估**: 与当前 experience bank 对比
+- [ ] **SOP 嵌入实验**: 将 SOP 节点编码为向量（草图：`docs/plans/adr022-sop-embedding-experiment.md`）
+- [ ] **相似度检索原型**: 基于嵌入的经验检索（草图：`docs/plans/adr022-sop-embedding-experiment.md`）
+- [ ] **评估基准搭建**: 命中率/MAP 实验，对比 A/B（草图：`docs/plans/adr022-sop-embedding-experiment.md`）
 
 ### 9.3 测试质量巩固
 
