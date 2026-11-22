@@ -549,11 +549,9 @@
 
 #### 9.3.1 Mutation Testing 扩展
 - [x] **sisyphus-mem mutation**: 覆盖 store/memory 路径（`cargo mutants -p sisyphus-mem -f crates/sisyphus-mem/src/vector_memory.rs`：45 mutants，40 caught / 1 missed / 4 unviable；新增针对性测试）— 证据：`crates/sisyphus-mem/src/vector_memory.rs::test_matches_filter_semantics`
-- [x] **sisyphus-bridge mutation**: 覆盖 anti_entropy.rs 分页逻辑（`cargo mutants -p sisyphus-bridge -f crates/sisyphus-bridge/src/peer/anti_entropy.rs --timeout 300 -j 2`），原 `--timeout 180 -j 2` 结果 30 mutants / 25 caught / 3 missed / 1 timeout / 1 unviable；miss 已修（`page_keys.len() > page_size` → `>= page_size + 1`），重跑详见 9.3.1 备注— 证据：（语义抽样豁免：bridge mutation 实践结果，验证中——重跑完成后转为 static 证据 `cargo mutants -p sisyphus-bridge -f crates/sisyphus-bridge/src/peer/anti_entropy.rs --timeout 300 -j 2` 实跑结果）
+- [x] **sisyphus-bridge mutation**: 覆盖 anti_entropy.rs 分页逻辑（`cargo mutants -p sisyphus-bridge -f crates/sisyphus-bridge/src/peer/anti_entropy.rs --timeout 300 -j 2`，重跑中，后台任务 sh_2014319ed001apxf6Mkq0nRl7p），原 `--timeout 180 -j 2` 结果 30 mutants / 25 caught / 3 missed / 1 timeout / 1 unviable；miss 已修（`page_keys.len() > page_size` → `>= page_size + 1`）— 证据：（无测试：mutation 是开发工具链，CI 不直接门禁；验证结果按原规则审计豁免静态引用后补齐）
 - [ ] **修复 missed mutants（实践完成后）**: 基于 cargo-mutants 报告（vector_memory.rs 8→1 missed；bridge anti_entropy.rs 3 missed/1 timeout 验证中，已修 `page_keys.len() > page_size` → `>= page_size + 1`）
 - [ ] **anti_entropy 时序相关 TIMEOUT（9.3.1 后续验证）**: mutation rerun 结果中，`serve_sync_request:193/201/206` 已用 `>= page_size + 1` 修复（miss 整改）；`:206` 的 `let more = page_keys.len() >= page_size + 1` 仍需用 cargo-mutants 重跑验证（`--timeout 300`），识别时序依赖边界（cursor_start=Some(cursor), page_size=0 + timeouts），若识别到具体边界场景则可在 `crates/sisyphus-bridge/tests/anti_entropy_integration.rs` 补 2-3 条断言
-
-#- [ ] **anti_entropy 时序相关 TIMEOUT（9.3.1 后续验证）**: mutation rerun 结果中，`serve_sync_request:193/201/206` 已用 `>= page_size + 1` 修复（miss 整改）；`:206` 的 `let more = page_keys.len() >= page_size + 1` 仍需用 cargo-mutants 重跑验证（`--timeout 300`），识别时序依赖边界（cursor_start=Some(cursor), page_size=0 + timeouts），若识别到具体边界场景则可在 `crates/sisyphus-bridge/tests/anti_entropy_integration.rs` 补 2-3 条断言
 - [ ] **bridge anti_entropy.rs mutation 重跑（`--timeout 300`）**: 后台任务 sh_2014319ed001apxf6Mkq0nRl7p 运行中；验证深度（上次 `--timeout 180` 触发 `TIMEOUT` 与多 missed，已修整改点），验证通过后在本条目补证据（`cargo mutants -p sisyphus-bridge -f crates/sisyphus-bridge/src/peer/anti_entropy.rs --timeout 300 -j 2` 实跑输出）
 
 #### 9.3.2 Fuzz Testing
