@@ -64,7 +64,7 @@
   - `evals/sop_embed_eval.py --case`：可过滤 Library case 的 eval 模式（可重复 `--case`，如 `--case q-lib-case-backwards-00`）
   - `evals/sop_embed_bench.rs --case lib-case-backwards`：Benchmark 同步新增（`bench-lib` 段）
   - `evals/sop_embed_eval.py`：Library backwards case 结果（`name_hash` = hit@5 1.0）与原版一致，`none` = 0.1111（80 条 A/B 基线 + 10 条 lib 扩展）
-  - `evals/sop_embed_eval.py`：hit@5/mAP@5 评测（§3.2）；实测基线：`none` = hit@5 0.1375, mAP@5 0.3625；`name_hash` = hit@5 1.0, mAP@5 1.0（eval+bench 一致，§6）
+  - `evals/sop_embed_eval.py`：hit@5/mAP@5 评测（§3.2）；实测基线：`none` = hit@5 0.1111（全 90 条 query），原 A/B 80 条子集单独评测为 0.1375；`name_hash` = hit@5 1.0, mAP@5 1.0（eval+bench 一致，§6）
   - `evals/sop_embed_bench.rs`：Rust bench（`cargo run -q -p eval-runner --bin sop_embed_bench`，§6）；`Codec::{None, NameHash, NameHashDense16}`（FNV-1a；dense16 通过缩放线性化实现 §2.2）
   - Bridge mutation missed（9.3.1 后续）：`crates/sisyphus-bridge/src/peer/anti_entropy.rs`（`page_keys.len() > page_size` → `>= page_size + 1`；mutation rerun → 25 caught / 3 missed / 1 timeouts；missed 点为 `serve_sync_request:193/201/206`——当前已修miss整改（`>= page_size + 1`），时序相关 `timeouts` 需用 `max_test_duration` 长运行验证，见下方 10.3 备注）
 - **9.3.2 Fuzz/Proptest 扩展**（2026-11-22）：sandbox `SchemaValidator` 新增 array/required/unicode-maxLength/任意字节边界 proptest；bridge 新增 `fuzz_payloads`（6 HTTP serde + 4 gRPC prost decode 任意字节不 panic）。
