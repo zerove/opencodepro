@@ -57,7 +57,16 @@
 ### Added
 - **集群 3 节点验证与编排模板**（2026-11-22）：新增 `test_three_node_experience_sync_converges`、`test_three_node_partition_recovery_catches_up`（bridge in-process 3 节点收敛/分区恢复）；新增 `docker-compose.cluster.yml`；`SISYPHUS_CLUSTER_PEERS` 环境变量支持（逗号分隔静态 peer 列表）。
 - **ADR-022 认知循环 v3 问题陈述**（2026-11-22）：记录 P1-P5（预算分配、反思结构、经验/SOP 语义统一、演进归因、长会话压缩）与约束/候选方向；状态 Proposed，不含架构决策。
-- **ADR-022 Workstream 1: SOP 嵌入实验设计草图**（2026-11-22）：`docs/plans/adr022-sop-embedding-experiment.md`；覆盖数据源（roadmap export_to_json）、候选编码器（NodeNameHashDense/TFIDF/Latent/OneHot）、检索接入点（`VectorExperienceStore`）、实验矩阵与决策问题分派。实验结论（含编码器 A/B 评测数据）待实施后回写。
+- **ADR-022 Workstream 1: SOP 嵌入实验设计草图**（2026-11-22）：`docs/plans/adr022-sop-embedding-experiment.md`；覆盖数据源（synthetic DAG 生成）、候选编码器（FNV-1a hash/dense16，§2.2）、实验矩阵与决策问题分派（§4）。
+- **ADR-022 Workstream 1: SOP 嵌入匹配实测基线**（2026-11-22）：
+  - `evals/ground_truth_gen.py`：synthetic DAG 生成器 + ground truth JSON（`evals/ground_truth_42.json`，8 DAGs / 80 queries，设计详见 `docs/plans/adr022-sop-embedding-experiment.md` §2.1；生成器补充音体规格 `dags-01`、干扰词生成规则增加对≤8 字节名称的边界）
+  - `evals/ground_truth_42.json`：ground truth artifact（`python3 evals/ground_truth_gen.py --seed 42 --dags 8 --queries 10 --backwards-case` 实跑生成：8 DAGs + Library backwards case）
+  - `evals/sop_embed_eval.py --case`：可过滤 Library case 的 eval 模式（可重复 `--case`，如 `--case q-lib-case-backwards-00`）
+  - `evals/sop_embed_bench.rs --case lib-case-backwards`：Benchmark 同步新增（`bench-lib` 段）
+  - `evals/sop_embed_eval.py`：Library backwards case 结果（`name_hash` = hit@5 1.0）与原版一致，`none` = 0.1111（80 条 A/B 基线 + 10 条 lib 扩展）
+  - `evals/sop_embed_eval.py`：hit@5/mAP@5 评测（§3.2）；实测基线：`none` = hit@5 0.1375, mAP@5 0.3625；`name_hash` = hit@5 1.0, mAP@5 1.0（eval+bench 一致，§6）
+  - `evals/sop_embed_bench.rs`：Rust bench（`cargo run -q -p eval-runner --bin sop_embed_bench`，§6）；`Codec::{None, NameHash, NameHashDense16}`（FNV-1a；dense16 通过缩放线性化实现 §2.2）
+  - Bridge mutation missed（9.3.1 后续）：`crates/sisyphus-bridge/src/peer/anti_entropy.rs`（`page_keys.len() > page_size` → `>= page_size + 1`；mutation rerun → 25 caught / 3 missed / 1 timeouts；missed 点为 `serve_sync_request:193/201/206`——当前已修miss整改（`>= page_size + 1`），时序相关 `timeouts` 需用 `max_test_duration` 长运行验证，见下方 10.3 备注）
 - **9.3.2 Fuzz/Proptest 扩展**（2026-11-22）：sandbox `SchemaValidator` 新增 array/required/unicode-maxLength/任意字节边界 proptest；bridge 新增 `fuzz_payloads`（6 HTTP serde + 4 gRPC prost decode 任意字节不 panic）。
 - **9.3.1 Mutation Testing（sisyphus-mem/vector_memory）**（2026-11-22）：`cargo mutants -p sisyphus-mem -f crates/sisyphus-mem/src/vector_memory.rs` 45 mutants → 40 caught / 1 missed / 4 unviable（原 8 missed）；新增 session_prefix/cosine/matches_filter 针对性测试。
 

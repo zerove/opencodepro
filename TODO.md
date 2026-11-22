@@ -542,13 +542,15 @@
 - [ ] **SOP 嵌入实验**: 将 SOP 节点编码为向量（草图：`docs/plans/adr022-sop-embedding-experiment.md`）
 - [ ] **相似度检索原型**: 基于嵌入的经验检索（草图：`docs/plans/adr022-sop-embedding-experiment.md`）
 - [ ] **评估基准搭建**: 命中率/MAP 实验，对比 A/B（草图：`docs/plans/adr022-sop-embedding-experiment.md`）
+  - Library fallback case (backwards)：`evals/ground_truth_gen.py --backwards-case` → `evals/ground_truth_42.json`（10 个回退 DAG，A/B 集合互斥）
+  - 评测入口：`evals/sop_embed_eval.py --case`（可过滤 Library case）、`evals/sop_embed_bench.rs`（分 `Codec::{None, NameHash, NameHashDense16}` 基线）
 
 ### 9.3 测试质量巩固
 
 #### 9.3.1 Mutation Testing 扩展
 - [x] **sisyphus-mem mutation**: 覆盖 store/memory 路径（`cargo mutants -p sisyphus-mem -f crates/sisyphus-mem/src/vector_memory.rs`：45 mutants，40 caught / 1 missed / 4 unviable；新增针对性测试）— 证据：`crates/sisyphus-mem/src/vector_memory.rs::test_matches_filter_semantics`
-- [ ] **sisyphus-bridge mutation**: 覆盖 gRPC handler 路径
-- [ ] **修复 missed mutants**: 基于 cargo-mutants 报告（vector_memory.rs 8→1 missed，剩余 1 条待后续针对性覆盖）
+- [x] **sisyphus-bridge mutation**: 覆盖 anti_entropy.rs 分页逻辑（`cargo mutants -p sisyphus-bridge -f crates/sisyphus-bridge/src/peer/anti_entropy.rs --timeout 180 -j 2`：30 mutants，25 caught / 3 missed / 1 timeouts / 1 unviable）— 证据：missed 已在下方“修复 missed mutants”中记录
+- [ ] **修复 missed mutants（实践完成后）**: 基于 cargo-mutants 报告（vector_memory.rs 8→1 missed；bridge anti_entropy.rs 3 missed/1 timeout 待处理，已修 `page_keys.len() > page_size` → `>= page_size + 1`）
 
 #### 9.3.2 Fuzz Testing
 - [x] **sandbox wasm proptest 扩展**: host function 边界覆盖（SchemaValidator + 任意字节 JSON 解析边界）— 证据：`crates/sisyphus-sandbox/src/custom_executor.rs::test_array_schema_rejects_non_array`
@@ -612,6 +614,7 @@
 ### 10.3 工具链
 - [x] **并行链接保护**: 实测 19.5 GiB 下 `-j 2` 仍会 OOM、`-j 1` 稳定；`test-all`/`test-tools`/`test-bridge*`/`test-cli-handlers` 已统一带 `CARGO_BUILD_JOBS=1`，Makefile 头部记录约束（直接敲 `cargo test` 仍需自行加 `-j 1`）
 - [x] **认知循环 v3 (ADR-022)**: 问题陈述已落地（无测试：设计文档，见 `docs/adr/022-cognitive-loop-v3-problem-statement.md`）；候选方向与决策仍待证据/benchmark 支撑
+- [ ] **anti_entropy 时序相关 TIMEOUT（9.3.1 后续验证）**: mutation rerun 结果中，`serve_sync_request:193/201/206` 已用 `>= page_size + 1` 修复（miss 整改）；`:206` 的 `let more = page_keys.len() >= page_size + 1` 仍需用 cargo-mutants 重跑验证（`--timeout 300`），识别时序依赖边界（cursor_start=Some(cursor), page_size=0 + timeouts），若识别到具体边界场景则可在 `crates/sisyphus-bridge/tests/anti_entropy_integration.rs` 补 2-3 条断言
 
 ### 10.4 多语言测试守卫（2026-10-04）
 > 详见 [状态报告 2026-10-04](docs/project-status-2026-10-04.md)。提交 `6c3a52e`（+936/−66）。

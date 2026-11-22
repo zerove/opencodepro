@@ -47,6 +47,10 @@ name = "golden-sop-trend"
 path = "golden_sop/trend.rs"
 
 [[bin]]
+name = "sop_embed_bench"
+path = "sop_embed_bench.rs"
+
+[[bin]]
 name = "self-prog-demo"
 path = "self_prog_demo.rs"
 
