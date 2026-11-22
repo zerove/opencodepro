@@ -566,7 +566,7 @@
 - [x] **release notes review**: 2026-11-22 复核 `v0.4.2` GitHub Release body：9 条 commit 与 `git log v0.4.1..v0.4.2` 一一对应，wasmtime 升级、visual 回归修复均在列；结构化详情见 `CHANGELOG.md` `[v0.4.2]` 段（无测试：文档复核，非行为断言）
 
 #### 9.4.2 文档优化
-- [ ] **mdbook 增量构建**: CI 缓存优化
+- [x] **mdbook 增量构建**: CI 缓存优化——`.github/workflows/mdbook.yml` 已用 `actions/cache` 缓存 `book/book`（key 含 `SUMMARY.md`/`book.toml` 哈希，`restore-keys` 回退），并用 `taiki-e/install-action` 预编译 mdbook；构建步骤直接 `mdbook build` 做增量渲染（无测试：CI 配置任务，workflow 变更即验证）
 - [x] **ADR 索引**: 文档化所有架构决策（无测试：文档条目，见 `docs/adr/README.md`）
   - 已建立 `docs/adr/README.md`：14 份 ADR 的状态/日期索引、编号冲突说明（`0005` vs `005`，不重命名）、反熵链路阅读顺序
   - 已接入 `book/src/architecture.md` 的 ADR 表（含 007–014），链接改为绝对 URL（mdbook 相对链接会 404）
