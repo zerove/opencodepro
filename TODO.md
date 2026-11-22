@@ -280,7 +280,7 @@
 #### 7.5 文档与运维
 - [x] **CHANGELOG.md 启动**: 当前 320 个本地提交无 CHANGELOG，按 keep-a-changelog 格式补 0.x.x（无测试：文档条目，由 `make release-check` 覆盖一致性）
   - 已建立根目录 `CHANGELOG.md`（keep-a-changelog 1.1.0 + SemVer），含发布流程模板；发版前 `make release-check` 校验版本/CHANGELOG 一致性
-- [ ] **book 增量构建**: `mdbook` 当前每次全量编译，CI 缓存复用
+- [x] **book 增量构建**: `mdbook` 当前每次全量编译，CI 缓存复用（无测试：CI workflow 配置，见 `.github/workflows/mdbook.yml` cache + build 步骤）
 - [x] **部署脚本**: 缺 systemd unit / Docker compose / k8s manifest
 
 ---
