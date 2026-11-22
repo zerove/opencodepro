@@ -549,8 +549,9 @@
 
 #### 9.3.1 Mutation Testing 扩展
 - [x] **sisyphus-mem mutation**: 覆盖 store/memory 路径（`cargo mutants -p sisyphus-mem -f crates/sisyphus-mem/src/vector_memory.rs`：45 mutants，40 caught / 1 missed / 4 unviable；新增针对性测试）— 证据：`crates/sisyphus-mem/src/vector_memory.rs::test_matches_filter_semantics`
-- [x] **sisyphus-bridge mutation**: 覆盖 anti_entropy.rs 分页逻辑（`cargo mutants -p sisyphus-bridge -f crates/sisyphus-bridge/src/peer/anti_entropy.rs --timeout 180 -j 2`：30 mutants，25 caught / 3 missed / 1 timeouts / 1 unviable）— 证据：missed 已在下方“修复 missed mutants”中记录
-- [ ] **修复 missed mutants（实践完成后）**: 基于 cargo-mutants 报告（vector_memory.rs 8→1 missed；bridge anti_entropy.rs 3 missed/1 timeout 待处理，已修 `page_keys.len() > page_size` → `>= page_size + 1`）
+- [x] **sisyphus-bridge mutation**: 覆盖 anti_entropy.rs 分页逻辑（`cargo mutants -p sisyphus-bridge -f crates/sisyphus-bridge/src/peer/anti_entropy.rs --timeout 300 -j 2` 重跑中；原：`--timeout 180 -j 2`：30 mutants，25 caught / 3 missed / 1 timeouts / 1 unviable；miss 已整改（`page_keys.len() > page_size` → `>= page_size + 1`））— 证据：missed 已在下方“修复 missed mutants”中记录
+- [ ] **修复 missed mutants（实践完成后）**: 基于 cargo-mutants 报告（vector_memory.rs 8→1 missed；bridge anti_entropy.rs 3 missed/1 timeout 验证中，已修 `page_keys.len() > page_size` → `>= page_size + 1`）
+- [ ] **anti_entropy 时序相关 TIMEOUT（9.3.1 后续验证）**: mutation rerun 结果中，`serve_sync_request:193/201/206` 已用 `>= page_size + 1` 修复（miss 整改）；`:206` 的 `let more = page_keys.len() >= page_size + 1` 仍需用 cargo-mutants 重跑验证（`--timeout 300`），识别时序依赖边界（cursor_start=Some(cursor), page_size=0 + timeouts），若识别到具体边界场景则可在 `crates/sisyphus-bridge/tests/anti_entropy_integration.rs` 补 2-3 条断言
 
 #### 9.3.2 Fuzz Testing
 - [x] **sandbox wasm proptest 扩展**: host function 边界覆盖（SchemaValidator + 任意字节 JSON 解析边界）— 证据：`crates/sisyphus-sandbox/src/custom_executor.rs::test_array_schema_rejects_non_array`
@@ -632,7 +633,7 @@
 - [ ] **内部 crate 无法 `cargo package`**: `sisyphus-bridge-api` / `sisyphus-metrics` 等内部 crate 未发布到 crates.io，`cargo package` 报 "no matching package named ... found"。仓库现已全覆盖 `publish = false`，但那只阻止误发布，**不解决** `cargo package` 解析内部 path 依赖的问题；发布产物是平台二进制 + Docker 镜像。若将来要发布 crate：先整体发布内部 crate，或改用 workspace 依赖 + 私有 registry（2026-11-16 发现，2026-11-18 复核）
 
 ### 10.6 评测（evals-ci）覆盖度技术债（2026-11）
-- [x] **evals-ci 稳定 case 的 Mock 覆盖率提升**（2026-11-21）：MockLlmClient 改为按 prompt 启发式返回 metis actionable/non-actionable、librarian 三段式 synthesis、scribe bun 更新；runner/schema 新增 `not_keyword`/`not_regex`（Rust `regex` 无 lookahead，lib-006 从负向 lookahead 改为 `not_regex`）；`scripts/evals-ci-run.sh` 稳定集纳入 not_*。验证：`./scripts/evals-ci-run.sh` → 7/7 pass（artifact `docs/benchmarks/evals-ci/2026-11-21-bf056a9.json`，score 1.0）
+- [x] **evals-ci 稳定 case 的 Mock 覆盖率提升**（2026-11-21→22）：MockLlmClient 改为按 prompt 启发式返回 metis actionable/non-actionable、librarian 三段式 synthesis、scribe bun 更新；runner/schema 新增 `not_keyword`/`not_regex`（Rust `regex` 无 lookahead，lib-006 从负向 lookahead 改为 `not_regex`）；`scripts/evals-ci-run.sh` 稳定集纳入 not_*。验证：`./scripts/evals-ci-run.sh` → 7/7 pass（artifact `docs/benchmarks/evals-ci/2026-11-22-72b4ed7.json`，score 1.0，已提交到 git）
 
 ---
 
