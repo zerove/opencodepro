@@ -13,5 +13,8 @@ pub enum WriteOp {
 
 /// A point-in-time snapshot of the MFS state.
 pub struct Snapshot {
-    pub data: HashMap<String, Value>,
+    /// Incremental snapshot delta version.
+    pub version: u64,
+    /// Delta changes since last base snapshot.
+    pub delta: HashMap<String, Option<Value>>,
 }

@@ -487,10 +487,43 @@ impl MfsStore {
             duration_ms = duration.as_millis(),
             "Snapshot taken"
         );
-        Ok(Snapshot { data })
+        Ok(Snapshot {
+            data,
+            version: 1,
+            delta: HashMap::new(),
+        })
     }
 
-    /// Restores the state from a given snapshot.
+    /// Captures an incremental point-in-time snapshot of the state since a given version.
+    pub async fn take_incremental_snapshot(&self, base_version: u64, delta_changes: HashMap<String, Option<serde_json::Value>>) -> Result<Snapshot> {
+        let span = tracing::info_span!("mem.snapshot.take_incremental", base_version);
+        let _enter = span.enter();
+
+        let start = Instant::now();
+        self.flush().await?;
+        let rows: Vec<(String, String)> = sqlx::query_as("SELECT key, value FROM state")
+            .fetch_all(&self.l2)
+            .await
+            .context("Failed to read state for incremental snapshot")?;
+        let mut data = std::collections::HashMap::with_capacity(rows.len());
+        for (key, value_str) in rows {
+            let value: serde_json::Value = serde_json::from_str(&value_str)
+                .with_context(|| format!("corrupt JSON in state row {key}"))?;
+            data.insert(key, value);
+        }
+        let duration = start.elapsed();
+        tracing::info!(
+            keys = data.len(),
+            base_version,
+            duration_ms = duration.as_millis(),
+            "Incremental snapshot taken"
+        );
+        Ok(Snapshot {
+            data,
+            version: base_version + 1,
+            delta: delta_changes,
+        })
+    }
     pub async fn restore_snapshot(&self, snapshot: Snapshot) -> Result<()> {
         let span = tracing::info_span!("mem.snapshot.restore", keys = snapshot.data.len());
         let _enter = span.enter();

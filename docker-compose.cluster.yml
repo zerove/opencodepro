@@ -1,96 +1,48 @@
-# ── Sisyphus 3-node Cluster (local verification) ───────────────────────
-# Usage:
-#   docker compose -f docker-compose.cluster.yml up -d --build
-#   docker compose -f docker-compose.cluster.yml ps
-#   # 网络分区模拟：docker network disconnect <net> sisyphus-node-b
-#   # 恢复：docker network connect <net> sisyphus-node-b
-#   docker compose -f docker-compose.cluster.yml down -v
-#
-# 验证目标（TODO 10.2 / 10.3）：
-# - 3 节点可互相发现并选主（字典序最小 node_id）
-# - 经验同步在 3 节点间收敛
-# - 分区恢复后通过 ADR-010 反熵补齐差量
-#
-# 状态（2026-11-22）：本文件为「本地实测 + 手动排查」主路径；验证语义已在
-# `crates/sisyphus-bridge/tests/cluster_integration.rs::test_three_node_experience_sync_converges`
-# （in-process gRPC + CRDT 合并）与 `anti_entropy_partition_convergence.rs` 同步覆盖。
-# Docker 环境未可用（podman socket 权限）→ 实际 3 节点运行待做 TODO 10.3 第一项。
-# 本地试跑命令（需要 docker 守护进程）：
-#   docker compose -f docker-compose.cluster.yml up -d --build   # 启动 3 节点
-#   docker compose -f docker-compose.cluster.yml exec node-a curl -s localhost:8080/api/cluster/peers  # 验证发现
-#   # 模拟分区：docker network disconnect cluster-net sisyphus-node-b
-#   # 恢复：docker network connect cluster-net sisyphus-node-b
-
-x-node-env: &node-env
-  RUST_LOG: ${RUST_LOG:-info}
-  SISYPHUS_CONFIG: /app/config.toml
-  SISYPHUS_CLUSTER_ENABLED: "true"
-  SISYPHUS_BRIDGE_ADDRESS: "0.0.0.0:50051"
-  SISYPHUS_HTTP_ADDRESS: "0.0.0.0:8080"
+version: '3.8'
 
 services:
   node-a:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-zerove}/sisyphus-bridge:${TAG:-latest}
-    hostname: node-a
+    image: sisyphus-bridge:local
     environment:
-      <<: *node-env
-      SISYPHUS_CLUSTER_NODE_ID: node-a
-      SISYPHUS_CLUSTER_PEERS: "http://node-b:50051,http://node-c:50051"
+      - RUST_LOG=info
+      - SISYPHUS_CLUSTER__ENABLED=true
+      - SISYPHUS_CLUSTER__NODE_ID=node-a
+      - SISYPHUS_CLUSTER__STATIC_PEERS=["http://node-b:50051", "http://node-c:50051"]
     ports:
       - "50051:50051"
       - "8080:8080"
-    volumes:
-      - node-a-data:/app/data
     networks:
-      - cluster-net
-    restart: unless-stopped
+      - sisyphus-net
 
   node-b:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-zerove}/sisyphus-bridge:${TAG:-latest}
-    hostname: node-b
+    image: sisyphus-bridge:local
     environment:
-      <<: *node-env
-      SISYPHUS_CLUSTER_NODE_ID: node-b
-      SISYPHUS_CLUSTER_PEERS: "http://node-a:50051,http://node-c:50051"
+      - RUST_LOG=info
+      - SISYPHUS_CLUSTER__ENABLED=true
+      - SISYPHUS_CLUSTER__NODE_ID=node-b
+      - SISYPHUS_CLUSTER__STATIC_PEERS=["http://node-a:50051", "http://node-c:50051"]
     ports:
       - "50052:50051"
       - "8081:8080"
-    volumes:
-      - node-b-data:/app/data
     networks:
-      - cluster-net
-    restart: unless-stopped
+      - sisyphus-net
 
   node-c:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-zerove}/sisyphus-bridge:${TAG:-latest}
-    hostname: node-c
+    image: sisyphus-bridge:local
     environment:
-      <<: *node-env
-      SISYPHUS_CLUSTER_NODE_ID: node-c
-      SISYPHUS_CLUSTER_PEERS: "http://node-a:50051,http://node-b:50051"
+      - RUST_LOG=info
+      - SISYPHUS_CLUSTER__ENABLED=true
+      - SISYPHUS_CLUSTER__NODE_ID=node-c
+      - SISYPHUS_CLUSTER__STATIC_PEERS=["http://node-a:50051", "http://node-b:50051"]
     ports:
       - "50053:50051"
       - "8082:8080"
-    volumes:
-      - node-c-data:/app/data
     networks:
-      - cluster-net
-    restart: unless-stopped
-
-volumes:
-  node-a-data:
-  node-b-data:
-  node-c-data:
+      - sisyphus-net
 
 networks:
-  cluster-net:
+  sisyphus-net:
     driver: bridge

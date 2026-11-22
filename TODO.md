@@ -524,7 +524,7 @@
   - [x] 节点 A 写入 → 节点 B 可见，且反向亦然（`test_two_node_experience_sync_round_trip_persists`）
   - [x] 并发写入冲突：CRDT 版本高低裁决（`test_newer_remote_version_wins_concurrent_write`）
   - [x] 重复投递幂等（`test_duplicate_delivery_does_not_duplicate_experience`）
-- [ ] **3 节点 Docker Compose**: 本地多节点验证
+- [ ] **3 节点 Docker Compose**: 本地多节点验证——in-process 语义已覆盖（见 10.2）；真实容器实测统一跟踪在 10.3「3 节点 Docker Compose 真实实测」，不在此重复计数
 - [x] **断线补偿**: 重连后按 vector clock 差量补齐（事件即发即失，断线期间的经验会永久丢失）—— 证据：`crates/sisyphus-bridge/tests/anti_entropy_integration.rs::reconnect_delivers_only_the_gap`（只补断线期间的缺口，不重传已持有的行）
 - [x] **chaos 扩展**: 网络分区 + 节点重启后 sync 恢复 —— 证据：`crates/sisyphus-bridge/tests/anti_entropy_partition_convergence.rs::partition_heal_converges_both_sides_via_bidirectional_sync`（分区痊愈后双侧并集收敛）、`crates/sisyphus-mem/tests/experience_id_collision.rs::sequence_resumes_from_store_after_restart`（序号从 store 恢复，重启后不会归零导致主键碰撞丢行）
 
@@ -611,12 +611,11 @@
 - [x] **`ExperienceSyncHandler` 关闭语义加固**: 任务全程持有 `Arc<PeerManager>`，Sender 存活由类型系统保证；`Closed` 分支由 `warn!` 提升为 `error!`
 - [x] **入站事件转发收敛**: `event_tx`（本地产生，拨号器订阅）与 `inbound_tx`（远端收到，仅 handler 订阅）分离，回弹在结构上不可达
 - [x] **3 节点 in-process 收敛+分区恢复验证**：`crates/sisyphus-bridge/tests/cluster_integration.rs::test_three_node_experience_sync_converges`（A/B/C 收敛）、`crates/sisyphus-bridge/tests/cluster_integration.rs::test_three_node_partition_recovery_catches_up`（宕机恢复补齐差量）；`docker-compose.cluster.yml` 提供本地编排主路径
-- [ ] **3 节点 Docker Compose 真实实测**（10.3）: `docker compose -f docker-compose.cluster.yml up -d --build`，验证长期运行（分区：`docker network disconnect cluster-net sisyphus-node-b`，恢复：connect 回来）；详见 `docker-compose.cluster.yml` 头注；当前守护进程权限问题属 10.3 首项
 
 ### 10.3 工具链
 - [x] **并行链接保护**: 实测 19.5 GiB 下 `-j 2` 仍会 OOM、`-j 1` 稳定；`test-all`/`test-tools`/`test-bridge*`/`test-cli-handlers` 已统一带 `CARGO_BUILD_JOBS=1`，Makefile 头部记录约束（直接敲 `cargo test` 仍需自行加 `-j 1`）
-- [ ] **podman/docker 环境验证**: 当前环境不可跑（`/run/podman/podman.sock` 权限不足，`docker compose up` 报 `permission denied while trying to connect to the docker API`）；`docker-compose.cluster.yml` 头注含完整手动实测命令；实测待做下方「3 节点 Docker Compose 真实实测」备用
-- [ ] **3 节点 Docker Compose 真实实测**: 真实 3 容器长跑验证（`docker compose -f docker-compose.cluster.yml up -d --build`，验证 `curl -s localhost:8080/api/cluster/peers` 在 3 个 node 上发现且分数正确；分区用 `docker network disconnect cluster-net sisyphus-node-b` 模拟，恢复用 connect 回）
+- [x] **podman/docker 环境验证**: `docker` 是 podman 模拟；默认 `/run/podman/podman.sock` 权限不足，但 rootless socket `/run/user/1000/podman/podman.sock` 可用——`DOCKER_HOST=unix:///run/user/1000/podman/podman.sock docker compose -f docker-compose.cluster.yml config` 通过（`COMPOSE_CONFIG_OK`）。后续 compose 命令统一带该 `DOCKER_HOST`（无测试：环境排查结论，以命令输出为准）
+- [ ] **3 节点 Docker Compose 真实实测**: 用 `DOCKER_HOST=unix:///run/user/1000/podman/podman.sock docker compose -f docker-compose.cluster.yml up -d --build` 启动 3 容器；本地 `localhost/sisyphus-bridge:verify2` 为 2026-11-04 旧镜像（缺 `SISYPHUS_CLUSTER_PEERS` 支持），必须重建。验证 `/api/cluster/peers` 三节点互相发现、`/api/experience/capture` 写入后跨节点可见；分区用 `docker network disconnect cluster-net sisyphus-node-b`，恢复用 connect 回。in-process 语义已由 `cluster_integration.rs::test_three_node_experience_sync_converges` / `test_three_node_partition_recovery_catches_up` 覆盖
 - [x] **认知循环 v3 (ADR-022)**: 问题陈述已落地（无测试：设计文档，见 `docs/adr/022-cognitive-loop-v3-problem-statement.md`）；候选方向与决策仍待证据/benchmark 支撑
 ### 10.4 多语言测试守卫（2026-10-04）
 > 详见 [状态报告 2026-10-04](docs/project-status-2026-10-04.md)。提交 `6c3a52e`（+936/−66）。
