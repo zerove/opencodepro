@@ -185,12 +185,12 @@ pub async fn serve_sync_request(
                 continue;
             }
             page_keys.push(key.clone());
-            if page_keys.len() >= page_size + 1 {
+            if page_keys.len() > page_size {
                 break;
             }
         }
 
-        if page_keys.len() >= page_size + 1 {
+        if page_keys.len() > page_size {
             break;
         }
         // 本批不足一批 → 已到表尾，不会再有缺失行。
@@ -203,7 +203,7 @@ pub async fn serve_sync_request(
         }
     }
 
-    let more = page_keys.len() >= page_size + 1;
+    let more = page_keys.len() > page_size;
     page_keys.truncate(page_size);
 
     // 2. 只取这一页的完整载荷。

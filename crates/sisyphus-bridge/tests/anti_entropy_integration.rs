@@ -216,6 +216,37 @@ async fn mixed_version_old_dialer_new_server_still_converges() {
     );
 }
 
+/// 首页/次页 `more` 边界（针对 9.3.1：`page_keys.len() >= page_size+1` 在精确边界被误改为 `-`/`*`/`<` 的 missed 场景）。
+#[tokio::test]
+async fn page_boundary_more_flags_correct() {
+    let peer = setup_bank("peer").await;
+    // 16 = 2 页 × 8。精确整数倍边界时 more 必须正确：
+    // 首页 more=true（还有第 9~16 条），次页 more=false（恰好排空）。
+    seed(&peer, 16).await;
+    let page_size = 8usize;
+
+    let first = anti_entropy::serve_sync_request(&peer, &ExperienceDigest::new(), "", page_size)
+        .await
+        .expect("first page");
+    assert_eq!(first.experiences.len(), page_size, "first page full");
+    assert!(first.more, "more=true: 8 more rows after this page");
+
+    let second = anti_entropy::serve_sync_request(
+        &peer,
+        &ExperienceDigest::new(),
+        &first.next_cursor,
+        page_size,
+    )
+    .await
+    .expect("second page");
+    assert_eq!(
+        second.experiences.len(),
+        page_size,
+        "second page has the other 8"
+    );
+    assert!(!second.more, "more=false: exactly at end of delta");
+}
+
 /// 差量恰好是单页整数倍时，最后一页的 `more` 必须为 false。
 ///
 /// 否则 dial 方会多发一次注定返回空页的请求；若对端就此报错，
