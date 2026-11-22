@@ -119,6 +119,7 @@ RUN mkdir -p crates/sisyphus-bridge-api/src && echo "" > crates/sisyphus-bridge-
     mkdir -p evals && echo "fn main() {}" > evals/no_panic_check.rs && \
     mkdir -p evals && echo "fn main() {}" > evals/runner.rs && \
     mkdir -p evals && echo "fn main() {}" > evals/self_prog_demo.rs && \
+    mkdir -p evals && echo "fn main() {}" > evals/sop_embed_bench.rs && \
     mkdir -p evals/src && echo "" > evals/src/lib.rs && \
     mkdir -p webui/src && echo "" > webui/src/lib.rs
 
