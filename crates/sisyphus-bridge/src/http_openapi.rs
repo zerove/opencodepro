@@ -2505,4 +2505,79 @@ mod tests {
             "成功响应 schema 应声明 sse_sop_id，与失败响应保持一致"
         );
     }
+
+    /// `http/mod.rs` 注册的每条路由都必须出现在 OpenAPI 文档中。
+    ///
+    /// 手工维护的文档最典型的退化是「新端点忘了写文档」：`/openapi.json`
+    /// 照常返回 200、Swagger UI 也正常渲染，只是少了一整块端点，没人会发现。
+    /// 这里直接扫描路由注册源码，与文档的 `paths` 做集合比对。
+    #[tokio::test]
+    async fn test_every_registered_route_is_documented() {
+        let source = include_str!("http/mod.rs");
+        let doc = doc().await;
+        let documented: std::collections::HashSet<String> = doc
+            .pointer("/paths")
+            .and_then(Value::as_object)
+            .expect("paths")
+            .keys()
+            .cloned()
+            .collect();
+
+        let mut missing = Vec::new();
+        for raw in registered_routes(source) {
+            let path = normalize_route(&raw);
+            // 自描述端点（文档本身与 Swagger UI）不必写进自己的文档。
+            if path == "/openapi.json" || path == "/swagger-ui/{rest}" {
+                continue;
+            }
+            if !documented.contains(&path) {
+                missing.push(path);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "以下路由未写入 OpenAPI 文档: {missing:?}"
+        );
+    }
+
+    /// 从路由注册源码里提取 `.route("...")` 的第一个字符串参数。
+    fn registered_routes(source: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut rest = source;
+        while let Some(idx) = rest.find(".route(") {
+            rest = &rest[idx + ".route(".len()..];
+            let trimmed = rest.trim_start();
+            let Some(stripped) = trimmed.strip_prefix('"') else {
+                continue;
+            };
+            if let Some(end) = stripped.find('"') {
+                out.push(stripped[..end].to_string());
+                rest = &stripped[end..];
+            }
+        }
+        out
+    }
+
+    /// axum 路径参数 `:id` / 通配 `*rest` → OpenAPI `{id}` / `{rest}`。
+    fn normalize_route(route: &str) -> String {
+        let mut out = String::with_capacity(route.len());
+        let mut chars = route.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == ':' || c == '*' {
+                out.push('{');
+                while let Some(&n) = chars.peek() {
+                    if n.is_ascii_alphanumeric() || n == '_' {
+                        out.push(n);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                out.push('}');
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
 }

@@ -563,14 +563,14 @@
 #### 9.4.1 CHANGELOG v0.2.0
 - [x] **发布笔记**: 基于 git log 生成结构化 changelog（无测试：文档任务，`CHANGELOG.md` 已有 `[v0.2.0] - 2026-11-04` 段）
 - [x] **v0.2.0 tag**: 打标签触发 release workflow（无测试：`git tag` 已含 v0.2.0，当前版本已到 v0.4.0）
-- [ ] **release notes review**: 人工检查自动生成内容
+- [x] **release notes review**: 2026-11-22 复核 `v0.4.2` GitHub Release body：9 条 commit 与 `git log v0.4.1..v0.4.2` 一一对应，wasmtime 升级、visual 回归修复均在列；结构化详情见 `CHANGELOG.md` `[v0.4.2]` 段（无测试：文档复核，非行为断言）
 
 #### 9.4.2 文档优化
 - [ ] **mdbook 增量构建**: CI 缓存优化
 - [x] **ADR 索引**: 文档化所有架构决策（无测试：文档条目，见 `docs/adr/README.md`）
   - 已建立 `docs/adr/README.md`：14 份 ADR 的状态/日期索引、编号冲突说明（`0005` vs `005`，不重命名）、反熵链路阅读顺序
   - 已接入 `book/src/architecture.md` 的 ADR 表（含 007–014），链接改为绝对 URL（mdbook 相对链接会 404）
-- [ ] **API 参考更新**: 同步 REST/gRPC 最新接口
+- [x] **API 参考更新**: 同步 REST/gRPC 最新接口 — 2026-11-22 审计：`http/mod.rs` 注册 90 条路由，OpenAPI `paths` 覆盖 88 条；其余 2 条为 `/openapi.json`、`/swagger-ui/*rest` 自描述端点（按设计不写入）。新增路由覆盖门禁：`test_every_registered_route_is_documented` 扫描路由源码并与文档 `paths` 比对（`:param`/`*rest` 归一化为 `{param}`/`{rest}`）。gRPC 契约以 `crates/sisyphus-bridge-api/proto/*.proto` 为唯一来源 — 证据：`crates/sisyphus-bridge/src/http_openapi.rs::test_every_registered_route_is_documented`
 
 ---
 
