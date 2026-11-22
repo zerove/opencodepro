@@ -611,10 +611,13 @@
 - [x] **断线补偿**: 重连后按 vector clock 补差量；`anti_entropy_integration.rs::reconnect_delivers_only_the_gap` + `cluster_integration.rs::catchup_signal_sent_while_reconnecting_is_still_consumed`（语义抽样豁免：10.2 是阶段 9 的追踪小节，与 9.1.2 同一工作项复用同一证据，非借用）
 - [x] **`ExperienceSyncHandler` 关闭语义加固**: 任务全程持有 `Arc<PeerManager>`，Sender 存活由类型系统保证；`Closed` 分支由 `warn!` 提升为 `error!`
 - [x] **入站事件转发收敛**: `event_tx`（本地产生，拨号器订阅）与 `inbound_tx`（远端收到，仅 handler 订阅）分离，回弹在结构上不可达
-- [x] **3 节点 Docker Compose** / **网络分区恢复** 验证：`crates/sisyphus-bridge/tests/cluster_integration.rs::test_three_node_experience_sync_converges`、`crates/sisyphus-bridge/tests/cluster_integration.rs::test_three_node_partition_recovery_catches_up`（in-process 3 节点收敛 + 宕机恢复补齐差量）；`docker-compose.cluster.yml` 提供 3 节点本地编排模板（`SISYPHUS_CLUSTER_PEERS` env 配置）
+- [x] **3 节点 in-process 收敛+分区恢复验证**：`crates/sisyphus-bridge/tests/cluster_integration.rs::test_three_node_experience_sync_converges`（A/B/C 收敛）、`crates/sisyphus-bridge/tests/cluster_integration.rs::test_three_node_partition_recovery_catches_up`（宕机恢复补齐差量）；`docker-compose.cluster.yml` 提供本地编排主路径
+- [ ] **3 节点 Docker Compose 真实实测**（10.3）: `docker compose -f docker-compose.cluster.yml up -d --build`，验证长期运行（分区：`docker network disconnect cluster-net sisyphus-node-b`，恢复：connect 回来）；详见 `docker-compose.cluster.yml` 头注；当前守护进程权限问题属 10.3 首项
 
 ### 10.3 工具链
 - [x] **并行链接保护**: 实测 19.5 GiB 下 `-j 2` 仍会 OOM、`-j 1` 稳定；`test-all`/`test-tools`/`test-bridge*`/`test-cli-handlers` 已统一带 `CARGO_BUILD_JOBS=1`，Makefile 头部记录约束（直接敲 `cargo test` 仍需自行加 `-j 1`）
+- [ ] **podman/docker 环境验证**: 当前环境不可跑（`/run/podman/podman.sock` 权限不足，`docker compose up` 报 `permission denied while trying to connect to the docker API`）；`docker-compose.cluster.yml` 头注含完整手动实测命令；实测待做下方「3 节点 Docker Compose 真实实测」备用
+- [ ] **3 节点 Docker Compose 真实实测**: 真实 3 容器长跑验证（`docker compose -f docker-compose.cluster.yml up -d --build`，验证 `curl -s localhost:8080/api/cluster/peers` 在 3 个 node 上发现且分数正确；分区用 `docker network disconnect cluster-net sisyphus-node-b` 模拟，恢复用 connect 回）
 - [x] **认知循环 v3 (ADR-022)**: 问题陈述已落地（无测试：设计文档，见 `docs/adr/022-cognitive-loop-v3-problem-statement.md`）；候选方向与决策仍待证据/benchmark 支撑
 ### 10.4 多语言测试守卫（2026-10-04）
 > 详见 [状态报告 2026-10-04](docs/project-status-2026-10-04.md)。提交 `6c3a52e`（+936/−66）。
