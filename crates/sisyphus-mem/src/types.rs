@@ -17,4 +17,6 @@ pub struct Snapshot {
     pub version: u64,
     /// Delta changes since last base snapshot.
     pub delta: HashMap<String, Option<Value>>,
+    /// Full state data map.
+    pub data: HashMap<String, Value>,
 }

@@ -16,6 +16,7 @@ use parking_lot::Mutex;
 use sisyphus_metrics::record_mem_operation;
 use sisyphus_types::experience::{experience_counter_from_key, experience_origin_from_key};
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Instant;
@@ -495,7 +496,11 @@ impl MfsStore {
     }
 
     /// Captures an incremental point-in-time snapshot of the state since a given version.
-    pub async fn take_incremental_snapshot(&self, base_version: u64, delta_changes: HashMap<String, Option<serde_json::Value>>) -> Result<Snapshot> {
+    pub async fn take_incremental_snapshot(
+        &self,
+        base_version: u64,
+        delta_changes: HashMap<String, Option<serde_json::Value>>,
+    ) -> Result<Snapshot> {
         let span = tracing::info_span!("mem.snapshot.take_incremental", base_version);
         let _enter = span.enter();
 

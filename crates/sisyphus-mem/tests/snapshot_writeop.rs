@@ -13,7 +13,11 @@ fn snapshot_field_access() {
     let mut data = HashMap::new();
     data.insert("a".into(), json!(1));
     data.insert("b".into(), json!("x"));
-    let s = Snapshot { data };
+    let s = Snapshot {
+        version: 1,
+        delta: HashMap::new(),
+        data,
+    };
     assert_eq!(s.data.len(), 2);
     assert_eq!(s.data.get("a").unwrap(), &json!(1));
 }
@@ -21,6 +25,8 @@ fn snapshot_field_access() {
 #[test]
 fn snapshot_empty() {
     let s = Snapshot {
+        version: 1,
+        delta: HashMap::new(),
         data: HashMap::new(),
     };
     assert!(s.data.is_empty());
@@ -31,7 +37,11 @@ fn snapshot_iteration() {
     let mut data = HashMap::new();
     data.insert("a".into(), json!(1));
     data.insert("b".into(), json!("v"));
-    let s = Snapshot { data };
+    let s = Snapshot {
+        version: 1,
+        delta: HashMap::new(),
+        data,
+    };
     // Iterate via the inner map
     let mut count = 0;
     for _ in s.data.iter() {
